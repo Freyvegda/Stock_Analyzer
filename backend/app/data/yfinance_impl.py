@@ -25,6 +25,31 @@ CACHE_PATH = os.path.abspath(
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
+MIN_UNIVERSE_SIZE = 100  # a real Nifty 500 CSV has ~500; fewer means a bad response
+
+
+def _parse_stocks(text: str) -> list[dict]:
+    """Parse the constituents CSV, rejecting HTML/broken/truncated bodies."""
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames or "Symbol" not in reader.fieldnames:
+        raise ValueError("Unexpected Nifty 500 CSV format: missing 'Symbol' column")
+    stocks = []
+    for row in reader:
+        symbol = (row.get("Symbol") or "").strip()
+        if not symbol:
+            continue
+        stocks.append(
+            {
+                "symbol": symbol,
+                "name": (row.get("Company Name") or "").strip(),
+                "sector": (row.get("Industry") or "").strip() or None,
+                "market_cap": None,
+            }
+        )
+    if len(stocks) < MIN_UNIVERSE_SIZE:
+        raise ValueError(f"Suspicious Nifty 500 CSV: only {len(stocks)} symbols (min {MIN_UNIVERSE_SIZE})")
+    return stocks
+
 _NET_INCOME = ["Net Income", "Net Income Common Stockholders"]
 _EQUITY = ["Stockholders Equity", "Total Equity Gross Minority Interest"]
 _EBIT = ["EBIT", "Operating Income"]
@@ -59,30 +84,17 @@ class YFinanceProvider(DataProvider):
         try:
             resp = httpx.get(NIFTY500_CSV_URL, headers=_UA, timeout=30, follow_redirects=True)
             resp.raise_for_status()
-            text = resp.text
-            os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-            with open(CACHE_PATH, "w", encoding="utf-8") as f:
-                f.write(text)
+            stocks = _parse_stocks(resp.text)  # validate BEFORE overwriting the cache
         except Exception:
             if not os.path.exists(CACHE_PATH):
                 raise
             self.stale = True
             with open(CACHE_PATH, encoding="utf-8") as f:
-                text = f.read()
+                return _parse_stocks(f.read())
 
-        stocks = []
-        for row in csv.DictReader(io.StringIO(text)):
-            symbol = (row.get("Symbol") or "").strip()
-            if not symbol:
-                continue
-            stocks.append(
-                {
-                    "symbol": symbol,
-                    "name": (row.get("Company Name") or "").strip(),
-                    "sector": (row.get("Industry") or "").strip() or None,
-                    "market_cap": None,
-                }
-            )
+        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+        with open(CACHE_PATH, "w", encoding="utf-8") as f:
+            f.write(resp.text)
         return stocks
 
     def fundamentals(self, symbol: str) -> dict:
@@ -101,7 +113,7 @@ class YFinanceProvider(DataProvider):
             if roe is None:
                 net_income = _latest_value(income, _NET_INCOME)
                 equity = _latest_value(balance, _EQUITY)
-                if net_income is not None and equity:  # equity <= 0 -> keep None
+                if net_income is not None and equity > 0:  # equity <= 0 -> keep None
                     roe = round(net_income / equity * 100, 4)
             if roce is None:
                 ebit = _latest_value(income, _EBIT)

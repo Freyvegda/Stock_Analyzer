@@ -88,7 +88,7 @@ Nifty 500 list -> stocks table
 - Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> serve cached data + staleness flag
 - PDF parse failure: log, `parse_status=failed`, continue; UI shows "n/m docs parsed"
 - Gemini: backoff queue -> keyword fallback, flagged in DB
-- API errors: HTTP 422 for bad input, 500 with structured `{"detail": ...}`; never raw tracebacks to frontend
+- API errors: HTTP 422 for bad input, 502 for upstream data-source failures, 500 with structured `{"detail": ...}`; never raw tracebacks to frontend
 
 ## Conventions
 

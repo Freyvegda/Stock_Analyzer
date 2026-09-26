@@ -43,23 +43,33 @@ class ScreenConfig(BaseModel):
 
 def read_config_text() -> str:
     """Verbatim YAML file contents — snapshotted into screen_runs for reproducibility."""
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return f.read()
+    return config_bundle()[1]
 
 
 @lru_cache
-def load_config() -> dict:
-    raw_text = read_config_text()
+def config_bundle() -> tuple[dict, str]:
+    """Validated config dict + verbatim YAML text from a single read.
+
+    Cached together so the config that is evaluated and the snapshot stored in
+    screen_runs can never diverge. reload_config() clears both.
+    """
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        raw_text = f.read()
     try:
         raw = yaml.safe_load(raw_text)
     except yaml.YAMLError as e:
         raise ConfigError(f"Invalid screening.yaml syntax: {e}") from e
     try:
-        return ScreenConfig.model_validate(raw if raw is not None else {}).model_dump()
+        validated = ScreenConfig.model_validate(raw if raw is not None else {})
     except ValidationError as e:
         raise ConfigError(f"Invalid screening.yaml: {e}") from e
+    return validated.model_dump(), raw_text
+
+
+def load_config() -> dict:
+    return config_bundle()[0]
 
 
 def reload_config() -> dict:
-    load_config.cache_clear()
+    config_bundle.cache_clear()
     return load_config()

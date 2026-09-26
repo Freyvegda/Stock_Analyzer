@@ -1,6 +1,9 @@
 import json
+import logging
 from datetime import date
+from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -10,8 +13,19 @@ from app.api import screen
 from app.db.database import Base
 from app.db.models import Fundamental, ScreenRun, Stock
 from app.main import app
+from app.screener import config as config_module
 
 client = TestClient(app)
+
+TEST_YAML = """criteria:
+  pe_max: 25
+  pb_max: 5
+  roe_min: 15
+  roce_min: 15
+  debt_to_equity_max: 0.5
+  market_cap_min: 1000
+shortlist_size: 10
+"""
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
 BAD = {"pe": 80, "pb": 12, "roe": 5, "roce": 5, "debt_to_equity": 2.0, "market_cap": 100}
@@ -19,9 +33,10 @@ FAILED_CRITERIA = ["pe_max", "pb_max", "roe_min", "roce_min", "debt_to_equity_ma
 
 
 class FakeProvider:
-    def __init__(self, stale: bool = False, fail_symbols: tuple[str, ...] = ()):
+    def __init__(self, stale: bool = False, fail_symbols: tuple[str, ...] = (), partial_symbols: tuple[str, ...] = ()):
         self.stale = stale
         self.fail_symbols = set(fail_symbols)
+        self.partial_symbols = set(partial_symbols)
 
     def list_stocks(self):
         return [
@@ -33,6 +48,17 @@ class FakeProvider:
     def fundamentals(self, symbol):
         if symbol == "CCC" or symbol in self.fail_symbols:
             raise RuntimeError(f"fetch failed for {symbol}")
+        if symbol in self.partial_symbols:
+            return {
+                "symbol": symbol,
+                "pe": None,
+                "pb": None,
+                "roe": None,
+                "roce": None,
+                "debt_to_equity": None,
+                "market_cap": None,
+                "raw": {"src": "fake"},
+            }
         f = GOOD if symbol == "AAA" else BAD
         return {"symbol": symbol, **f, "raw": {"src": "fake"}}
 
@@ -44,6 +70,10 @@ def db(tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     monkeypatch.setattr(screen, "SessionLocal", TestSession)
     monkeypatch.setattr(screen, "init_db", lambda: None)
+
+    config_path = tmp_path / "screening.yaml"
+    config_path.write_text(TEST_YAML, encoding="utf-8")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", str(config_path))
     return TestSession
 
 
@@ -88,6 +118,47 @@ def test_failed_fetch_persisted_with_data_status(db, monkeypatch):
         assert ok.roe == 25
 
 
+def test_successful_fetch_with_null_ratios_is_ok_and_rejected(db, monkeypatch):
+    use_provider(monkeypatch, FakeProvider(partial_symbols=("BBB",)))
+
+    body = client.post("/screen/run").json()
+
+    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
+    assert body["failed_details"] == [{"symbol": "BBB", "failed": FAILED_CRITERIA}]
+    with db() as session:
+        row = session.get(Fundamental, ("BBB", date.today().isoformat()))
+        assert row.data_status == "ok"  # fetch succeeded; ratios are genuinely missing
+        assert row.pe is None
+        assert json.loads(row.raw_json) == {"src": "fake"}
+
+
+def test_failed_fetch_logs_warning(db, monkeypatch, caplog):
+    use_provider(monkeypatch, FakeProvider())
+
+    with caplog.at_level(logging.WARNING):
+        client.post("/screen/run")
+
+    assert "CCC" in caplog.text
+
+
+def test_unreachable_provider_returns_structured_502(db, monkeypatch):
+    class DeadProvider:
+        stale = False
+
+        def list_stocks(self):
+            raise httpx.ConnectError("nifty500 download refused")
+
+        def fundamentals(self, symbol):
+            raise AssertionError("must not be reached")
+
+    use_provider(monkeypatch, DeadProvider())
+
+    res = client.post("/screen/run")
+
+    assert res.status_code == 502
+    assert "nifty500 download refused" in res.json()["detail"]
+
+
 def test_market_cap_preserved_when_fetch_fails(db, monkeypatch):
     use_provider(monkeypatch, FakeProvider())
     client.post("/screen/run")
@@ -119,3 +190,25 @@ def test_stale_provider_flagged_in_response(db, monkeypatch):
 def test_config_endpoints():
     assert client.get("/screen/config").status_code == 200
     assert client.post("/screen/config/reload").status_code == 200
+
+
+def test_snapshot_matches_evaluated_config_until_reload(db, monkeypatch):
+    use_provider(monkeypatch, FakeProvider())
+    client.post("/screen/run")  # loads and caches the config
+
+    # User edits the file but does not hit reload.
+    Path(config_module.CONFIG_PATH).write_text(TEST_YAML.replace("pe_max: 25", "pe_max: 5"), encoding="utf-8")
+
+    body = client.post("/screen/run").json()
+    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]  # cached pe_max=25 still applied
+    with db() as session:
+        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+        assert run.config_yaml == TEST_YAML  # snapshot == config actually evaluated
+
+    client.post("/screen/config/reload")
+
+    body = client.post("/screen/run").json()
+    assert body["shortlisted"] == []  # pe_max=5 rejects AAA (pe 20)
+    with db() as session:
+        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+        assert "pe_max: 5" in run.config_yaml

@@ -1,3 +1,4 @@
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,6 +25,11 @@ app.include_router(backtest.router, prefix="/backtest", tags=["backtest"])
 @app.exception_handler(ConfigError)
 async def config_error_handler(_request: Request, exc: ConfigError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(httpx.HTTPError)
+async def upstream_error_handler(_request: Request, exc: httpx.HTTPError) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": f"Upstream data source failed: {exc}"})
 
 
 @app.get("/health")
