@@ -8,7 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api import auth, backtest, docs, screen, signals
 from app.auth.deps import current_user
 from app.auth.security import SESSION_MAX_AGE, session_secret
-from app.screener.config import ConfigError
+from app.screener.criteria import ConfigError
 
 app = FastAPI(title="Stock Analyzer", version="0.1.0")
 

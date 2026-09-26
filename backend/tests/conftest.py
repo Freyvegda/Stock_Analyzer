@@ -13,7 +13,6 @@ from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
 from app.db.models import User
 from app.main import app
-from app.screener.config import config_bundle
 
 
 def create_session_cookie(user: dict) -> str:
@@ -22,14 +21,6 @@ def create_session_cookie(user: dict) -> str:
         json.dumps({"user_id": user["id"], "username": user["username"]}).encode("utf-8")
     )
     return TimestampSigner(str(session_secret())).sign(payload).decode("utf-8")
-
-
-@pytest.fixture(autouse=True)
-def _clear_config_cache():
-    """Validated config is lru_cached; never leak a test's config into others."""
-    config_bundle.cache_clear()
-    yield
-    config_bundle.cache_clear()
 
 
 @pytest.fixture

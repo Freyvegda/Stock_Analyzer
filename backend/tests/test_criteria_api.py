@@ -95,3 +95,9 @@ def test_criteria_routes_require_auth(client, test_db):
     assert client.get("/screen/criteria").status_code == 401
     payload = {"criteria": [{"key": "pe", "enabled": True, "value": 1}]}
     assert client.put("/screen/criteria", json=payload).status_code == 401
+
+
+def test_removed_config_endpoints_are_404(client, sign_in):
+    sign_in()
+    assert client.get("/screen/config").status_code == 404
+    assert client.post("/screen/config/reload").status_code == 404
