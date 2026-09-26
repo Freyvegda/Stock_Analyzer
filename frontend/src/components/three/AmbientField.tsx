@@ -26,7 +26,7 @@ function ParticleField({ color }: { color: string }) {
     points.current.rotation.y += delta * 0.03
     points.current.rotation.x += delta * 0.01
 
-    // Embers rise with a slow sway, wrapped back to the floor when they float away.
+    // Particles rise with a slow sway, wrapped back to the floor when they float away.
     const attribute = points.current.geometry.getAttribute('position') as THREE.BufferAttribute
     const array = attribute.array as Float32Array
     const time = state.clock.elapsedTime

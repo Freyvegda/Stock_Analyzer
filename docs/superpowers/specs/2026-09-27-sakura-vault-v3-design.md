@@ -189,7 +189,7 @@ only.
   (values were chosen against them).
 - `system.test.ts`: already asserts the `sakura` scale, virtual tokens, and `bg.panel`
   (shipped in `60cbec0`); no change needed.
-- New `GlassNav.test.tsx`: active link `aria-current` + exactly one pill inside it; `data-tilt="off"`
+- New `GlassNav.test.tsx`: active link `aria-current` + exactly one pill inside it; `data-sheen="off"`
   under reduced motion (jsdom's `matchMedia` reports no fine pointer); logout + theme toggle
   present; nav landmark labelled.
 - `frontend/DESIGN.md`: replace the phosphor palette table with the sakura tables, replace the

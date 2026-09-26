@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GlassNav } from '../GlassNav'
@@ -58,15 +58,46 @@ describe('GlassNav', () => {
     expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
   })
 
-  it('keeps sheen off under reduced motion even on a fine pointer', () => {
+  it('keeps sheen off under reduced motion even on a fine pointer and pins the pill static', () => {
     mockMatchMedia({ '(prefers-reduced-motion: reduce)': true, '(pointer: fine)': true })
-    renderNav()
+    renderNav('/documents')
     expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
+    expect(screen.getByTestId('glass-nav-pill')).toHaveAttribute('data-motion', 'static')
   })
 
-  it('enables sheen on a fine pointer without reduced motion', () => {
+  it('enables sheen on a fine pointer without reduced motion and animates the pill', () => {
     mockMatchMedia({ '(pointer: fine)': true })
+    renderNav('/documents')
+    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'on')
+    expect(screen.getByTestId('glass-nav-pill')).toHaveAttribute('data-motion', 'animated')
+  })
+
+  it('tracks pointer capability changes after mount', () => {
+    const listeners: Array<() => void> = []
+    let fine = false
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          get matches() {
+            return query === '(pointer: fine)' ? fine : false
+          },
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: (_type: string, callback: () => void) => {
+            if (query === '(pointer: fine)') listeners.push(callback)
+          },
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    )
     renderNav()
+    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
+    fine = true
+    act(() => {
+      for (const listener of listeners) listener()
+    })
     expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'on')
   })
 })

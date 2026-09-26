@@ -19,7 +19,7 @@
 - Header: type badge (`concall` / `results` / `presentation` / `audit`) + period + parse status badge (`pending` gray, `parsed` green, `failed` red).
 - Body (when analysis exists):
   - Sentiment: colored badge — positive green (>0.2), negative red (<-0.2), neutral zinc.
-  - `method` badge: `gemini` blue / `fallback` amber — user must see when AI degraded.
+  - `method` badge: `gemini` sakura / `fallback` muted + alert icon — user must see when AI degraded.
   - Summary paragraph, Guidance section, Red flags list (red text, bullet per flag).
 - Footer: link to source `url` (opens new tab). Local file not served — link to origin.
 
@@ -44,5 +44,5 @@ export interface DocumentDTO { id: number; symbol: string; type: 'concall' | 're
 ## Acceptance
 
 - Full loop on one stock: Fetch → docs appear (pending) → Analyze → cards show summaries + badges.
-- Fallback analysis visibly distinguished (amber badge).
+- Fallback analysis visibly distinguished (muted badge + alert icon — never the brand hue).
 - `npm run build` clean.

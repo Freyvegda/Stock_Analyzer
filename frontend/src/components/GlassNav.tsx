@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useRef, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
 import { NavLink } from 'react-router-dom'
 import { IconButton, Text } from '@chakra-ui/react'
 import { LogOut, TrendingUp } from 'lucide-react'
@@ -13,6 +13,20 @@ const navItems = [
   { to: '/backtest', label: 'Model & Backtest' },
 ]
 
+const POINTER_QUERY = '(pointer: fine)'
+
+/** Subscribes to fine-pointer capability changes (2-in-1 detach/attach, tablet + mouse). */
+function subscribePointerFine(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const mql = window.matchMedia(POINTER_QUERY)
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+function readPointerFine() {
+  return typeof window.matchMedia === 'function' && window.matchMedia(POINTER_QUERY).matches
+}
+
 /**
  * Liquid-glass navbar (DESIGN.md → Liquid-glass 3D navbar): sticky capsule with a
  * token-derived translucent surface and a pointer-tracked specular sheen. The
@@ -24,16 +38,9 @@ const navItems = [
 export function GlassNav() {
   const { user, logout } = useAuth()
   const reduced = usePrefersReducedMotion()
-  const [sheen, setSheen] = useState(false)
+  const finePointer = useSyncExternalStore(subscribePointerFine, readPointerFine, () => false)
+  const sheen = !reduced && finePointer
   const capsule = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (reduced || typeof window.matchMedia !== 'function') {
-      setSheen(false)
-      return
-    }
-    setSheen(window.matchMedia('(pointer: fine)').matches)
-  }, [reduced])
 
   function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     const node = capsule.current
@@ -55,7 +62,7 @@ export function GlassNav() {
         data-testid="glass-nav"
         data-sheen={sheen ? 'on' : 'off'}
         className="glass-nav px-4 py-2"
-        initial={reduced ? false : { opacity: 0, y: -10, filter: 'blur(6px)' }}
+        initial={reduced ? false : { opacity: 0, y: -8, filter: 'blur(6px)' }}
         animate={reduced ? undefined : { opacity: 1, y: 0, filter: 'blur(0px)' }}
         transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
         onPointerMove={onPointerMove}
@@ -79,12 +86,14 @@ export function GlassNav() {
                       <span
                         aria-hidden="true"
                         data-testid="glass-nav-pill"
+                        data-motion="static"
                         className="glass-nav-pill"
                       />
                     ) : (
                       <motion.span
                         aria-hidden="true"
                         data-testid="glass-nav-pill"
+                        data-motion="animated"
                         layoutId="nav-active-pill"
                         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                         className="glass-nav-pill"

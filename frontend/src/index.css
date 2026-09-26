@@ -269,7 +269,7 @@
   }
 
   [data-flash='loss'] {
-    --flash-color: rgba(255, 107, 110, 0.16);
+    --flash-color: rgba(255, 107, 122, 0.16);
   }
 
   @keyframes vault-flash {
@@ -389,7 +389,7 @@
   .glass-nav-pill {
     position: absolute;
     inset: 0;
-    border-radius: calc(var(--radius) * 0.8);
+    border-radius: var(--radius);
     background: color-mix(in oklab, var(--primary) 12%, transparent);
     border: 1px solid color-mix(in oklab, var(--primary) 30%, transparent);
     box-shadow: 0 0 18px -6px color-mix(in oklab, var(--primary) 45%, transparent);

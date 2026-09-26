@@ -52,8 +52,13 @@ describe('vault design rules', () => {
     expect(offenders).toEqual([])
   })
 
-  it('contains no legacy amber tints', () => {
-    const pattern = /#FFB454|#B45309|rgba\(255,\s*180,\s*84|rgba\(180,\s*83,\s*9/i
+  it('contains no legacy amber tints or palette references', () => {
+    const pattern =
+      /#FFB454|#B45309|rgba\(255,\s*180,\s*84|rgba\(180,\s*83,\s*9|rgb\(255\s+180\s+84|rgb\(180\s+83\s+9|colorPalette="amber"|amberScale/i
+    // The pattern must actually discriminate, or the scan below proves nothing.
+    expect(pattern.test('rgb(255 180 84 / 0.2)')).toBe(true)
+    expect(pattern.test('colorPalette="amber"')).toBe(true)
+    expect(pattern.test('colorPalette="sakura"')).toBe(false)
     const offenders = sourceFiles().filter((path) => pattern.test(read(path)))
     expect(offenders).toEqual([])
   })
@@ -71,8 +76,16 @@ describe('paletteFor', () => {
   })
 })
 
-describe('obsidian dark surfaces', () => {
-  const surfaces = [dark.background, dark.card, dark.muted, dark.secondary, dark.accent, dark.popover]
+describe('dark surfaces', () => {
+  const surfaces = [
+    dark.background,
+    dark.card,
+    dark.panel,
+    dark.muted,
+    dark.secondary,
+    dark.accent,
+    dark.popover,
+  ]
 
   it('keeps dark surfaces near-black', () => {
     for (const hex of surfaces) {

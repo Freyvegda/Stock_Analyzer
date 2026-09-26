@@ -1,5 +1,5 @@
 /**
- * Single source of truth for the Phosphor Vault palette (see DESIGN.md).
+ * Single source of truth for the Sakura Vault palette (see DESIGN.md).
  *
  * `src/index.css` contains a marked block (`@vault-tokens:start/end`) that is
  * generated from these values and guarded by `tokens.sync.test.ts`; never edit
