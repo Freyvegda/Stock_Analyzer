@@ -47,15 +47,18 @@ def put_criteria(payload: CriteriaUpdate, user: dict = Depends(current_user)) ->
 
 
 @router.post("/run")
-def run_screen() -> dict:
+def run_screen(user: dict = Depends(current_user)) -> dict:
     init_db()
-    return service.run_screen(get_provider(), SessionLocal, load_config())
+    stored = service.get_criteria(SessionLocal, user["id"])
+    return service.run_screen(
+        get_provider(), SessionLocal, user, stored["criteria"], stored["shortlist_size"]
+    )
 
 
 @router.get("/latest")
-def latest_screen() -> dict:
+def latest_screen(user: dict = Depends(current_user)) -> dict:
     init_db()
-    latest = service.latest_screen(SessionLocal)
+    latest = service.latest_screen(SessionLocal, user["id"])
     if latest is None:
         raise HTTPException(status_code=404, detail="No screen run yet")
     return latest
