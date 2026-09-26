@@ -5,6 +5,7 @@ import type { LatestScreen, RatioSpec, ScreenRunResult, ShortlistRow, UserCriter
 import { CriteriaDialog } from '../components/CriteriaDialog'
 import { CriteriaPanel } from '../components/CriteriaPanel'
 import { ShortlistTable } from '../components/ShortlistTable'
+import { useStatusFact } from '../components/StatusRail'
 import { BlurFade } from '../components/ui/BlurFade'
 import { BorderBeam } from '../components/ui/BorderBeam'
 import { DotPattern } from '../components/ui/DotPattern'
@@ -28,6 +29,16 @@ export default function Fundamentals() {
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const statusFact =
+    summary !== null
+      ? `${summary.shortlisted} shortlisted`
+      : rows.length > 0
+        ? `${rows.length} shortlisted`
+        : lastRunDate !== null
+          ? `last run ${lastRunDate}`
+          : null
+  useStatusFact('screen', statusFact)
 
   async function loadCriteria() {
     try {

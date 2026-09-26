@@ -145,4 +145,77 @@
   html {
     @apply font-sans;
     }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Vault texture: scanlines + amber glow (dark) / warm grain (light). */
+  .vault-backdrop {
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 3px),
+      radial-gradient(1200px 600px at 85% -10%, rgba(255, 180, 84, 0.06), transparent 60%);
+  }
+
+  :root:not(.dark) .vault-backdrop {
+    background-image:
+      repeating-linear-gradient(0deg, rgba(20, 24, 31, 0.012) 0 1px, transparent 1px 3px),
+      radial-gradient(1200px 600px at 85% -10%, rgba(180, 83, 9, 0.05), transparent 60%);
+  }
+
+  @media (prefers-contrast: more) {
+    .vault-backdrop {
+      background-image: none;
+    }
+  }
+
+  /* Status-rail marquee: overflow only, pauses on hover, static under reduced motion. */
+  .vault-rail-track {
+    animation: vault-rail-scroll 22s linear infinite;
+  }
+
+  .vault-rail-track:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes vault-rail-scroll {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-rail-track {
+      animation: none;
+    }
+  }
+}
+
+/* Theme-toggle circular wipe (View Transitions API; instant fallback otherwise). */
+::view-transition-old(root) {
+  animation: none;
+}
+
+::view-transition-new(root) {
+  animation: vault-wipe var(--duration-entrance) var(--ease-vault);
+}
+
+@keyframes vault-wipe {
+  from {
+    clip-path: circle(0% at var(--vt-x, 50%) var(--vt-y, 50%));
+  }
+  to {
+    clip-path: circle(150% at var(--vt-x, 50%) var(--vt-y, 50%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) {
+    animation: none;
+  }
 }

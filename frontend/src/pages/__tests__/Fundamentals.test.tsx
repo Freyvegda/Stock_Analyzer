@@ -8,6 +8,7 @@ import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { AuthProvider } from '../../auth/AuthContext'
 import { RequireAuth } from '../../components/RequireAuth'
+import { StatusProvider, StatusRail } from '../../components/StatusRail'
 import type { RatioSpec, UserCriteria } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
@@ -86,6 +87,19 @@ describe('Fundamentals', () => {
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
     expect(screen.getByText('1200000.0')).toBeInTheDocument()
+  })
+
+  it('publishes the shortlist count to the status rail', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+    render(
+      <Provider>
+        <StatusProvider>
+          <Fundamentals />
+          <StatusRail />
+        </StatusProvider>
+      </Provider>,
+    )
+    expect(await screen.findByTestId('status-rail')).toHaveTextContent('screen 1 shortlisted')
   })
 
   it('shows empty state for a zero-row run', async () => {
