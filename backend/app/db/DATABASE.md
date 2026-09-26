@@ -30,7 +30,8 @@ Point-in-time ratios per stock. Composite PK enables daily re-runs with history.
 | symbol | String PK | |
 | date | String PK | ISO `YYYY-MM-DD` |
 | pe, pb, roe, roce, debt_to_equity | Float? | NULL allowed — missing data must not crash the screen; engine skips NULL ratios per rule, flags stock |
-| raw_json | Text? | full provider payload, for future ratios without re-fetch |
+| data_status | String | `ok` \| `failed`. NOT NULL, default `ok`. `failed` = fetch failed (ratios NULL, `raw_json` holds the error) |
+| raw_json | Text? | full provider payload, for future ratios without re-fetch; `{"error": ...}` when `data_status=failed` |
 
 ### screen_runs
 Audit trail of every screen execution.

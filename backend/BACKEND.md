@@ -37,7 +37,8 @@ backend/
 │   │   ├── screener_impl.py
 │   │   └── nse_impl.py
 │   ├── screener/
-│   │   ├── engine.py      # ratio filtering + ranking -> shortlist
+│   │   ├── engine.py      # ratio filtering + ranking -> shortlist (pure)
+│   │   ├── service.py     # fetch + persist + evaluate orchestration (rule 6)
 │   │   └── config.py      # YAML load/validate + hot reload (lru_cache + cache_clear)
 │   ├── docs/
 │   │   ├── fetcher.py     # PDF download -> data/docs/{symbol}/
@@ -73,8 +74,8 @@ backend/
 
 ```
 Nifty 500 list -> stocks table
-  -> fundamentals(symbol) per stock -> fundamentals table
-  -> engine.py applies screening.yaml -> screen_runs.shortlisted_json (~10 symbols)
+  -> fundamentals(symbol) per stock -> fundamentals table (data_status ok|failed)
+  -> service.py + engine.py apply screening.yaml -> screen_runs.shortlisted_json (~10 symbols)
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table

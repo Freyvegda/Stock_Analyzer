@@ -6,11 +6,13 @@
 
 ### stocks — write path
 - Upsert from `list_stocks()` on every screen run: INSERT new symbols, UPDATE name/sector/market_cap for existing.
+- `market_cap` is only overwritten when the new fetch has a value — a later failed fetch never nulls a known market cap.
 - Never delete — delisted stocks stay (history).
 
 ### fundamentals — write path
 - Composite PK `(symbol, date)` → one row per stock per day. Re-run same day = REPLACE (merge), not duplicate.
 - Ratio columns nullable: `pe, pb, roe, roce, debt_to_equity`. yfinance gaps are normal — store NULL, store full payload in `raw_json`.
+- `data_status` (`ok` | `failed`): a fetch failure stores a row with NULL ratios and `{"error": ...}` in `raw_json`; a successful fetch with NULL ratios stays `ok`.
 
 ### screen_runs — write path
 - One row per `POST /screen/run`: `run_date`, `config_yaml` (verbatim file contents — reproducibility), `shortlisted_json`:
@@ -37,3 +39,4 @@
 
 - After 2 same-day runs: `fundamentals` row count unchanged, `screen_runs` = 2 rows.
 - `raw_json` present for every fetched symbol (even when ratios NULL).
+- Failed fetches have `data_status=failed`; successful fetches `ok`.
