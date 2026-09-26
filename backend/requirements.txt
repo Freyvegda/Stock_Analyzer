@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pyyaml
+yfinance
+pandas
+httpx
+pdfplumber
+xgboost
+scikit-learn
+google-generativeai
+pytest
