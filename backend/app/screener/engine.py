@@ -53,38 +53,71 @@ def _enabled_criteria(criteria: list[dict]) -> list[tuple[RatioSpec, float]]:
     return enabled
 
 
-def evaluate_screen(
-    rows: list[dict], criteria: list[dict], shortlist_size: int = 10
+def screen_rows(
+    rows: list[dict], criteria: list[dict]
 ) -> tuple[list[dict], list[dict]]:
-    """Evaluate every row and split into (ranked shortlist, rejected).
+    """Stage the gates in criteria order, each seeing only previous survivors.
 
-    rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap, raw}]
+    This mirrors how the service narrows the universe before spending network
+    calls: a stock cut at "market cap > 1000" is never checked for "PE < 20".
+    ``rejected`` reports the first failed gate only.
+
+    rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap, raw, data_date?}]
     criteria: [{key, enabled, value}] — only enabled criteria are evaluated
-    shortlist: [{rank, symbol, score, ratios, failed: []}], cut to
-               ``min(shortlist_size, 10)``
-    rejected: [{symbol, failed: [criterion keys]}] — None/missing fails
     """
     enabled = _enabled_criteria(criteria)
 
-    survivors = []
+    survivors = list(rows)
     rejected = []
-    for row in rows:
-        failed = [
-            spec.key
-            for spec, limit in enabled
-            if not _passes(_resolve(row, spec), limit, spec.direction)
-        ]
-        if failed:
-            rejected.append({"symbol": row["symbol"], "failed": failed})
-            continue
+    for spec, limit in enabled:
+        kept = []
+        for row in survivors:
+            if _passes(_resolve(row, spec), limit, spec.direction):
+                kept.append(row)
+            else:
+                rejected.append({"symbol": row["symbol"], "failed": [spec.key]})
+        survivors = kept
+    return survivors, rejected
+
+
+def rank_shortlist(survivors: list[dict], shortlist_size: int = 10) -> list[dict]:
+    """Score survivors, sort desc, clamp to ``min(shortlist_size, 10)``.
+
+    Shortlist rows: [{rank, symbol, score, ratios, failed: [], data_date}].
+    ``data_date`` is None for freshly fetched rows (the caller stamps it).
+    """
+    ranked = []
+    for row in survivors:
         score = (row.get("roe") or 0) + (row.get("roce") or 0) - (row.get("debt_to_equity") or 0) * 20
         ratios = {key: row.get(key) for key in _DERIVED_KEYS}
-        survivors.append({"symbol": row["symbol"], "score": round(score, 2), "ratios": ratios, "failed": []})
+        ranked.append(
+            {
+                "symbol": row["symbol"],
+                "score": round(score, 2),
+                "ratios": ratios,
+                "failed": [],
+                "data_date": row.get("data_date"),
+            }
+        )
 
-    survivors.sort(key=lambda r: r["score"], reverse=True)
+    ranked.sort(key=lambda r: r["score"], reverse=True)
     size = max(0, min(int(shortlist_size), MAX_SHORTLIST))
-    shortlist = [{"rank": i + 1, **r} for i, r in enumerate(survivors[:size])]
-    return shortlist, rejected
+    return [{"rank": i + 1, **r} for i, r in enumerate(ranked[:size])]
+
+
+def evaluate_screen(
+    rows: list[dict], criteria: list[dict], shortlist_size: int = 10
+) -> tuple[list[dict], list[dict]]:
+    """Staged filter + rank: split rows into (ranked shortlist, rejected).
+
+    rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap, raw}]
+    criteria: [{key, enabled, value}] — only enabled criteria are evaluated
+    shortlist: [{rank, symbol, score, ratios, failed: [], data_date}], cut to
+               ``min(shortlist_size, 10)``
+    rejected: [{symbol, failed: [first criterion key]}] — None/missing fails
+    """
+    survivors, rejected = screen_rows(rows, criteria)
+    return rank_shortlist(survivors, shortlist_size), rejected
 
 
 def apply_screen(rows: list[dict], criteria: list[dict], shortlist_size: int = 10) -> list[dict]:

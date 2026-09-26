@@ -1,7 +1,7 @@
 import pytest
 
 from app.screener.criteria import ConfigError
-from app.screener.engine import apply_screen, evaluate_screen
+from app.screener.engine import apply_screen, evaluate_screen, rank_shortlist, screen_rows
 
 CRITERIA = [
     {"key": "pe", "enabled": True, "value": 25},
@@ -98,3 +98,36 @@ def test_evaluate_screen_rejected_lists_enabled_failed_keys():
         "FAIL_NULL": ["pe"],
     }
     assert set(rejected[0]) == {"symbol", "failed"}
+
+
+def test_rejected_reports_first_failed_gate_only():
+    """Staged gates: a stock cut at the first gate is never checked against later ones."""
+    criteria = [{"key": "pe", "enabled": True, "value": 25}, {"key": "pb", "enabled": True, "value": 5}]
+    shortlist, rejected = evaluate_screen([row("DOUBLE_FAIL", pe=30, pb=9)], criteria)
+    assert shortlist == []
+    assert rejected == [{"symbol": "DOUBLE_FAIL", "failed": ["pe"]}]
+
+
+def test_screen_rows_keeps_survivor_order_and_row_payload():
+    criteria = [{"key": "pe", "enabled": True, "value": 25}]
+    rows = [row("B"), row("A")]
+    survivors, rejected = screen_rows(rows, criteria)
+    assert [r["symbol"] for r in survivors] == ["B", "A"]
+    assert survivors[0]["raw"] == {}
+    assert rejected == []
+
+
+def test_rank_shortlist_preserves_data_date():
+    criteria = [{"key": "pe", "enabled": True, "value": 25}]
+    survivors, _ = screen_rows([{**row("A"), "data_date": "2026-09-26"}], criteria)
+    ranked = rank_shortlist(survivors, shortlist_size=10)
+    assert ranked == [
+        {
+            "rank": 1,
+            "symbol": "A",
+            "score": 36.0,
+            "ratios": {key: survivors[0][key] for key in DERIVED_KEYS},
+            "failed": [],
+            "data_date": "2026-09-26",
+        }
+    ]

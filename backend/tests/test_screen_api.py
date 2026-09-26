@@ -11,7 +11,7 @@ from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
 BAD = {"pe": 80, "pb": 12, "roe": 5, "roce": 5, "debt_to_equity": 2.0, "market_cap": 100}
-FAILED_KEYS = ["pe", "pb", "roe", "roce", "debt_to_equity", "market_cap"]
+STORED_DATE = "2026-09-26"
 
 
 class FakeProvider:
@@ -45,6 +45,57 @@ class FakeProvider:
         return {"symbol": symbol, **data, "raw": {"src": "fake", "currentRatio": 1.8}}
 
 
+class MapProvider(FakeProvider):
+    """Fully controllable fundamentals + call log. CCC raises only if not in ``data``."""
+
+    def __init__(self, data=None, fail=(), stale=False):
+        super().__init__(stale=stale)
+        self.data = data or {}
+        self.fail = set(fail)
+        self.calls: list[str] = []
+
+    def fundamentals(self, symbol):
+        self.calls.append(symbol)
+        if symbol in self.fail:
+            raise RuntimeError(f"fetch failed for {symbol}")
+        return {"symbol": symbol, **self.data[symbol], "raw": self.data[symbol].get("raw", {"src": "fake"})}
+
+
+class DeadFundamentalsProvider(FakeProvider):
+    """Every fundamentals() call fails, like Yahoo throttling the whole batch."""
+
+    def fundamentals(self, symbol):
+        raise RuntimeError("yfinance unavailable")
+
+
+def seed_stored(test_db, rows, date_iso=STORED_DATE):
+    """Seed a stored snapshot: stocks plus ok fundamentals rows engine can read."""
+    with test_db() as session:
+        for data in rows:
+            session.merge(
+                Stock(
+                    symbol=data["symbol"],
+                    name=f"{data['symbol']} Ltd",
+                    sector="IT",
+                    market_cap=data["market_cap"],
+                )
+            )
+            session.merge(
+                Fundamental(
+                    symbol=data["symbol"],
+                    date=date_iso,
+                    pe=data["pe"],
+                    pb=data["pb"],
+                    roe=data["roe"],
+                    roce=data["roce"],
+                    debt_to_equity=data["debt_to_equity"],
+                    data_status="ok",
+                    raw_json=json.dumps(data.get("raw", {})),
+                )
+            )
+        session.commit()
+
+
 @pytest.fixture
 def provider(monkeypatch):
     def _use(p):
@@ -62,7 +113,7 @@ def test_run_uses_caller_criteria_and_stores_snapshot(client, sign_in, provider,
     assert body["total"] == 3
     assert body["failed_count"] == 1 and body["failed_symbols"] == ["CCC"]
     assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
-    assert body["failed_details"] == [{"symbol": "BBB", "failed": FAILED_KEYS}]
+    assert body["failed_details"] == [{"symbol": "BBB", "failed": ["pe"]}]
     with test_db() as session:
         run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
         assert run.user_id == user["id"]
@@ -178,3 +229,61 @@ def test_failed_fetch_logs_warning(client, sign_in, provider, caplog):
     with caplog.at_level(logging.WARNING):
         client.post("/screen/run")
     assert "CCC" in caplog.text
+
+
+def test_stored_snapshot_keeps_screen_alive_when_refresh_fails(client, sign_in, provider, test_db):
+    """Bug repro: yfinance down must not empty the screen when a snapshot exists."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}])
+    provider(DeadFundamentalsProvider())
+
+    body = client.post("/screen/run").json()
+
+    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
+    assert body["failed_count"] == 1 and body["failed_symbols"] == ["AAA"]  # only passers refresh
+    assert body["stale"] is True
+    assert body["shortlisted"][0]["data_date"] == STORED_DATE
+    latest = client.get("/screen/latest").json()
+    assert latest["shortlisted"][0]["data_date"] == STORED_DATE
+
+
+def test_run_fetches_only_stored_gate_passers(client, sign_in, provider, test_db):
+    """Progressive narrow: gate failures are cut before any network call."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **GOOD}])
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+    provider(p)
+
+    body = client.post("/screen/run").json()
+
+    assert p.calls == ["AAA", "CCC"]  # BBB lost the PE gate, never fetched
+    assert {r["symbol"] for r in body["shortlisted"]} == {"AAA", "CCC"}
+    assert {"symbol": "BBB", "failed": ["pe"]} in body["failed_details"]
+
+
+def test_first_run_fetches_whole_universe_when_nothing_stored(client, sign_in, provider, test_db):
+    sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+    provider(p)
+
+    body = client.post("/screen/run").json()
+
+    assert sorted(p.calls) == ["AAA", "BBB", "CCC"]
+    assert body["failed_count"] == 0
+    assert body["stale"] is False
+
+
+def test_refreshed_values_override_stored_snapshot(client, sign_in, provider, test_db):
+    """A passer is re-checked on fresh data; a regressed fresh PE cuts it."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    provider(MapProvider(data={"AAA": {**GOOD, "pe": 30}, "BBB": BAD, "CCC": BAD}))
+
+    body = client.post("/screen/run").json()
+
+    assert body["shortlisted"] == []
+    assert {"symbol": "AAA", "failed": ["pe"]} in body["failed_details"]
+    assert body["stale"] is False  # fetch succeeded; nothing stale is shown
+
+
+
