@@ -17,6 +17,10 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
 - react-router-dom v7 (BrowserRouter in `main.tsx`)
 - Tailwind CSS v4 via `@tailwindcss/vite` plugin (NO tailwind.config.js — CSS-first, theme in `src/index.css`)
 - shadcn/ui (zinc base) — components in `src/components/ui/`; add via `npx shadcn@latest add <name>`; already added: button, card, table, tabs, badge
+- Chakra UI v3 + `@emotion/react` + `next-themes` — hybrid rule: Chakra owns the provider,
+  theme, toggle, toasts, and status/interactive controls; shadcn + Tailwind own the shell,
+  cards, and dense tables. Accessible snippets (provider, color-mode, toaster, tooltip) live
+  in `src/components/ui/` too.
 - Charts: `lightweight-charts` (candlesticks/OHLC + signal markers), `recharts` (metric/ratio charts)
 - Path alias `@/` -> `src/` (vite.config.ts + tsconfig paths, NO baseUrl — TS6 deprecated)
 
@@ -47,13 +51,18 @@ frontend/src/
 
 ## Conventions
 
-- Dark theme: page bg `bg-zinc-950`, text `text-zinc-100`, muted `text-zinc-400`
-- shadcn components for interactive elements; Tailwind utilities for layout
+- Theming: one `.dark` class on `<html>` (next-themes) drives both Chakra tokens and
+  Tailwind/shadcn vars — use semantic tokens (`bg-background`, `text-foreground`,
+  `text-muted-foreground`, `border-border`), never hardcoded palette classes
+- Chakra for interactive/status elements; shadcn components and Tailwind utilities for layout and dense data
 - Tables for dense data (shortlist, documents, signals) — sortable client-side
 - StockChart props: `{ candles: {time,open,high,low,close}[], markers: {time, kind: 'buy'|'sell'}[] }`
 - Type all API responses with generics: `api.get<ScreenRun>('/screen/latest')`
 - Build check: `npm run build` (tsc -b && vite build) must pass; dev: `npm run dev`
-- Tests (when added): vitest — table/sort logic, api client; run `npm run test`
+- Tests: vitest + jsdom + Testing Library; run `npm run test`; mock all network/api/WebGL
+  in tests
+- Design contract: `DESIGN.md` (Terminal emerald, Geist, tabular numerals, lucide-only
+  icons, motion and 3D rules) — every frontend change follows it
 
 ## Phase Gates
 
