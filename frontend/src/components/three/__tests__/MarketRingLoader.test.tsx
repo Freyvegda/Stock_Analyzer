@@ -23,7 +23,7 @@ vi.mock('@react-three/fiber', () => ({
   useFrame: () => {},
 }))
 
-import { MarketRingLoader } from '../MarketRingLoader'
+import { flareIntensity, MarketRingLoader } from '../MarketRingLoader'
 
 function mockMedia({ reduced = false, desktop = true }: { reduced?: boolean; desktop?: boolean } = {}) {
   vi.spyOn(window, 'matchMedia').mockImplementation(
@@ -93,5 +93,31 @@ describe('MarketRingLoader', () => {
     rerender(<MarketRingLoader label="second" />)
     rerender(<MarketRingLoader label="third" />)
     expect(webgl.calls).toBe(1)
+  })
+})
+
+describe('flareIntensity', () => {
+  it('peaks at the sweep angle and decays with angular distance', () => {
+    expect(flareIntensity(0.4, 0.4, 0.5)).toBeCloseTo(1, 5)
+    const near = flareIntensity(0.65, 0.4, 0.5)
+    const far = flareIntensity(1.6, 0.4, 0.5)
+    expect(near).toBeGreaterThan(far)
+    expect(far).toBeLessThan(0.1)
+  })
+
+  it('wraps across the 2π seam', () => {
+    const sweep = Math.PI * 2 - 0.05
+    expect(flareIntensity(0, sweep, 0.5)).toBeCloseTo(
+      flareIntensity(Math.PI * 2 - 0.1, sweep, 0.5),
+      10,
+    )
+  })
+
+  it('stays within [0, 1]', () => {
+    for (const angle of [0, 1, 2, 3, 4, 5, 6]) {
+      const value = flareIntensity(angle, 2.5, 0.4)
+      expect(value).toBeGreaterThanOrEqual(0)
+      expect(value).toBeLessThanOrEqual(1)
+    }
   })
 })

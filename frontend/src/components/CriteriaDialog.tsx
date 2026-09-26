@@ -326,7 +326,7 @@ export function CriteriaDialog({
                 Cancel
               </Button>
               <Button
-                colorPalette="amber"
+                colorPalette="sakura"
                 loading={saving}
                 loadingText="Saving…"
                 disabled={saving}

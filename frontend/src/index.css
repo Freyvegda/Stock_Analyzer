@@ -69,6 +69,7 @@
   --foreground: #14181F;
   --card: #FFFFFF;
   --card-foreground: #14181F;
+  --panel: #FBF6EE;
   --popover: #FFFFFF;
   --popover-foreground: #14181F;
   --primary: #B45309;
@@ -101,23 +102,24 @@
 }
 
 .dark {
-  --background: #0A0E1A;
+  --background: #050607;
   --foreground: #E9EDF6;
-  --card: #111828;
+  --card: #0C0E12;
   --card-foreground: #E9EDF6;
-  --popover: #1F2A42;
+  --panel: #1A1D22;
+  --popover: #1A1D22;
   --popover-foreground: #E9EDF6;
   --primary: #FFB454;
   --primary-foreground: #201403;
-  --secondary: #182136;
+  --secondary: #14171C;
   --secondary-foreground: #E9EDF6;
-  --muted: #141D31;
-  --muted-foreground: #8891A8;
-  --accent: #182136;
+  --muted: #101216;
+  --muted-foreground: #868C9A;
+  --accent: #14171C;
   --accent-foreground: #E9EDF6;
   --destructive: #FF6B6E;
-  --border: #232C45;
-  --input: #232C45;
+  --border: #23262E;
+  --input: #23262E;
   --ring: #FFB454;
   --gain: #3DD68C;
   --loss: #FF6B6E;
@@ -126,13 +128,13 @@
   --chart-3: #3DD68C;
   --chart-4: #FF6B6E;
   --chart-5: #8891A8;
-  --sidebar: #111828;
+  --sidebar: #0C0E12;
   --sidebar-foreground: #E9EDF6;
   --sidebar-primary: #FFB454;
   --sidebar-primary-foreground: #201403;
-  --sidebar-accent: #182136;
+  --sidebar-accent: #14171C;
   --sidebar-accent-foreground: #E9EDF6;
-  --sidebar-border: #232C45;
+  --sidebar-border: #23262E;
   --sidebar-ring: #FFB454;
 }
 /* @vault-tokens:end */
@@ -141,11 +143,14 @@
   * {
     @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
-    }
+  /* The page colour lives on <html> so it paints on the canvas layer, below the
+     `-z-10` decorative layers (Backdrop, AmbientField, SakuraScene). On <body> it
+     painted over them and they were invisible. */
   html {
-    @apply font-sans;
+    @apply bg-background font-sans;
+    }
+  body {
+    @apply text-foreground;
     }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -170,6 +175,30 @@
   @media (prefers-contrast: more) {
     .vault-backdrop {
       background-image: none;
+    }
+  }
+
+  /* Sakura Garden (login only): CSS petal for the no-WebGL / phone fallback. The
+     element's `top` is the scatter position, so dropping the class under reduced
+     motion leaves a still, spread-out field instead of a row at the top edge. */
+  .vault-petal {
+    animation-name: vault-petal-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+
+  @keyframes vault-petal-fall {
+    0% {
+      transform: translate3d(0, -8vh, 0) rotate(0deg);
+    }
+    100% {
+      transform: translate3d(-14vw, 108vh, 0) rotate(320deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-petal {
+      animation: none;
     }
   }
 

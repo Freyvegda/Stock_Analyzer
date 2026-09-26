@@ -20,6 +20,8 @@ function textPairs(tokens: ThemeTokens): Array<[string, string, string]> {
   return [
     ['foreground/background', tokens.foreground, tokens.background],
     ['card-foreground/card', tokens.cardForeground, tokens.card],
+    ['foreground/panel', tokens.foreground, tokens.panel],
+    ['muted-foreground/panel', tokens.mutedForeground, tokens.panel],
     ['popover-foreground/popover', tokens.popoverForeground, tokens.popover],
     ['primary-foreground/primary', tokens.primaryForeground, tokens.primary],
     ['muted-foreground/background', tokens.mutedForeground, tokens.background],

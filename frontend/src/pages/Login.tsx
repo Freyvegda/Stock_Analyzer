@@ -1,13 +1,26 @@
-import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Box, Button, Field, Flex, Input, Spinner, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Field, Flex, IconButton, Input, Spinner, Stack, Text } from '@chakra-ui/react'
+import { Eye, EyeOff } from 'lucide-react'
 import { ApiError, api } from '@/api/client'
 import type { AuthState, AuthUser } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { BlurFade } from '@/components/ui/BlurFade'
+import { LoginBrandPanel } from '@/components/LoginBrandPanel'
+import { LoginGarden } from '@/components/LoginGarden'
 
 const MarketRingLoader = lazy(() => import('@/components/three/MarketRingLoader'))
 
 type Phase = 'loading' | 'setup' | 'login'
+
+/** One staggered row of the auth card (DESIGN.md: first-load 12ms stagger, cap 8). */
+function AuthRow({ index, children }: { index: number; children: ReactNode }) {
+  return (
+    <div className="vault-row-in" style={{ '--row-index': index } as CSSProperties}>
+      {children}
+    </div>
+  )
+}
 
 export default function Login() {
   const { setUser } = useAuth()
@@ -17,6 +30,7 @@ export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [visible, setVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -93,67 +107,163 @@ export default function Login() {
   }
 
   return (
-    <Flex minH="100vh" align="center" justify="center" px={6}>
-      <Box borderWidth="1px" borderColor="border" rounded="lg" p={6} bg="bg.panel" w="full" maxW="sm">
-        <Text fontSize="xl" fontWeight="semibold">
-          {isSetup ? 'Create account' : 'Log in'}
-        </Text>
-        <Text fontSize="sm" color="fg.muted" mb={4}>
-          {isSetup
-            ? 'First visit — this account owns the tool.'
-            : 'Sign in to reach the analysis pipeline.'}
-        </Text>
-        <form onSubmit={submit}>
-          <Stack gap={4}>
-            <Field.Root>
-              <Field.Label>Username</Field.Label>
-              <Input
-                name="username"
-                value={username}
-                autoComplete="username"
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </Field.Root>
-            <Field.Root>
-              <Field.Label>Password</Field.Label>
-              <Input
-                name="password"
-                type="password"
-                value={password}
-                autoComplete={isSetup ? 'new-password' : 'current-password'}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field.Root>
-            {isSetup ? (
-              <Field.Root>
-                <Field.Label>Confirm password</Field.Label>
-                <Input
-                  name="confirm-password"
-                  type="password"
-                  value={confirm}
-                  autoComplete="new-password"
-                  onChange={(e) => setConfirm(e.target.value)}
-                />
-              </Field.Root>
-            ) : null}
-            {error !== null ? (
-              <Text role="alert" color="fg.error" fontSize="sm">
-                {error}
-              </Text>
-            ) : null}
-            <Button
-              type="submit"
-              colorPalette="amber"
-              loading={submitting}
-              loadingText="Working…"
-              disabled={submitting}
-              spinner={<Spinner data-testid="inline-spinner" size="sm" />}
+    <Box minH="100vh" position="relative" overflow="hidden">
+      <LoginGarden />
+
+      <Flex
+        minH="100vh"
+        position="relative"
+        zIndex={1}
+        align="center"
+        justify="center"
+        px={{ base: 5, md: 8 }}
+        py={{ base: 12, lg: 16 }}
+      >
+        <Flex
+          w="full"
+          maxW="5xl"
+          gap={{ base: 0, lg: 16 }}
+          align="center"
+          justify="center"
+          direction={{ base: 'column', lg: 'row' }}
+        >
+          <LoginBrandPanel />
+
+          <BlurFade>
+            <Box
+              as="section"
+              aria-labelledby="auth-heading"
+              position="relative"
+              w={{ base: 'full', md: 'md' }}
+              borderWidth="1px"
+              borderColor="border"
+              rounded="lg"
+              bg="bg.panel"
+              boxShadow="xl"
+              overflow="hidden"
             >
-              {isSetup ? 'Create account' : 'Log in'}
-            </Button>
-          </Stack>
-        </form>
-      </Box>
-    </Flex>
+              <Box
+                aria-hidden="true"
+                position="absolute"
+                insetX={0}
+                top={0}
+                h="1px"
+                bgGradient="to-r"
+                gradientFrom="transparent"
+                gradientVia="primary"
+                gradientTo="transparent"
+              />
+              <Stack gap={6} p={{ base: 6, md: 8 }}>
+                <Stack gap={1}>
+                  <Text as="h1" id="auth-heading" fontSize="2xl" fontWeight="semibold">
+                    {isSetup ? 'Create account' : 'Log in'}
+                  </Text>
+                  <Text fontSize="sm" color="fg.muted">
+                    {isSetup
+                      ? 'First visit — this account owns the tool.'
+                      : 'Sign in to reach the analysis pipeline.'}
+                  </Text>
+                </Stack>
+
+                <form onSubmit={submit}>
+                  <Stack gap={4}>
+                    <AuthRow index={0}>
+                      <Field.Root>
+                        <Field.Label>Username</Field.Label>
+                        <Input
+                          name="username"
+                          value={username}
+                          autoComplete="username"
+                          onChange={(e) => setUsername(e.target.value)}
+                        />
+                      </Field.Root>
+                    </AuthRow>
+
+                    <AuthRow index={1}>
+                      <Field.Root>
+                        <Field.Label>Password</Field.Label>
+                        <Box position="relative">
+                          <Input
+                            name="password"
+                            type={visible ? 'text' : 'password'}
+                            value={password}
+                            pe={10}
+                            autoComplete={isSetup ? 'new-password' : 'current-password'}
+                            onChange={(e) => setPassword(e.target.value)}
+                          />
+                          <IconButton
+                            type="button"
+                            aria-label={visible ? 'Hide password' : 'Show password'}
+                            aria-pressed={visible}
+                            variant="ghost"
+                            size="xs"
+                            position="absolute"
+                            top="50%"
+                            right={1}
+                            transform="translateY(-50%)"
+                            onClick={() => setVisible((current) => !current)}
+                          >
+                            {visible ? (
+                              <EyeOff size={16} strokeWidth={1.75} aria-hidden="true" />
+                            ) : (
+                              <Eye size={16} strokeWidth={1.75} aria-hidden="true" />
+                            )}
+                          </IconButton>
+                        </Box>
+                      </Field.Root>
+                    </AuthRow>
+
+                    {isSetup ? (
+                      <AuthRow index={2}>
+                        <Field.Root>
+                          <Field.Label>Confirm password</Field.Label>
+                          <Input
+                            name="confirm-password"
+                            type="password"
+                            value={confirm}
+                            autoComplete="new-password"
+                            onChange={(e) => setConfirm(e.target.value)}
+                          />
+                        </Field.Root>
+                      </AuthRow>
+                    ) : null}
+
+                    {error !== null ? (
+                      <Text role="alert" color="fg.error" fontSize="sm">
+                        {error}
+                      </Text>
+                    ) : null}
+
+                    <AuthRow index={3}>
+                      <Button
+                        type="submit"
+                        colorPalette="sakura"
+                        width="full"
+                        loading={submitting}
+                        loadingText="Working…"
+                        disabled={submitting}
+                        spinner={<Spinner data-testid="inline-spinner" size="sm" />}
+                      >
+                        {isSetup ? 'Create account' : 'Log in'}
+                      </Button>
+                    </AuthRow>
+                  </Stack>
+                </form>
+
+                <Text
+                  fontFamily="mono"
+                  fontSize="11px"
+                  letterSpacing="0.08em"
+                  textTransform="uppercase"
+                  color="fg.muted"
+                >
+                  Session · HttpOnly cookie
+                </Text>
+              </Stack>
+            </Box>
+          </BlurFade>
+        </Flex>
+      </Flex>
+    </Box>
   )
 }

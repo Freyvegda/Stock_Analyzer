@@ -19,7 +19,7 @@ the suite.
 
 ## Palette — Phosphor Vault
 
-Near-black navy, amber primary, green/red status. Dark is the designed canvas; light
+Near-black obsidian, amber primary, green/red status. Dark is the designed canvas; light
 ("Parchment Vault") is a tuned sibling, not an inversion.
 
 **The rule that protects everything: amber never encodes polarity.** Amber = brand, focus,
@@ -29,15 +29,15 @@ indicator.
 
 | Role | Dark | Light |
 |---|---|---|
-| background | `#0A0E1A` | `#F6F4EF` |
-| card (surface-1) | `#111828` | `#FFFFFF` |
-| popover (surface-3, overlays) | `#1F2A42` | `#FFFFFF` |
-| muted | `#141D31` | `#EFEBE3` |
-| secondary / accent (surface-2, hover) | `#182136` | `#EFEBE3` / `#EAE5DB` |
-| border | `#232C45` | `#E3DDD2` |
-| input | `#232C45` | `#D9D2C4` |
+| background | `#050607` | `#F6F4EF` |
+| card (surface-1) | `#0C0E12` | `#FFFFFF` |
+| popover (surface-3, overlays) | `#1A1D22` | `#FFFFFF` |
+| muted | `#101216` | `#EFEBE3` |
+| secondary / accent (surface-2, hover) | `#14171C` | `#EFEBE3` / `#EAE5DB` |
+| border | `#23262E` | `#E3DDD2` |
+| input | `#23262E` | `#D9D2C4` |
 | foreground | `#E9EDF6` | `#14181F` |
-| muted-foreground | `#8891A8` | `#6E6A62` |
+| muted-foreground | `#868C9A` | `#6E6A62` |
 | primary (amber) | `#FFB454` | `#B45309` |
 | primary-foreground | `#201403` | `#FFF8EC` |
 | gain | `#3DD68C` | `#15803D` |
@@ -78,7 +78,9 @@ Rules:
 - Spacing: 4px grid; table density never changes for style.
 - Backdrop texture: scanlines (1.5% white) + amber radial glow (dark) / faint warm grain
   (light), fixed, `aria-hidden`, `pointer-events-none`, `-z-10`, DOM-ordered before
-  `AmbientField`; disabled under `prefers-contrast: more`.
+  `AmbientField`; disabled under `prefers-contrast: more`. The page colour is painted by
+  **`html`, never `body`** (see the `index.css` base layer): a `body` background paints above
+  negative-`z-index` layers, which silently hid the backdrop, the ember field and the garden.
 
 ## Motion
 
@@ -97,29 +99,84 @@ Signatures (the whole inventory):
 5. Overlays — scale 0.98→1 + fade 200ms; dialog rows stagger 16ms.
 6. Route entrance — `BlurFade` 320ms, enter-only.
 7. Theme toggle — View Transitions circular wipe; instant fallback.
-8. `BorderBeam` — amber "scan" on the run card while running.
-9. Row entrance — first load only: 12ms stagger, cap 8 rows; sorting/filtering is instant.
+8. Row entrance — first load only: 12ms stagger, cap 8 rows; sorting/filtering is instant.
 
 **Loops — complete whitelist:** Market Ring loader, status-rail marquee (overflow only),
-last-run status dot pulse. Max one loop per viewport zone. Loops never render inside tables,
-summaries, or chart interiors.
+last-run status dot pulse, Sakura Garden falling petals (login only). Max one loop per
+viewport zone; `/login` swaps the ambient ember field out for the garden. Loops never
+render inside tables, summaries, or chart interiors.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
 
 ## 3D and the loader
 
-- **Market Ring** (`components/three/MarketRingLoader.tsx`) is the pipeline loader: 48
-  instanced candlesticks in a rotating ring, breathing height wave, amber torus base, fixed
-  gain/loss pulse candles. ≥ 96px contexts only (run card 120, login 120, dialog 80); inline
-  buttons use Chakra `Spinner`.
+- **Market Ring** (`components/three/MarketRingLoader.tsx`) is the app loader: 48 instanced
+  candlesticks in a rotating ring with an amber-only tone ladder (no gain/loss candles),
+  breathing travelling wave plus a slow harmonic, a flare highlight sweeping the ring, a
+  counter-rotating thin arc, and a breathing amber torus base. Contexts: run card 120 (centred
+  with hint + elapsed timer beneath while a screen run is in flight), login 120, criteria
+  dialog 80. During a screen run this is the only running animation: the run button swaps to
+  "Running…" + disables, and no border crawl plays around the card.
 - Gates: lazy chunk, `hasWebGL()` else the CSS `vault-pulse` ring; hidden below `md`; paused
-  when the tab is hidden; `role="status"` + sr-only label; reduced motion → static single
-  frame (frozen skyline).
+  when the tab is hidden; `role="status"` + sr-only label; reduced motion → frozen static
+  frame (no rotation, flare or breathing).
 - `AmbientField` (decorative background embers) keeps its gates: lazy chunk, WebGL-gated,
   hidden below `md`, paused when hidden, off under reduced motion. Three.js must never appear
   in the initial bundle chunk.
 - Decorative 3D never obscures or competes with data.
+
+## Sakura Garden (login only)
+
+`components/three/SakuraScene.tsx` is the `/login` backdrop and the **one sanctioned
+exception to the amber-only rule**: it is the only surface allowed to carry the sakura
+palette. Its colours live in `scenePalette` (`src/theme/tokens.ts`), which is deliberately
+**not** part of `ThemeTokens` — it never becomes a CSS variable, never enters the synced
+`index.css` block, and reaches three.js as props, so `components/three/**` stays hex-free
+and `vault-rules.test.ts` needs no exception.
+
+- Scene: sky gradient (blue zenith fading to warm sand in light, obsidian night in dark),
+  **moon in dark mode / sun in light mode** in the top-left corner, and a procedurally
+  grown low-poly cherry tree in the right-hand band. Both celestial bodies exist in the
+  scene and crossfade with the theme, so switching modes reads as sunrise/sunset rather
+  than a DOM swap.
+- The auth card floats on `bg.panel`: a dedicated overlay surface (light `#FBF6EE`, a warm
+  sand tint rather than card white; dark `#1A1D22`) defined in `tokens.ts` and mapped in
+  `system.ts`. It keeps the card distinct from the page background over the 3D scene, and
+  `contrast.test.ts` gates `foreground` and `muted-foreground` against it in both modes.
+- Tree silhouette follows the reference blossom photograph: a short dark trunk lifting a
+  broad, dense, rounded canopy that is wider than it is tall (flowers packed from the first
+  canopy level out to the tips — no bare scaffolding). It is scaled to `TREE_HEIGHT_FRACTION`
+  (78%) of the viewport height, so it runs the right edge top to bottom, and its left edge is
+  held `CARD_GAP_PX` (24px) right of the auth card's right edge. `treePlacement` in
+  `three/sakuraTree.ts` computes this from pure inputs and is unit-tested from 768px to
+  2560px: the tree never touches the card's footprint, on any width.
+- Composition rule: **the blossom canopy is always the top of the tree.** Petals spawn from
+  inside the *lower* canopy (`PETAL_SPAN.maxY` below the canopy top — asserted in the scene
+  test) and fall in a layer behind the blossom dome (`PETAL_DEPTH`), so the topmost blossom
+  branch always reads above the falling petal cloud. Petals are deliberately sparse (70) —
+  a few stragglers, not a blizzard.
+- Determinism: tree, blossom clusters and petal field come from a seeded `mulberry32`
+  stream — no `Math.random`, identical scene every load. `buildTree`, `treeBounds`,
+  `treePlacement`, `petalSeeds`, `petalPose` and `withAlpha` live in `three/sakuraTree.ts`
+  (three.js-free, unit-tested: budgets, bounds, taper, fall wrap, canopy-above-petals,
+  card clearance, contrast).
+- Budgets: `TREE_LIMITS` caps segments (420), blossoms (1100) and petals (90); one instanced
+  mesh each, no textures, no post-processing, no new dependency. `dpr` up to 2 with
+  `antialias: true` on the canvas, `meshStandardMaterial` + `flatShading` (8-sided branches,
+  detail-1 icosahedron blossoms) for crisp low-poly facets; unlit petals.
+- Gates: identical to the Market Ring — lazy chunk, `hasWebGL()` else the CSS fallback,
+  hidden below `md`, paused when the tab is hidden, `frameloop="demand"` with a still,
+  spread-out petal field under reduced motion, `aria-hidden`, `pointer-events-none`, `-z-10`.
+- Below `md` / no WebGL: the CSS fallback (sky gradient, lit disc, `.vault-petal` petals)
+  keeps the same picture without a canvas.
+- Only the auth card sits above the scene, and the card is opaque: no text or data is ever
+  rendered over 3D.
+- `AmbientField` does not mount on `/login` — one decorative loop per viewport zone. The
+  Market Ring appears only during the `loading` phase, before the garden is drawn.
+
+Sakura pink is **scene-only**. Amber stays the only brand/attention colour and polarity
+stays green/red plus sign: no pink in the shell, cards, tables, charts or status rail.
 
 ## Icons and accessibility
 

@@ -134,25 +134,26 @@ describe('Fundamentals', () => {
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
   })
 
-  it('shows an elapsed timer while the screen runs', async () => {
+  it('shows the market ring inside the run card while the screen runs', async () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
     mockedApi.post.mockReturnValue(new Promise(() => {}))
     renderPage()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
-    expect(await screen.findByTestId('elapsed')).toHaveTextContent('00:00')
+    expect(await screen.findByTestId('market-ring-loader')).toBeInTheDocument()
+    expect(screen.getAllByTestId('market-ring-loader')).toHaveLength(1)
+    expect(screen.queryByTestId('run-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('border-beam')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('border-beam-static')).not.toBeInTheDocument()
   })
 
-  it('shows the market ring loader while the screen runs', async () => {
+  it('keeps run feedback inline: disabled button and elapsed timer, no spinner', async () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
-    let release = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    mockedApi.post.mockReturnValue(gate.then(() => ({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })))
+    mockedApi.post.mockReturnValue(new Promise(() => {}))
     renderPage()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
-    expect(await screen.findByTestId('market-ring-loader')).toBeInTheDocument()
-    release()
+    expect(screen.getByTestId('elapsed')).toHaveTextContent('00:00')
+    expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
+    expect(document.querySelectorAll('.chakra-spinner')).toHaveLength(0)
   })
 
   it('shows the panel error when criteria loading fails', async () => {

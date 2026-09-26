@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Button, Flex, Text } from '@chakra-ui/react'
 import { ApiError, api } from '../api/client'
 import type { LatestScreen, RatioSpec, ScreenRunResult, ShortlistRow, UserCriteria } from '../api/types'
@@ -9,7 +9,6 @@ import { Num } from '../components/ui/Num'
 import { useStatusFact } from '../components/StatusRail'
 import { formatElapsed } from '../lib/format'
 import { BlurFade } from '../components/ui/BlurFade'
-import { BorderBeam } from '../components/ui/BorderBeam'
 import { DotPattern } from '../components/ui/DotPattern'
 import { NumberTicker } from '../components/ui/NumberTicker'
 import { toaster } from '../components/ui/toaster'
@@ -143,29 +142,10 @@ export default function Fundamentals() {
 
       <BlurFade>
         <div className="relative overflow-hidden rounded-lg border border-border bg-card p-4">
-          <BorderBeam active={running} />
           <Flex align="center" gap={4} wrap="wrap">
-            <Button
-              colorPalette="amber"
-              loading={running}
-              loadingText="Running…"
-              onClick={runScreen}
-            >
-              Run Screen
+            <Button colorPalette="sakura" disabled={running} onClick={runScreen}>
+              {running ? 'Running…' : 'Run Screen'}
             </Button>
-            {running ? (
-              <>
-                <Text fontSize="sm" color="fg.muted">
-                  Fetching fundamentals for ~500 stocks — takes a few minutes
-                </Text>
-                <Text data-testid="elapsed" fontSize="sm" color="fg.muted">
-                  <Num>{formatElapsed(elapsed)}</Num>
-                </Text>
-                <Suspense fallback={null}>
-                  <MarketRingLoader size={120} label="Running screen…" />
-                </Suspense>
-              </>
-            ) : null}
             {summary !== null ? (
               <Text data-testid="summary" fontSize="sm" color="fg.muted">
                 <Num>
@@ -187,6 +167,22 @@ export default function Fundamentals() {
               </Text>
             ) : null}
           </Flex>
+
+          {running ? (
+            <div className="mt-4 flex flex-col items-center gap-2">
+              <Suspense fallback={null}>
+                <MarketRingLoader size={120} label="Running screen…" />
+              </Suspense>
+              <Text fontSize="sm" color="fg.muted">
+                Fetching fundamentals for ~500 stocks — takes a few minutes
+              </Text>
+              <Text fontSize="sm" color="fg.muted">
+                <span data-testid="elapsed">
+                  <Num>{formatElapsed(elapsed)}</Num>
+                </span>
+              </Text>
+            </div>
+          ) : null}
         </div>
       </BlurFade>
 

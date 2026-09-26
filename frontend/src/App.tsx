@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { IconButton, Text } from '@chakra-ui/react'
 import { LogOut, TrendingUp } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -93,12 +93,17 @@ function AppShell() {
 }
 
 export default function App() {
+  const onLogin = useLocation().pathname === '/login'
+
   return (
     <>
       <Backdrop />
-      <Suspense fallback={null}>
-        <AmbientField />
-      </Suspense>
+      {/* Login draws its own Sakura Garden scene; one decorative loop per viewport zone. */}
+      {onLogin ? null : (
+        <Suspense fallback={null}>
+          <AmbientField />
+        </Suspense>
+      )}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

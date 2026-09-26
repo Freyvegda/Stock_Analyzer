@@ -6,6 +6,12 @@ import Login from '../Login'
 import { AuthProvider } from '../../auth/AuthContext'
 import { Provider } from '../../components/ui/provider'
 
+// The garden scene is three.js; its own suite covers the gates. Here it stays inert
+// so jsdom keeps a real canvas out of the auth tests.
+vi.mock('@/components/three/SakuraScene', () => ({
+  default: () => <div data-testid="sakura-scene-mock" />,
+}))
+
 interface Stub {
   status?: number
   body?: unknown
@@ -70,6 +76,31 @@ describe('Login', () => {
     renderLogin()
     expect(await screen.findByRole('button', { name: /^log in$/i })).toBeInTheDocument()
     expect(screen.queryByLabelText(/confirm password/i)).not.toBeInTheDocument()
+  })
+
+  it('lays the auth card over the sakura garden scene', async () => {
+    stubFetch({
+      ...ANONYMOUS_ME,
+      'GET /api/auth/state': { body: { users_exist: true, user: null } },
+    })
+    renderLogin()
+    expect(await screen.findByTestId('sakura-scene-mock')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: /log in/i })).toBeInTheDocument()
+  })
+
+  it('toggles password visibility without submitting', async () => {
+    const fetchMock = stubFetch({
+      ...ANONYMOUS_ME,
+      'GET /api/auth/state': { body: { users_exist: true, user: null } },
+    })
+    renderLogin()
+    const field = await screen.findByLabelText(/^password$/i)
+    expect(field).toHaveAttribute('type', 'password')
+    await userEvent.click(screen.getByRole('button', { name: /show password/i }))
+    expect(screen.getByLabelText(/^password$/i)).toHaveAttribute('type', 'text')
+    await userEvent.click(screen.getByRole('button', { name: /hide password/i }))
+    expect(screen.getByLabelText(/^password$/i)).toHaveAttribute('type', 'password')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/auth/login', expect.anything())
   })
 
   it('rejects a mismatched confirmation locally', async () => {
@@ -153,7 +184,7 @@ describe('Login', () => {
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1')
     await userEvent.click(screen.getByRole('button', { name: /create account/i }))
     await waitFor(() => expect(screen.getByTestId('inline-spinner')).toBeInTheDocument())
-    expect(screen.getByRole('button')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /working/i })).toBeDisabled()
     release()
     expect(await screen.findByText('fundamentals home')).toBeInTheDocument()
   })
