@@ -5,7 +5,7 @@
 ## Purpose
 
 Python + FastAPI service. Runs 4-stage pipeline for Indian-market (Nifty 500) analysis:
-1. **Screen** — fetch fundamentals for ~500 stocks, filter to ~10 via YAML-configured ratios
+1. **Screen** — fetch fundamentals for ~500 stocks, filter to ~10 via the caller's DB-stored criteria (YAML retired in Phase 1.5)
 2. **Docs** — fetch + parse PDFs (concalls, quarterly results, investor presentations, audit reports) for shortlisted stocks only, analyze with Gemini Flash (free tier) with keyword fallback
 3. **Model** — XGBoost on 5yr daily OHLC features -> buy/sell/hold signals per shortlisted stock
 4. **Backtest** — walk-forward (3y train / 1q test, rolling 2019-2024), report CAGR/Sharpe/max-drawdown vs Nifty 500
@@ -25,21 +25,27 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 ```
 backend/
 ├── app/
-│   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
+│   ├── main.py            # FastAPI app, CORS (localhost:5173), session middleware, router mounts, /health
 │   ├── api/
-│   │   ├── screen.py      # POST /screen/run, GET /screen/latest
+│   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
+│   │   ├── screen.py      # /screen/ratios, criteria CRUD, POST /screen/run, GET /screen/latest
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
 │   │   ├── signals.py     # POST /model/train, POST /model/predict, GET /model/signals
 │   │   └── backtest.py    # POST /backtest/run, GET /backtest/{id}
+│   ├── auth/              # scrypt hashing, user service, current_user dependency
+│   │   ├── security.py
+│   │   ├── service.py
+│   │   └── deps.py
 │   ├── data/
 │   │   ├── provider.py    # DataProvider ABC — THE extension point
 │   │   ├── yfinance_impl.py
 │   │   ├── screener_impl.py
 │   │   └── nse_impl.py
 │   ├── screener/
-│   │   ├── engine.py      # ratio filtering + ranking -> shortlist (pure)
-│   │   ├── service.py     # fetch + persist + evaluate orchestration (rule 6)
-│   │   └── config.py      # YAML load/validate + hot reload (lru_cache + cache_clear)
+│   │   ├── catalog.py     # RATIO_CATALOG — source of truth for valid criteria keys
+│   │   ├── criteria.py    # pydantic criteria models, defaults, validation (ConfigError)
+│   │   ├── engine.py      # criteria filtering + ranking -> shortlist (pure)
+│   │   └── service.py     # fetch + persist + evaluate + criteria CRUD orchestration (rule 6)
 │   ├── docs/
 │   │   ├── fetcher.py     # PDF download -> data/docs/{symbol}/
 │   │   ├── parser.py      # pdfplumber extraction
@@ -53,8 +59,8 @@ backend/
 │   │   └── walkforward.py
 │   └── db/
 │       ├── database.py    # engine, SessionLocal, Base, init_db()
-│       └── models.py      # 8 tables — see DATABASE.md
-├── config/screening.yaml  # USER-EDITABLE ratio thresholds
+│       └── models.py      # 10 tables — see DATABASE.md
+├── scripts/               # manual, online-only checks (verify_catalog.py)
 ├── tests/
 ├── requirements.txt
 └── pyproject.toml         # pytest config: testpaths, pythonpath=.
@@ -68,14 +74,15 @@ backend/
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
 5. **Gemini fallback**: on rate limit/error, queue with exponential backoff, then keyword-based sentiment; always record `method = gemini|fallback` in `doc_analysis`.
 6. **Thin API layer**: routers validate input and call services. Business logic lives in `screener/`, `docs/`, `models/`, `backtest/` — not in `api/`.
-7. **Config via `config/screening.yaml` only** — ratio thresholds are never hardcoded. `load_config()` is lru_cached; `reload_config()` clears cache (hot-reload endpoint).
+7. **Criteria live in the database, per user** (Phase 1.5 retired `config/screening.yaml`). Valid keys are owned by `screener/catalog.py`; validation/defaults by `screener/criteria.py`; the engine reads only enabled criteria and clamps every run to 10 rows. `shortlist_size` is server-owned and never accepted from clients.
+8. **Auth**: scrypt password hashing + signed `sa_session` cookie (Starlette `SessionMiddleware`, secret at `data/.session_secret`). Every route except `/health` and public `/auth` state/login/setup requires `current_user` (401 `Not authenticated`).
 
 ## Data Flow
 
 ```
 Nifty 500 list -> stocks table
   -> fundamentals(symbol) per stock -> fundamentals table (data_status ok|failed)
-  -> service.py + engine.py apply screening.yaml -> screen_runs.shortlisted_json (~10 symbols)
+  -> service.py + engine.py apply the caller's DB criteria -> screen_runs.shortlisted_json (~10 symbols)
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table
@@ -105,6 +112,7 @@ Nifty 500 list -> stocks table
 | Phase | Deliverable | Done when |
 |---|---|---|
 | 1 | Screener | POST /screen/run shortlists from live yfinance data; ratio unit tests pass vs hand-computed fixtures |
+| 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria`, dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |
 | 3 | Price model | Signals generated for shortlist; model trains on synthetic data in tests |
 | 4 | Backtest | Walk-forward report vs Nifty 500; offline integration test green |

@@ -1,7 +1,26 @@
-from sqlalchemy import Float, Integer, String, Text
+from sqlalchemy import Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class UserCriteria(Base):
+    __tablename__ = "user_criteria"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    criteria_json: Mapped[str] = mapped_column(Text, nullable=False)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shortlist_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class Stock(Base):
@@ -32,8 +51,9 @@ class ScreenRun(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[str] = mapped_column(String)
-    config_yaml: Mapped[str] = mapped_column(Text)
-    shortlisted_json: Mapped[str] = mapped_column(Text)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    criteria_json: Mapped[str] = mapped_column(Text, nullable=False)
+    shortlisted_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class Document(Base):

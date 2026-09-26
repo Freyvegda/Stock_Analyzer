@@ -8,11 +8,12 @@ synchronous for the MVP; an async job queue is a later optimization.
 import concurrent.futures
 import json
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
+from app.auth.service import seed_default_criteria
 from app.data.provider import DataProvider
-from app.db.models import Fundamental, ScreenRun, Stock
-from app.screener.config import read_config_text
+from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
+from app.screener.criteria import criteria_from_json, criteria_to_json
 from app.screener.engine import evaluate_screen
 
 logger = logging.getLogger(__name__)
@@ -39,8 +40,18 @@ def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, d
         return list(pool.map(fetch_one, stocks))
 
 
-def run_screen(provider: DataProvider, session_factory, config: dict) -> dict:
-    """Run the full fundamental screen and persist it. Same-day reruns merge."""
+def run_screen(
+    provider: DataProvider,
+    session_factory,
+    user: dict,
+    criteria: list[dict],
+    shortlist_size: int = 10,
+) -> dict:
+    """Run the full fundamental screen for one user and persist it.
+
+    Same-day reruns merge fundamentals; one ScreenRun per call with the
+    criteria snapshot verbatim for reproducibility.
+    """
     today = date.today().isoformat()
     stocks = provider.list_stocks()
     results = _fetch_all(provider, stocks)
@@ -89,10 +100,11 @@ def run_screen(provider: DataProvider, session_factory, config: dict) -> dict:
             )
             rows.append({**f, "market_cap": f.get("market_cap")})
 
-        shortlist, rejected = evaluate_screen(rows, config)
+        shortlist, rejected = evaluate_screen(rows, criteria, shortlist_size)
         run = ScreenRun(
             run_date=today,
-            config_yaml=read_config_text(),
+            user_id=user["id"],
+            criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
@@ -111,10 +123,43 @@ def run_screen(provider: DataProvider, session_factory, config: dict) -> dict:
     }
 
 
-def latest_screen(session_factory) -> dict | None:
-    """Latest stored run joined with stock name/sector/market_cap. None if empty."""
+def get_criteria(session_factory, user_id: int) -> dict:
+    """Caller's criteria; seeds Phase-1 defaults on first read. Corrupt JSON
+    (tampered DB) falls back to defaults rather than 500-ing."""
     with session_factory() as session:
-        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+        row = seed_default_criteria(session, user_id)
+        session.commit()
+        return {
+            "criteria": criteria_from_json(row.criteria_json),
+            "thesis": row.thesis,
+            "shortlist_size": row.shortlist_size,
+        }
+
+
+def save_criteria(session_factory, user_id: int, criteria: list[dict], thesis: str | None) -> dict:
+    """Persist the caller's criteria. ``shortlist_size`` stays server-owned."""
+    with session_factory() as session:
+        row = seed_default_criteria(session, user_id)
+        row.criteria_json = criteria_to_json(criteria)
+        row.thesis = thesis
+        row.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        session.commit()
+        return {
+            "criteria": criteria_from_json(row.criteria_json),
+            "thesis": row.thesis,
+            "shortlist_size": row.shortlist_size,
+        }
+
+
+def latest_screen(session_factory, user_id: int) -> dict | None:
+    """Caller's latest stored run joined with stock name/sector/market_cap."""
+    with session_factory() as session:
+        run = (
+            session.query(ScreenRun)
+            .filter(ScreenRun.user_id == user_id)
+            .order_by(ScreenRun.id.desc())
+            .first()
+        )
         if run is None:
             return None
         shortlist = json.loads(run.shortlisted_json)

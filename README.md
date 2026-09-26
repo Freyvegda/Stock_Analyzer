@@ -2,7 +2,9 @@
 
 Personal Indian-market (Nifty 500) analysis tool. See `PLAN.md` for the full plan.
 
-Pipeline: fundamental screen (YAML-configurable ratios) → AI document analysis (concalls, results, audits) → XGBoost price signals → walk-forward backtest vs Nifty.
+Pipeline: fundamental screen (per-user DB criteria) → AI document analysis (concalls, results, audits) → XGBoost price signals → walk-forward backtest vs Nifty.
+
+First visit creates the single account (login-gated app); criteria are edited in the UI or via `GET/PUT /screen/criteria`.
 
 ## Stack
 
@@ -32,4 +34,4 @@ cd frontend; npm run test
 
 ## Config
 
-Screening ratios: `backend/config/screening.yaml` — edit thresholds, restart or call reload.
+Screening criteria live in the database, per user (`user_criteria`) — edit them in the UI (Edit Criteria) or via `GET/PUT /screen/criteria`. The former `backend/config/screening.yaml` was retired in Phase 1.5.

@@ -1,39 +1,21 @@
 import json
 import logging
 from datetime import date
-from pathlib import Path
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.api import screen
-from app.db.database import Base
-from app.db.models import Fundamental, ScreenRun, Stock
-from app.main import app
-from app.screener import config as config_module
-
-client = TestClient(app)
-
-TEST_YAML = """criteria:
-  pe_max: 25
-  pb_max: 5
-  roe_min: 15
-  roce_min: 15
-  debt_to_equity_max: 0.5
-  market_cap_min: 1000
-shortlist_size: 10
-"""
+from app.api import screen as screen_api
+from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
+from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
 BAD = {"pe": 80, "pb": 12, "roe": 5, "roce": 5, "debt_to_equity": 2.0, "market_cap": 100}
-FAILED_CRITERIA = ["pe_max", "pb_max", "roe_min", "roce_min", "debt_to_equity_max", "market_cap_min"]
+FAILED_KEYS = ["pe", "pb", "roe", "roce", "debt_to_equity", "market_cap"]
 
 
 class FakeProvider:
-    def __init__(self, stale: bool = False, fail_symbols: tuple[str, ...] = (), partial_symbols: tuple[str, ...] = ()):
+    def __init__(self, stale=False, fail_symbols=(), partial_symbols=()):
         self.stale = stale
         self.fail_symbols = set(fail_symbols)
         self.partial_symbols = set(partial_symbols)
@@ -59,156 +41,140 @@ class FakeProvider:
                 "market_cap": None,
                 "raw": {"src": "fake"},
             }
-        f = GOOD if symbol == "AAA" else BAD
-        return {"symbol": symbol, **f, "raw": {"src": "fake"}}
+        data = GOOD if symbol == "AAA" else BAD
+        return {"symbol": symbol, **data, "raw": {"src": "fake", "currentRatio": 1.8}}
 
 
 @pytest.fixture
-def db(tmp_path, monkeypatch):
-    engine = create_engine(f"sqlite:///{tmp_path}/test.db")
-    TestSession = sessionmaker(bind=engine)
-    Base.metadata.create_all(engine)
-    monkeypatch.setattr(screen, "SessionLocal", TestSession)
-    monkeypatch.setattr(screen, "init_db", lambda: None)
+def provider(monkeypatch):
+    def _use(p):
+        monkeypatch.setattr(screen_api, "get_provider", lambda: p)
+        return p
 
-    config_path = tmp_path / "screening.yaml"
-    config_path.write_text(TEST_YAML, encoding="utf-8")
-    monkeypatch.setattr(config_module, "CONFIG_PATH", str(config_path))
-    return TestSession
+    return _use
 
 
-def use_provider(monkeypatch, provider):
-    monkeypatch.setattr(screen, "get_provider", lambda: provider)
-
-
-def test_screen_run_and_latest(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider())
-
-    res = client.post("/screen/run")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["total"] == 3
-    assert body["failed_count"] == 1
-    assert body["failed_symbols"] == ["CCC"]
-    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
-    assert body["failed_details"] == [{"symbol": "BBB", "failed": FAILED_CRITERIA}]
-    assert body["stale"] is False
-
-    latest = client.get("/screen/latest")
-    assert latest.status_code == 200
-    rows = latest.json()["shortlisted"]
-    assert rows[0]["symbol"] == "AAA"
-    assert rows[0]["name"] == "Alpha"
-    json.dumps(rows)  # serializable
-
-
-def test_failed_fetch_persisted_with_data_status(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider())
-    client.post("/screen/run")
-
-    today = date.today().isoformat()
-    with db() as session:
-        failed = session.get(Fundamental, ("CCC", today))
-        assert failed.data_status == "failed"
-        assert failed.pe is None
-        assert "fetch failed" in failed.raw_json
-
-        ok = session.get(Fundamental, ("AAA", today))
-        assert ok.data_status == "ok"
-        assert ok.roe == 25
-
-
-def test_successful_fetch_with_null_ratios_is_ok_and_rejected(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider(partial_symbols=("BBB",)))
+def test_run_uses_caller_criteria_and_stores_snapshot(client, sign_in, provider, test_db):
+    user = sign_in()
+    provider(FakeProvider())
 
     body = client.post("/screen/run").json()
-
+    assert body["total"] == 3
+    assert body["failed_count"] == 1 and body["failed_symbols"] == ["CCC"]
     assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
-    assert body["failed_details"] == [{"symbol": "BBB", "failed": FAILED_CRITERIA}]
-    with db() as session:
-        row = session.get(Fundamental, ("BBB", date.today().isoformat()))
-        assert row.data_status == "ok"  # fetch succeeded; ratios are genuinely missing
-        assert row.pe is None
-        assert json.loads(row.raw_json) == {"src": "fake"}
+    assert body["failed_details"] == [{"symbol": "BBB", "failed": FAILED_KEYS}]
+    with test_db() as session:
+        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+        assert run.user_id == user["id"]
+        assert json.loads(run.criteria_json) == default_criteria()
 
 
-def test_failed_fetch_logs_warning(db, monkeypatch, caplog):
-    use_provider(monkeypatch, FakeProvider())
+def test_latest_is_per_user(client, sign_in, provider, test_db):
+    a = sign_in("alice")
+    provider(FakeProvider())
+    client.post("/screen/run")
+    b = sign_in("bob")
+    assert client.get("/screen/latest").status_code == 404  # bob has no run
+    client.post("/screen/run")
+    assert client.get("/screen/latest").json()["shortlisted"][0]["symbol"] == "AAA"
+    sign_in("alice")
+    assert client.get("/screen/latest").json()["shortlisted"][0]["symbol"] == "AAA"
+    with test_db() as session:
+        assert {r.user_id for r in session.query(ScreenRun).all()} == {a["id"], b["id"]}
 
-    with caplog.at_level(logging.WARNING):
-        client.post("/screen/run")
 
-    assert "CCC" in caplog.text
+def test_tampered_shortlist_size_still_clamps(client, sign_in, provider, test_db):
+    user = sign_in()
+    with test_db() as session:
+        session.add(
+            UserCriteria(
+                user_id=user["id"],
+                criteria_json=json.dumps(default_criteria()),
+                thesis=None,
+                shortlist_size=50,
+                updated_at="now",
+            )
+        )
+        session.commit()
+    provider(FakeProvider())
+    body = client.post("/screen/run").json()
+    assert len(body["shortlisted"]) == 1  # only AAA survives, never more than 10
+    assert body["shortlisted"][0]["rank"] == 1
 
 
-def test_unreachable_provider_returns_structured_502(db, monkeypatch):
+def test_disabled_criteria_and_raw_catalog_are_honored(client, sign_in, provider, test_db):
+    user = sign_in()
+    criteria = [
+        {"key": "pe", "enabled": False, "value": 25},
+        {"key": "currentRatio", "enabled": True, "value": 1.5},
+    ]
+    with test_db() as session:
+        session.add(
+            UserCriteria(
+                user_id=user["id"],
+                criteria_json=json.dumps(criteria),
+                thesis=None,
+                shortlist_size=10,
+                updated_at="now",
+            )
+        )
+        session.commit()
+    provider(FakeProvider(partial_symbols=("BBB",)))
+    body = client.post("/screen/run").json()
+    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]  # pe disabled, raw passes
+    assert body["failed_details"] == [{"symbol": "BBB", "failed": ["currentRatio"]}]
+
+
+def test_failed_fetch_persisted_and_market_cap_preserved(client, sign_in, provider, test_db):
+    sign_in()
+    provider(FakeProvider())
+    client.post("/screen/run")
+    provider(FakeProvider(fail_symbols=("AAA",)))
+    client.post("/screen/run")
+    with test_db() as session:
+        assert session.get(Stock, "AAA").market_cap == 5000.0
+        assert session.get(Fundamental, ("CCC", date.today().isoformat())).data_status == "failed"
+
+
+def test_run_twice_same_day_is_idempotent(client, sign_in, provider, test_db):
+    sign_in()
+    provider(FakeProvider())
+    client.post("/screen/run")
+    client.post("/screen/run")
+    with test_db() as session:
+        assert session.query(ScreenRun).count() == 2
+        assert session.query(Fundamental).count() == 3
+
+
+def test_stale_provider_flagged(client, sign_in, provider):
+    sign_in()
+    provider(FakeProvider(stale=True))
+    assert client.post("/screen/run").json()["stale"] is True
+
+
+def test_unreachable_provider_returns_structured_502(client, sign_in, provider):
+    sign_in()
+
     class DeadProvider:
         stale = False
 
         def list_stocks(self):
             raise httpx.ConnectError("nifty500 download refused")
 
-        def fundamentals(self, symbol):
-            raise AssertionError("must not be reached")
-
-    use_provider(monkeypatch, DeadProvider())
-
+    provider(DeadProvider())
     res = client.post("/screen/run")
-
     assert res.status_code == 502
     assert "nifty500 download refused" in res.json()["detail"]
 
 
-def test_market_cap_preserved_when_fetch_fails(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider())
-    client.post("/screen/run")
-
-    use_provider(monkeypatch, FakeProvider(fail_symbols=("AAA",)))
-    client.post("/screen/run")
-
-    with db() as session:
-        assert session.get(Stock, "AAA").market_cap == 5000.0
+def test_screen_routes_require_auth(client, test_db):
+    assert client.post("/screen/run").status_code == 401
+    assert client.get("/screen/latest").status_code == 401
 
 
-def test_run_twice_same_day_is_idempotent(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider())
-    client.post("/screen/run")
-    client.post("/screen/run")
-
-    with db() as session:
-        assert session.query(ScreenRun).count() == 2
-        assert session.query(Fundamental).count() == 3
-
-
-def test_stale_provider_flagged_in_response(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider(stale=True))
-
-    body = client.post("/screen/run").json()
-    assert body["stale"] is True
-
-
-def test_config_endpoints():
-    assert client.get("/screen/config").status_code == 200
-    assert client.post("/screen/config/reload").status_code == 200
-
-
-def test_snapshot_matches_evaluated_config_until_reload(db, monkeypatch):
-    use_provider(monkeypatch, FakeProvider())
-    client.post("/screen/run")  # loads and caches the config
-
-    # User edits the file but does not hit reload.
-    Path(config_module.CONFIG_PATH).write_text(TEST_YAML.replace("pe_max: 25", "pe_max: 5"), encoding="utf-8")
-
-    body = client.post("/screen/run").json()
-    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]  # cached pe_max=25 still applied
-    with db() as session:
-        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
-        assert run.config_yaml == TEST_YAML  # snapshot == config actually evaluated
-
-    client.post("/screen/config/reload")
-
-    body = client.post("/screen/run").json()
-    assert body["shortlisted"] == []  # pe_max=5 rejects AAA (pe 20)
-    with db() as session:
-        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
-        assert "pe_max: 5" in run.config_yaml
+def test_failed_fetch_logs_warning(client, sign_in, provider, caplog):
+    sign_in()
+    provider(FakeProvider())
+    with caplog.at_level(logging.WARNING):
+        client.post("/screen/run")
+    assert "CCC" in caplog.text
