@@ -11,9 +11,13 @@ from functools import lru_cache
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from app.screener.engine import CRITERIA
+from app.screener.catalog import RATIO_CATALOG
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "config", "screening.yaml")
+
+# Legacy YAML criterion names (engine keys moved to the catalog in Phase 1.5;
+# this module and screening.yaml are deleted at the end of the phase).
+CRITERIA = {f"{spec.key}_{spec.direction}": (spec.key, spec.direction) for spec in RATIO_CATALOG}
 
 
 class ConfigError(ValueError):
