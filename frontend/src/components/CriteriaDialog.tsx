@@ -218,7 +218,7 @@ export function CriteriaDialog({
                           key={row.key}
                           initial={reduced ? false : { opacity: 0, y: 4 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.22, delay: index * 0.03 }}
+                          transition={{ duration: 0.2, delay: index * 0.016 }}
                         >
                           <Flex align="center" gap={3} opacity={row.enabled ? 1 : 0.6}>
                             <Switch.Root
@@ -326,7 +326,7 @@ export function CriteriaDialog({
                 Cancel
               </Button>
               <Button
-                colorPalette="emerald"
+                colorPalette="amber"
                 loading={saving}
                 loadingText="Saving…"
                 disabled={saving}

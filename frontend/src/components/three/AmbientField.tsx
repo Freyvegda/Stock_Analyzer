@@ -4,11 +4,13 @@ import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/lib/webgl'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
+import { useColorMode } from '@/components/ui/color-mode'
+import { paletteFor } from '@/theme/tokens'
 
-const PARTICLE_COUNT = 800
+const PARTICLE_COUNT = 500
 const SPREAD = 12
 
-function ParticleField() {
+function ParticleField({ color }: { color: string }) {
   const points = useRef<THREE.Points>(null)
   const positions = useMemo(() => {
     const array = new Float32Array(PARTICLE_COUNT * 3)
@@ -18,10 +20,21 @@ function ParticleField() {
     return array
   }, [])
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (document.hidden || !points.current) return
     points.current.rotation.y += delta * 0.03
     points.current.rotation.x += delta * 0.01
+
+    // Embers rise with a slow sway, wrapped back to the floor when they float away.
+    const attribute = points.current.geometry.getAttribute('position') as THREE.BufferAttribute
+    const array = attribute.array as Float32Array
+    const time = state.clock.elapsedTime
+    for (let i = 0; i < array.length; i += 3) {
+      array[i] += Math.sin(time * 0.2 + i) * delta * 0.01
+      array[i + 1] += delta * 0.03
+      if (array[i + 1] > SPREAD / 2) array[i + 1] = -SPREAD / 2
+    }
+    attribute.needsUpdate = true
   })
 
   return (
@@ -30,11 +43,11 @@ function ParticleField() {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        color="#10b981"
+        color={color}
         size={0.02}
         sizeAttenuation
         transparent
-        opacity={0.35}
+        opacity={0.3}
         depthWrite={false}
       />
     </points>
@@ -47,6 +60,7 @@ export default function AmbientField({
   className?: string
 }) {
   const reduced = usePrefersReducedMotion()
+  const { colorMode } = useColorMode()
 
   if (!hasWebGL() || reduced) return null
 
@@ -58,7 +72,7 @@ export default function AmbientField({
         camera={{ position: [0, 0, 6], fov: 45 }}
         gl={{ antialias: false, powerPreference: 'low-power' }}
       >
-        <ParticleField />
+        <ParticleField color={paletteFor(colorMode).primary} />
       </Canvas>
     </div>
   )

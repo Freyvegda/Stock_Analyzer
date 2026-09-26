@@ -143,7 +143,7 @@ export default function Login() {
             ) : null}
             <Button
               type="submit"
-              colorPalette="emerald"
+              colorPalette="amber"
               loading={submitting}
               loadingText="Working…"
               disabled={submitting}

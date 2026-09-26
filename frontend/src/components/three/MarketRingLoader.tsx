@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/lib/webgl'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import { useColorMode } from '@/components/ui/color-mode'
-import { dark as darkTokens, light as lightTokens } from '@/theme/tokens'
+import { paletteFor } from '@/theme/tokens'
 
 const CANDLE_COUNT = 48
 const RADIUS = 1.2
@@ -107,7 +107,7 @@ export function MarketRingLoader({
 }) {
   const reduced = usePrefersReducedMotion()
   const { colorMode } = useColorMode()
-  const palette = colorMode === 'dark' ? darkTokens : lightTokens
+  const palette = paletteFor(colorMode)
 
   const seeds = useMemo<CandleSeed[]>(
     () =>

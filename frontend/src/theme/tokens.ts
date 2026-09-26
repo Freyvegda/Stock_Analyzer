@@ -159,6 +159,11 @@ export const chartPalette: { dark: ChartPalette; light: ChartPalette } = {
   },
 }
 
+/** Selects the palette for a resolved colour mode (light until proven dark). */
+export function paletteFor(colorMode: string | undefined): ThemeTokens {
+  return colorMode === 'dark' ? dark : light
+}
+
 export const CSS_VAR_BY_KEY: Record<keyof ThemeTokens, string> = {
   background: '--background',
   foreground: '--foreground',
