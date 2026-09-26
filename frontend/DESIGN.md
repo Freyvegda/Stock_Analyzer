@@ -20,7 +20,9 @@ red communicates loss/destructive.
 | `--destructive` | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` | loss, errors, D/E warnings |
 
 Chakra mirrors the accent as the semantic token `brand` (`emerald.600` light,
-`emerald.500` dark).
+`emerald.500` dark) and defines the full Tailwind emerald scale as tokens in
+`src/theme/system.ts`, including the virtual `emerald` color tokens that make
+`colorPalette="emerald"` valid.
 
 Rules:
 - Never hardcode palette classes (`zinc-950`, `zinc-100`, `text-white`) in shell or screen
