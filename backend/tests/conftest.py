@@ -1,5 +1,6 @@
 import json
 from base64 import b64encode
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,8 +8,7 @@ from itsdangerous import TimestampSigner
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.auth.security import session_secret
-from app.auth.service import create_user
+from app.auth.security import hash_password, session_secret
 from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
 from app.db.models import User
@@ -60,14 +60,23 @@ def test_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sign_in(client, test_db):
-    """Sign in (creating the user on first use) and install the session cookie."""
+    """Sign in a user (creating the row directly — no single-account guard) and
+    install the session cookie. Idempotent for repeated usernames."""
 
     def _sign_in(username: str = "alice", password: str = "password123") -> dict:
+        username = username.strip().lower()
         with test_db() as session:
-            existing = session.query(User).filter(User.username == username.strip().lower()).first()
-            user = {"id": existing.id, "username": existing.username} if existing else None
-        if user is None:
-            user = create_user(test_db, username, password)
+            row = session.query(User).filter(User.username == username).first()
+            if row is None:
+                row = User(
+                    username=username,
+                    password_hash=hash_password(password),
+                    created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                )
+                session.add(row)
+                session.commit()
+                session.refresh(row)
+            user = {"id": row.id, "username": row.username}
         client.cookies.set("sa_session", create_session_cookie(user))
         return user
 

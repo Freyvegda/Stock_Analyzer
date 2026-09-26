@@ -8,10 +8,12 @@ synchronous for the MVP; an async job queue is a later optimization.
 import concurrent.futures
 import json
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
+from app.auth.service import seed_default_criteria
 from app.data.provider import DataProvider
-from app.db.models import Fundamental, ScreenRun, Stock
+from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
+from app.screener.criteria import criteria_from_json, criteria_to_json
 from app.screener.config import read_config_text
 from app.screener.engine import evaluate_screen
 
@@ -109,6 +111,34 @@ def run_screen(provider: DataProvider, session_factory, config: dict) -> dict:
         "stale": bool(getattr(provider, "stale", False)),
         "total": len(stocks),
     }
+
+
+def get_criteria(session_factory, user_id: int) -> dict:
+    """Caller's criteria; seeds Phase-1 defaults on first read. Corrupt JSON
+    (tampered DB) falls back to defaults rather than 500-ing."""
+    with session_factory() as session:
+        row = seed_default_criteria(session, user_id)
+        session.commit()
+        return {
+            "criteria": criteria_from_json(row.criteria_json),
+            "thesis": row.thesis,
+            "shortlist_size": row.shortlist_size,
+        }
+
+
+def save_criteria(session_factory, user_id: int, criteria: list[dict], thesis: str | None) -> dict:
+    """Persist the caller's criteria. ``shortlist_size`` stays server-owned."""
+    with session_factory() as session:
+        row = seed_default_criteria(session, user_id)
+        row.criteria_json = criteria_to_json(criteria)
+        row.thesis = thesis
+        row.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        session.commit()
+        return {
+            "criteria": criteria_from_json(row.criteria_json),
+            "thesis": row.thesis,
+            "shortlist_size": row.shortlist_size,
+        }
 
 
 def latest_screen(session_factory) -> dict | None:
