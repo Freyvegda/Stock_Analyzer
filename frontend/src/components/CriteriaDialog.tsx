@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Button,
   CloseButton,
@@ -10,6 +10,7 @@ import {
   IconButton,
   Input,
   Portal,
+  Spinner,
   Stack,
   Switch,
   Text,
@@ -21,7 +22,8 @@ import { ApiError, api } from '@/api/client'
 import type { Criterion, RatioSpec, UserCriteria } from '@/api/types'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import { toaster } from '@/components/ui/toaster'
-import { StairTowerLoader } from '@/components/ui/StairTowerLoader'
+
+const MarketRingLoader = lazy(() => import('@/components/three/MarketRingLoader'))
 
 interface DraftRow {
   key: string
@@ -313,7 +315,9 @@ export function CriteriaDialog({
                 </Stack>
               ) : (
                 <Flex justify="center" py={4}>
-                  <StairTowerLoader size={80} label="Loading criteria…" />
+                  <Suspense fallback={null}>
+                    <MarketRingLoader size={80} label="Loading criteria…" />
+                  </Suspense>
                 </Flex>
               )}
             </Dialog.Body>
@@ -324,8 +328,9 @@ export function CriteriaDialog({
               <Button
                 colorPalette="emerald"
                 loading={saving}
+                loadingText="Saving…"
                 disabled={saving}
-                spinner={<StairTowerLoader size={20} label="Saving…" />}
+                spinner={<Spinner data-testid="inline-spinner" size="sm" />}
                 onClick={() => void save()}
               >
                 Save

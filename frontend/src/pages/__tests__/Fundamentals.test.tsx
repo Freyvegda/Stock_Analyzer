@@ -142,7 +142,7 @@ describe('Fundamentals', () => {
     expect(await screen.findByTestId('elapsed')).toHaveTextContent('00:00')
   })
 
-  it('shows the stair-tower loader while the screen runs', async () => {
+  it('shows the market ring loader while the screen runs', async () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
     let release = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -151,7 +151,7 @@ describe('Fundamentals', () => {
     mockedApi.post.mockReturnValue(gate.then(() => ({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })))
     renderPage()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
-    expect(await screen.findByRole('status')).toBeInTheDocument()
+    expect(await screen.findByTestId('market-ring-loader')).toBeInTheDocument()
     release()
   })
 

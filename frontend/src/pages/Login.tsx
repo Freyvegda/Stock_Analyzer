@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Box, Button, Field, Flex, Input, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Field, Flex, Input, Spinner, Stack, Text } from '@chakra-ui/react'
 import { ApiError, api } from '@/api/client'
 import type { AuthState, AuthUser } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
-import { StairTowerLoader } from '@/components/ui/StairTowerLoader'
+
+const MarketRingLoader = lazy(() => import('@/components/three/MarketRingLoader'))
 
 type Phase = 'loading' | 'setup' | 'login'
 
@@ -84,7 +85,9 @@ export default function Login() {
   if (phase === 'loading') {
     return (
       <Flex minH="100vh" align="center" justify="center" px={6}>
-        <StairTowerLoader size={120} label="Checking session…" />
+        <Suspense fallback={null}>
+          <MarketRingLoader size={120} label="Checking session…" />
+        </Suspense>
       </Flex>
     )
   }
@@ -142,8 +145,9 @@ export default function Login() {
               type="submit"
               colorPalette="emerald"
               loading={submitting}
+              loadingText="Working…"
               disabled={submitting}
-              spinner={<StairTowerLoader size={20} label="Working…" />}
+              spinner={<Spinner data-testid="inline-spinner" size="sm" />}
             >
               {isSetup ? 'Create account' : 'Log in'}
             </Button>

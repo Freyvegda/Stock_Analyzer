@@ -174,7 +174,7 @@ describe('CriteriaDialog', () => {
     expect(await screen.findByRole('checkbox', { name: 'PE' })).toBeInTheDocument()
   })
 
-  it('disables Save and shows the tower loader while the PUT is pending', async () => {
+  it('disables Save and shows the inline spinner while the PUT is pending', async () => {
     mockLoadSuccess()
     let release = () => {}
     const gate = new Promise<void>((resolve) => {
@@ -184,6 +184,7 @@ describe('CriteriaDialog', () => {
     renderDialog()
     await userEvent.click(await screen.findByRole('button', { name: /^save$/i }))
     await waitFor(() => expect(screen.getByRole('button', { name: /saving/i })).toBeDisabled())
+    expect(screen.getByTestId('inline-spinner')).toBeInTheDocument()
     release()
   })
 

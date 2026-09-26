@@ -279,6 +279,29 @@
       animation: none;
     }
   }
+
+  /* No-WebGL / small-viewport loader fallback ring. */
+  .vault-pulse {
+    border-radius: 9999px;
+    border: 1px solid var(--primary);
+    box-shadow:
+      0 0 0 4px rgba(255, 180, 84, 0.08),
+      inset 0 0 12px rgba(255, 180, 84, 0.25);
+    animation: vault-pulse 1.6s var(--ease-vault) infinite;
+  }
+
+  @keyframes vault-pulse {
+    50% {
+      transform: scale(0.92);
+      opacity: 0.65;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-pulse {
+      animation: none;
+    }
+  }
 }
 
 /* Theme-toggle circular wipe (View Transitions API; instant fallback otherwise). */

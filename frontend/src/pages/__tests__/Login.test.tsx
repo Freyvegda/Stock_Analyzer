@@ -152,7 +152,7 @@ describe('Login', () => {
     await userEvent.type(screen.getByLabelText(/^password$/i), 'password1')
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1')
     await userEvent.click(screen.getByRole('button', { name: /create account/i }))
-    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('inline-spinner')).toBeInTheDocument())
     expect(screen.getByRole('button')).toBeDisabled()
     release()
     expect(await screen.findByText('fundamentals home')).toBeInTheDocument()

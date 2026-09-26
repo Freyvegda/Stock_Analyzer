@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, Flex, Text } from '@chakra-ui/react'
 import { ApiError, api } from '../api/client'
 import type { LatestScreen, RatioSpec, ScreenRunResult, ShortlistRow, UserCriteria } from '../api/types'
@@ -12,8 +12,9 @@ import { BlurFade } from '../components/ui/BlurFade'
 import { BorderBeam } from '../components/ui/BorderBeam'
 import { DotPattern } from '../components/ui/DotPattern'
 import { NumberTicker } from '../components/ui/NumberTicker'
-import { StairTowerLoader } from '../components/ui/StairTowerLoader'
 import { toaster } from '../components/ui/toaster'
+
+const MarketRingLoader = lazy(() => import('../components/three/MarketRingLoader'))
 
 interface RunSummary {
   shortlisted: number
@@ -160,7 +161,9 @@ export default function Fundamentals() {
                 <Text data-testid="elapsed" fontSize="sm" color="fg.muted">
                   <Num>{formatElapsed(elapsed)}</Num>
                 </Text>
-                <StairTowerLoader size={120} label="Running screen…" />
+                <Suspense fallback={null}>
+                  <MarketRingLoader size={120} label="Running screen…" />
+                </Suspense>
               </>
             ) : null}
             {summary !== null ? (
