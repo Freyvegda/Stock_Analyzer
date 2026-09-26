@@ -54,9 +54,9 @@ def test_raw_criterion_reads_info_payload():
 
 
 def test_raw_criterion_applies_scale():
-    criteria = [{"key": "dividendYield", "enabled": True, "value": 1.5}]
-    assert apply_screen([row("G", raw={"dividendYield": 0.02})], criteria)  # 2.0% >= 1.5%
-    assert apply_screen([row("G", raw={"dividendYield": 0.01})], criteria) == []  # 1.0% < 1.5%
+    criteria = [{"key": "profitMargins", "enabled": True, "value": 1.5}]
+    assert apply_screen([row("G", raw={"profitMargins": 0.02})], criteria)  # 2.0% >= 1.5%
+    assert apply_screen([row("G", raw={"profitMargins": 0.01})], criteria) == []  # 1.0% < 1.5%
 
 
 def test_missing_or_nan_raw_value_fails():

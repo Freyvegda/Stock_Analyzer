@@ -61,7 +61,7 @@ RATIO_CATALOG: list[RatioSpec] = [
     RatioSpec("forwardEps", "Forward EPS", "raw", "min", "₹", "Per Share", 1.0, "forwardEps"),
     RatioSpec("bookValue", "Book Value", "raw", "min", "₹", "Per Share", 1.0, "bookValue"),
     RatioSpec("revenuePerShare", "Revenue / Share", "raw", "min", "₹", "Per Share", 1.0, "revenuePerShare"),
-    RatioSpec("dividendYield", "Dividend Yield", "raw", "min", "%", "Dividend", 100.0, "dividendYield"),
+    RatioSpec("dividendYield", "Dividend Yield", "raw", "min", "%", "Dividend", 1.0, "dividendYield"),
     RatioSpec("payoutRatio", "Payout Ratio", "raw", "max", "%", "Dividend", 100.0, "payoutRatio"),
     RatioSpec(
         "fiveYearAvgDividendYield", "5y Avg Dividend Yield", "raw", "min", "%", "Dividend",
