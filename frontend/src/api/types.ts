@@ -19,10 +19,18 @@ export interface ShortlistRow {
   market_cap?: number | null
 }
 
+export interface FailedDetail {
+  symbol: string
+  failed: string[]
+}
+
 export interface ScreenRunResult {
   run_id: number
   shortlisted: ShortlistRow[]
   failed_count: number
+  failed_symbols?: string[]
+  failed_details?: FailedDetail[]
+  stale?: boolean
   total: number
 }
 
