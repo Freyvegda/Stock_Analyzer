@@ -4,7 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <script>
+      try {
+        var key = 'stock-analyzer-theme'
+        var stored = localStorage.getItem(key)
+        if (stored !== null && stored !== 'light' && stored !== 'dark' && stored !== 'system') {
+          localStorage.removeItem(key)
+          stored = null
+        }
+        var dark = !stored || stored === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+          : stored === 'dark'
+        document.documentElement.classList.toggle('dark', dark)
+      } catch (e) {}
+    </script>
+    <title>Stock Analyzer</title>
   </head>
   <body>
     <div id="root"></div>

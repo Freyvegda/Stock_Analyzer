@@ -17,3 +17,12 @@ if (!window.matchMedia) {
     dispatchEvent: vi.fn(),
   }))
 }
+
+// Chakra popper (floating-ui) observes element size; jsdom has no ResizeObserver.
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
