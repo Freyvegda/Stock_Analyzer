@@ -26,8 +26,14 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   (`src/auth/AuthContext.tsx`) resolves `GET /auth/me` on mount; `RequireAuth` gates every route
   except `/login`. Any non-login/setup 401 dispatches `auth:unauthorized`, clears the user, and the
   guard redirects to `/login`.
-- Loader: `StairTowerLoader` (`src/components/ui/StairTowerLoader.tsx`) is the single sanctioned
-  looping animation (run card ~120px, login/save buttons ~20px) and never renders inside data areas.
+- Theming v2 "Phosphor Vault": `src/theme/tokens.ts` is the single source of colour truth; the
+  marked block in `src/index.css` is test-synced (`$env:VAULT_SYNC='1'; npm run tokens:sync`),
+  Chakra `system.ts` derives from it, and `contrast.test.ts` gates WCAG AA in both modes.
+- Typography: Geist UI + **Geist Mono for every number** via `Num`/`Delta`
+  (`src/components/ui/Num.tsx`, `Delta.tsx`). Amber is attention only — never gain/loss polarity.
+- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — 3D instanced
+  candlestick ring, lazy chunk, WebGL-gated (CSS `vault-pulse` fallback), static under reduced
+  motion, hidden below `md`; ≥96px contexts only, inline buttons use Chakra `Spinner`.
 - Path alias `@/` -> `src/` (vite.config.ts + tsconfig paths, NO baseUrl — TS6 deprecated)
 
 ## Structure
@@ -36,19 +42,24 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
 frontend/src/
 ├── main.tsx            # BrowserRouter + StrictMode + Provider + AuthProvider
 ├── App.tsx             # /login public; everything else inside RequireAuth + nav shell (+ logout)
-├── index.css           # @import "tailwindcss" + shadcn theme tokens
+├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
 │   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", 401 event
 │   └── types.ts        # AuthUser, RatioSpec, Criterion, UserCriteria, screen types
 ├── auth/
 │   └── AuthContext.tsx # session user state, logout, listens for auth:unauthorized
+├── theme/
+│   └── system.ts       # Chakra v3 system (amber + brand/gain/loss); tokens.ts is the source
 ├── pages/
 │   ├── Login.tsx       # setup card (first run) | login card
 │   ├── Fundamentals.tsx
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
-    ├── ui/             # shadcn + Chakra snippets + StairTowerLoader/stair-tower.css
+    ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton/BorderBeam
+    ├── three/          # AmbientField (embers) + MarketRingLoader — lazy, WebGL-gated
+    ├── Backdrop.tsx    # fixed texture layer (scanlines + amber glow)
+    ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
     ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
     ├── CriteriaDialog.tsx   # criteria editor subwindow
@@ -68,7 +79,8 @@ frontend/src/
 
 - Theming: one `.dark` class on `<html>` (next-themes) drives both Chakra tokens and
   Tailwind/shadcn vars — use semantic tokens (`bg-background`, `text-foreground`,
-  `text-muted-foreground`, `border-border`), never hardcoded palette classes
+  `text-muted-foreground`, `border-border`, Chakra `brand`/`gain`/`loss`), never hardcoded
+  palette classes or hex; `vault-rules.test.ts` enforces the ban in code
 - Chakra for interactive/status elements; shadcn components and Tailwind utilities for layout and dense data
 - Tables for dense data (shortlist, documents, signals) — sortable client-side
 - StockChart props: `{ candles: {time,open,high,low,close}[], markers: {time, kind: 'buy'|'sell'}[] }`
@@ -76,15 +88,17 @@ frontend/src/
 - Build check: `npm run build` (tsc -b && vite build) must pass; dev: `npm run dev`
 - Tests: vitest + jsdom + Testing Library; run `npm run test`; mock all network/api/WebGL
   in tests
-- Design contract: `DESIGN.md` (Terminal emerald, Geist, tabular numerals, lucide-only
-  icons, motion and 3D rules) — every frontend change follows it
+- Design contract: `DESIGN.md` (Phosphor Vault: dark-first amber identity, Geist + Geist Mono,
+  motion signatures + loop whitelist, lucide-only icons, 3D rules) — every frontend change
+  follows it
 
 ## Phase Gates
 
 | Phase | UI work |
 |---|---|
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
-| 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, stair-tower loader replaces the Three.js run visual |
+| 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2) |
+| v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | 2 | Documents page: stock sub-nav -> doc list + summary cards; badge shows `analysis_method` (gemini/fallback) and parse status ("n/m parsed") |
 | 3 | Signals chart: lightweight-charts candles + buy/sell markers from `/model/signals` |
 | 4 | Backtest report: metric cards (CAGR/Sharpe/drawdown) + equity-curve chart (recharts) vs Nifty line |
