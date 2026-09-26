@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/lib/webgl'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
+import { useIsDesktop } from '@/lib/useIsDesktop'
 import { useColorMode } from '@/components/ui/color-mode'
 import { paletteFor } from '@/theme/tokens'
 
@@ -108,6 +109,9 @@ export function MarketRingLoader({
   const reduced = usePrefersReducedMotion()
   const { colorMode } = useColorMode()
   const palette = paletteFor(colorMode)
+  const isDesktop = useIsDesktop()
+  // Probe once per mount — the elapsed timer re-renders this component every second.
+  const hasGl = useMemo(() => hasWebGL(), [])
 
   const seeds = useMemo<CandleSeed[]>(
     () =>
@@ -128,7 +132,7 @@ export function MarketRingLoader({
     style: { width: '100%', height: '100%' },
   }
 
-  if (!hasWebGL()) {
+  if (!hasGl || !isDesktop) {
     return (
       <div
         role="status"
@@ -159,7 +163,7 @@ export function MarketRingLoader({
     >
       <span className="sr-only">{label}</span>
       <Canvas
-        className="pointer-events-none hidden md:block"
+        className="pointer-events-none"
         frameloop={reduced ? 'demand' : 'always'}
         dpr={[1, 1.5]}
         camera={{ position: [0, 1.6, 3.2], fov: 40 }}
@@ -168,12 +172,6 @@ export function MarketRingLoader({
       >
         <RingScene seeds={seeds} amber={palette.primary} reduced={reduced} />
       </Canvas>
-      <span
-        aria-hidden="true"
-        data-testid="vault-pulse"
-        className="vault-pulse md:hidden"
-        style={{ width: size * 0.6, height: size * 0.6 }}
-      />
     </div>
   )
 }

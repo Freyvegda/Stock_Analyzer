@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/lib/webgl'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
+import { useIsDesktop } from '@/lib/useIsDesktop'
 import { useColorMode } from '@/components/ui/color-mode'
 import { paletteFor } from '@/theme/tokens'
 
@@ -61,8 +62,10 @@ export default function AmbientField({
 }) {
   const reduced = usePrefersReducedMotion()
   const { colorMode } = useColorMode()
+  const isDesktop = useIsDesktop()
+  const hasGl = useMemo(() => hasWebGL(), [])
 
-  if (!hasWebGL() || reduced) return null
+  if (!hasGl || reduced || !isDesktop) return null
 
   return (
     <div aria-hidden className={cn(className)}>

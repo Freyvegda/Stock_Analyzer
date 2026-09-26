@@ -80,7 +80,8 @@ frontend/src/
 - Theming: one `.dark` class on `<html>` (next-themes) drives both Chakra tokens and
   Tailwind/shadcn vars — use semantic tokens (`bg-background`, `text-foreground`,
   `text-muted-foreground`, `border-border`, Chakra `brand`/`gain`/`loss`), never hardcoded
-  palette classes or hex; `vault-rules.test.ts` enforces the ban in code
+  palette classes or hex; `vault-rules.test.ts` enforces the ban (emerald refs, hex in 3D code,
+  raw palette utilities) in code
 - Chakra for interactive/status elements; shadcn components and Tailwind utilities for layout and dense data
 - Tables for dense data (shortlist, documents, signals) — sortable client-side
 - StockChart props: `{ candles: {time,open,high,low,close}[], markers: {time, kind: 'buy'|'sell'}[] }`

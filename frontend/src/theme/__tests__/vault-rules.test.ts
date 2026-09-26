@@ -31,6 +31,13 @@ describe('vault design rules', () => {
     const offenders = threeFiles.filter((path) => /#[0-9a-fA-F]{6}\b/.test(read(path)))
     expect(offenders).toEqual([])
   })
+
+  it('contains no raw palette utility classes', () => {
+    const pattern =
+      /(?:text|bg|border|ring|fill|stroke)-(?:zinc|slate|gray|grey|neutral|stone|red|green|blue|indigo|violet|purple|pink|rose|orange|yellow|lime|teal|cyan|sky|amber|emerald)-\d{2,3}\b/
+    const offenders = sourceFiles().filter((path) => pattern.test(read(path)))
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('paletteFor', () => {

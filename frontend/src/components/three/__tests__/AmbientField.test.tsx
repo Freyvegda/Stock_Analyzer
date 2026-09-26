@@ -15,12 +15,20 @@ vi.mock('@react-three/fiber', () => ({
 
 import AmbientField from '../AmbientField'
 
-function mockReducedMotion(matches: boolean) {
-  vi.spyOn(window, 'matchMedia').mockReturnValue({
-    matches, media: '', onchange: null,
-    addListener: vi.fn(), removeListener: vi.fn(),
-    addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
-  })
+function mockMedia({ reduced = false, desktop = true }: { reduced?: boolean; desktop?: boolean } = {}) {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: query.includes('min-width') ? desktop : reduced,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList,
+  )
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -28,20 +36,28 @@ afterEach(() => vi.restoreAllMocks())
 describe('AmbientField', () => {
   it('renders nothing without WebGL', () => {
     webgl.hasWebGL = false
+    mockMedia()
     const { container } = render(<AmbientField />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('renders nothing under reduced motion even with WebGL', () => {
     webgl.hasWebGL = true
-    mockReducedMotion(true)
+    mockMedia({ reduced: true })
+    const { container } = render(<AmbientField />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('renders nothing below md', () => {
+    webgl.hasWebGL = true
+    mockMedia({ desktop: false })
     const { container } = render(<AmbientField />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('paints a click-through fixed background layer', () => {
     webgl.hasWebGL = true
-    mockReducedMotion(false)
+    mockMedia()
     render(<AmbientField />)
     const canvas = screen.getByTestId('ambient-canvas')
     const wrapper = canvas.parentElement!
