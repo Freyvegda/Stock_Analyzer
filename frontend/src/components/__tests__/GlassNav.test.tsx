@@ -53,20 +53,20 @@ describe('GlassNav', () => {
     expect(screen.getByRole('button', { name: /color mode/i })).toBeInTheDocument()
   })
 
-  it('keeps tilt off without a fine pointer (jsdom default)', () => {
+  it('keeps sheen off without a fine pointer (jsdom default)', () => {
     renderNav()
-    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-tilt', 'off')
+    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
   })
 
-  it('keeps tilt off under reduced motion even on a fine pointer', () => {
+  it('keeps sheen off under reduced motion even on a fine pointer', () => {
     mockMatchMedia({ '(prefers-reduced-motion: reduce)': true, '(pointer: fine)': true })
     renderNav()
-    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-tilt', 'off')
+    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
   })
 
-  it('enables tilt on a fine pointer without reduced motion', () => {
+  it('enables sheen on a fine pointer without reduced motion', () => {
     mockMatchMedia({ '(pointer: fine)': true })
     renderNav()
-    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-tilt', 'on')
+    expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'on')
   })
 })

@@ -21,8 +21,8 @@
 
 ## Review Focus
 
-1. Reduced motion: navbar static — no tilt, sheen, or moving pill (Task 4 test).
-2. Coarse pointer/touch: tilt + sheen off (`data-tilt="off"`, Task 4 test).
+1. Reduced motion: navbar static — no sheen or moving pill (Task 4 test).
+2. Coarse pointer/touch: sheen off (`data-sheen="off"`, Task 4 test).
 3. Charts + value-flash tints readable in both modes after retint (Task 1 `contrast.test.ts`, Task 3 grep/browse).
 4. Dark surfaces must not drift blue (blue − red ≤ 8) or exceed 0.02 luminance (Task 1 `vault-rules.test.ts`).
 5. `colorPalette="sakura"` resolves in Chakra — virtual tokens defined, no silent fallback (Task 1 `system.test.ts`, Task 2 build).
@@ -121,7 +121,7 @@ git commit -m "feat: retint shell backdrop, flash and pulse to sakura"
 - Modify: `frontend/src/App.tsx` (replace the inline `<nav>`; drop now-unused `useAuth`/`reduced`/`NavLink`/`IconButton`/`Text`/`LogOut`/`TrendingUp`/`ThemeToggle` imports from `App.tsx` as the compiler confirms)
 
 **Interfaces:**
-- Produces: `export function GlassNav()` — no props; reads `useAuth()` (`user`, `logout`), `usePrefersReducedMotion()`, and renders `ThemeToggle`. Capsule element carries `data-testid="glass-nav"` and `data-tilt="on|off"`. Active pill carries `data-testid="glass-nav-pill"` and `aria-hidden="true"`. `navItems` keeps the three routes `'/'`, `'/documents'`, `'/backtest'` and labels.
+- Produces: `export function GlassNav()` — no props; reads `useAuth()` (`user`, `logout`), `usePrefersReducedMotion()`, and renders `ThemeToggle`. Capsule element carries `data-testid="glass-nav"` and `data-sheen="on|off"`. Active pill carries `data-testid="glass-nav-pill"` and `aria-hidden="true"`. `navItems` keeps the three routes `'/'`, `'/documents'`, `'/backtest'` and labels.
 - Consumes: Task 1 tokens; Task 3 CSS conventions.
 
 - [ ] **Step 1: Write the failing test**
@@ -136,10 +136,10 @@ expect(screen.getByTestId('glass-nav-pill')).toBeInTheDocument()
 expect(screen.getAllByTestId('glass-nav-pill')).toHaveLength(1)
 
 // reduced motion: mock usePrefersReducedMotion -> true
-expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-tilt', 'off')
+expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
 
 // default jsdom: matchMedia reports no fine pointer
-expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-tilt', 'off')
+expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')
 
 // affordances
 expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument()
@@ -154,11 +154,11 @@ Expected: FAIL — module `GlassNav` not found.
 
 - [ ] **Step 3: Add the CSS primitives to `index.css`**
 
-Spec section "Liquid-glass 3D navbar": `.glass-nav` (token-derived gradient, 1px border, blur/saturate, inset highlight + soft drop), `.glass-nav::after` radial sheen driven by `--sheen-x/--sheen-y/--sheen-opacity`, `.glass-nav-pill` (primary tint 12%, border 30%, soft glow), `.glass-nav-tilt { perspective: 900px; }`; all animation/transition disabled under `prefers-reduced-motion: reduce`. No hex.
+Spec section "Liquid-glass 3D navbar": `.glass-nav` (token-derived gradient, 1px border, blur/saturate, inset highlight + soft drop), `.glass-nav::after` radial sheen driven by `--sheen-x/--sheen-y/--sheen-opacity`, `.glass-nav-pill` (primary tint 12%, border 30%, soft glow), `.glass-nav` hover brightening (border + inset highlight, colour only), all transitions disabled under `prefers-reduced-motion: reduce`. No hex.
 
 - [ ] **Step 4: Implement `GlassNav.tsx`**
 
-Spec structure + behaviour: sticky wrapper, glass capsule, brand, three `NavLink`s, username (`hidden sm:block`), logout, `ThemeToggle`; `useMotionValue`/`useSpring` tilt (±3°) only when `usePrefersReducedMotion()` is false **and** `window.matchMedia('(pointer: fine)').matches`; pointer move writes `--sheen-x/--sheen-y/--sheen-opacity` on the capsule ref; entrance fade/rise/blur 320ms `--ease-vault`; active pill `motion.span` with `layoutId="nav-active-pill"`, static span under reduced motion. `data-tilt` reflects the enable state.
+Spec structure + behaviour: sticky wrapper, glass capsule, brand, three `NavLink`s, username (`hidden sm:block`), logout, `ThemeToggle`; pointer move writes `--sheen-x/--sheen-y/--sheen-opacity` on the capsule ref only when `usePrefersReducedMotion()` is false **and** `window.matchMedia('(pointer: fine)').matches` — no tilt, rotation, scale or translate anywhere; entrance fade/rise/blur 320ms `--ease-vault`; active pill `motion.span` with `layoutId="nav-active-pill"`, static span under reduced motion. `data-sheen` reflects the enable state.
 
 - [ ] **Step 5: Wire into `App.tsx`**
 

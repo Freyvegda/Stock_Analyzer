@@ -128,15 +128,18 @@ then right side: username (hidden below `sm`), logout `IconButton`, `ThemeToggle
   soft drop `0 16px 40px -24px` in a background-mixed tone. This is the one sanctioned
   overlay shadow surface (recorded in DESIGN.md).
 
-**3D tilt.** Only when `(pointer: fine)` and motion is not reduced: the capsule tracks the
-pointer with `motion` springs (`useMotionValue` + `useSpring`, stiffness 260, damping 30)
-up to ±3° `rotateX`/`rotateY` with `perspective: 900px`; resets on leave. The capsule carries
-`data-tilt="on|off"` for tests.
+**Pointer sheen — the only pointer response (owner feedback).** The navbar must not tilt or move
+toward the cursor: no directional or depth movement. On `(pointer: fine)` with motion allowed,
+the specular sheen follows the pointer via `--sheen-x`/`--sheen-y`/`--sheen-opacity` custom
+properties written straight onto the capsule node (no re-render); on hover the capsule also
+brightens its border and inner top highlight — colour only. The capsule carries
+`data-sheen="on|off"` for tests. Off for coarse pointers and under reduced motion.
 
 **Specular sheen.** A `::after` radial gradient in `color-mix(in oklab, var(--primary) 14%, transparent)`
 positioned by `--sheen-x`/`--sheen-y` custom properties updated on pointer move (no React
-re-render); fades in on hover via `--sheen-opacity` (200ms `--ease-vault`). Disabled under
-reduced motion.
+re-render); fades in on hover via `--sheen-opacity` (200ms `--ease-vault`). The capsule's
+border and inner highlight brighten on hover (colour only). Disabled under reduced motion.
+No tilt, rotation, scale, or translate on pointer move — the sheen is the whole effect.
 
 **Active link pill.** Replaces the v2 underline: a spring `layoutId="nav-active-pill"` span
 behind the active `NavLink`, styled by `.glass-nav-pill` (primary tint 12% + 1px primary
@@ -147,7 +150,7 @@ motion). Inactive links: `text-muted-foreground`, hover `text-foreground`.
 reduced motion. No loop is added: the loop whitelist is unchanged.
 
 **Mobile.** Capsule keeps glass; nav row wraps rather than overflowing; username hidden below
-`sm`; tilt/sheen off for coarse pointers.
+`sm`; sheen off for coarse pointers.
 
 **Accessibility.** `<nav aria-label="Primary">`; pills are decorative (`aria-hidden`); links
 carry `aria-current` via `NavLink`; focus ring unchanged (`:focus-visible` base layer);
@@ -198,8 +201,8 @@ only.
 
 ## Review focus (failure modes to pin in tests)
 
-1. Reduced motion: navbar must be static — no tilt, no sheen, no moving pill.
-2. Coarse pointer (touch): tilt and sheen off.
+1. Reduced motion: navbar must be static — no sheen, no moving pill.
+2. Coarse pointer (touch): sheen off.
 3. Charts and flash tints still readable in both modes after retint.
 4. Dark surfaces must not drift blue (blue − red ≤ 8) or brighten above 0.02 luminance.
 5. `colorPalette="sakura"` must resolve in Chakra (virtual tokens defined, no fallback to a
