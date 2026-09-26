@@ -13,7 +13,7 @@ import { DotPattern } from '../components/ui/DotPattern'
 import { NumberTicker } from '../components/ui/NumberTicker'
 import { toaster } from '../components/ui/toaster'
 
-const MarketRingLoader = lazy(() => import('../components/three/MarketRingLoader'))
+const SakuraLeafLoader = lazy(() => import('../components/three/SakuraLeafLoader'))
 
 interface RunSummary {
   shortlisted: number
@@ -95,6 +95,13 @@ export default function Fundamentals() {
         failed: res.failed_count,
         total: res.total,
       })
+      if (res.stale) {
+        toaster.create({
+          title: 'Showing stored fundamentals',
+          description: 'Live refresh was unavailable — results use the last saved data',
+          type: 'warning',
+        })
+      }
       try {
         const latest = await api.get<LatestScreen>('/screen/latest')
         setRows(latest.shortlisted)
@@ -120,6 +127,16 @@ export default function Fundamentals() {
   }
 
   const emptyState = !running && rows.length === 0 && (summary !== null || lastRunDate !== null)
+
+  const todayIso = (() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })()
+  const storedDataDate =
+    rows
+      .map((r) => r.data_date)
+      .filter((d): d is string => Boolean(d))
+      .sort()[0] ?? null
 
   return (
     <div className="space-y-4">
@@ -166,12 +183,17 @@ export default function Fundamentals() {
                 Last run: {lastRunDate}
               </Text>
             ) : null}
+            {storedDataDate !== null && storedDataDate !== todayIso ? (
+              <Text data-testid="data-as-of" fontSize="sm" color="fg.muted">
+                Data as of {storedDataDate}
+              </Text>
+            ) : null}
           </Flex>
 
           {running ? (
             <div className="mt-4 flex flex-col items-center gap-2">
               <Suspense fallback={null}>
-                <MarketRingLoader size={120} label="Running screen…" />
+                <SakuraLeafLoader size={120} label="Running screen…" />
               </Suspense>
               <Text fontSize="sm" color="fg.muted">
                 Fetching fundamentals for ~500 stocks — takes a few minutes

@@ -134,13 +134,13 @@ describe('Fundamentals', () => {
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
   })
 
-  it('shows the market ring inside the run card while the screen runs', async () => {
+  it('shows the sakura leaf inside the run card while the screen runs', async () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
     mockedApi.post.mockReturnValue(new Promise(() => {}))
     renderPage()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
-    expect(await screen.findByTestId('market-ring-loader')).toBeInTheDocument()
-    expect(screen.getAllByTestId('market-ring-loader')).toHaveLength(1)
+    expect(await screen.findByTestId('sakura-leaf-loader')).toBeInTheDocument()
+    expect(screen.getAllByTestId('sakura-leaf-loader')).toHaveLength(1)
     expect(screen.queryByTestId('run-overlay')).not.toBeInTheDocument()
     expect(screen.queryByTestId('border-beam')).not.toBeInTheDocument()
     expect(screen.queryByTestId('border-beam-static')).not.toBeInTheDocument()
@@ -217,5 +217,40 @@ describe('Fundamentals', () => {
     expect(await screen.findByText('PE ≤ 25×')).toBeInTheDocument()
     act(() => window.dispatchEvent(new Event('auth:unauthorized')))
     expect(await screen.findByText('login page')).toBeInTheDocument()
+  })
+
+  it('shows a data-as-of badge when the shortlist came from stored fundamentals', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [{ ...row, data_date: '2026-09-26' }] })
+    renderPage()
+    expect(await screen.findByTestId('data-as-of')).toHaveTextContent('Data as of 2026-09-26')
+  })
+
+  it('hides the data-as-of badge when rows carry no stored date', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+    renderPage()
+    expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
+    expect(screen.queryByTestId('data-as-of')).not.toBeInTheDocument()
+  })
+
+  it('warns when a run falls back to stored fundamentals', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+    })
+    mockedApi.post.mockResolvedValue({
+      run_id: 2,
+      shortlisted: [],
+      failed_count: 3,
+      total: 500,
+      stale: true,
+    })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    await waitFor(() =>
+      expect(toaster.create).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'warning' }),
+      ),
+    )
   })
 })

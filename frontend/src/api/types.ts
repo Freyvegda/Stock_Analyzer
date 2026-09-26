@@ -44,6 +44,7 @@ export interface ShortlistRow {
   name?: string
   sector?: string
   market_cap?: number | null
+  data_date?: string | null
 }
 
 export interface FailedDetail {
