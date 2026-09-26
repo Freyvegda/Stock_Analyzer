@@ -29,6 +29,8 @@ def users_exist(session_factory) -> bool:
 def create_user(session_factory, username: str, password: str) -> dict:
     username = username.strip().lower()
     with session_factory() as session:
+        if session.query(User).first() is not None:  # single account (multi-user-ready schema)
+            raise UserExistsError("Account already exists")
         user = User(username=username, password_hash=hash_password(password), created_at=_now())
         session.add(user)
         try:
