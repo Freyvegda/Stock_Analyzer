@@ -117,6 +117,31 @@ describe('Fundamentals', () => {
     )
   })
 
+  it('shows skeleton rows while the latest run loads', async () => {
+    let release: (value: unknown) => void = () => {}
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return gate
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderPage()
+    expect((await screen.findAllByTestId('skeleton')).length).toBeGreaterThan(0)
+    release({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+    expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
+  })
+
+  it('shows an elapsed timer while the screen runs', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+    mockedApi.post.mockReturnValue(new Promise(() => {}))
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    expect(await screen.findByTestId('elapsed')).toHaveTextContent('00:00')
+  })
+
   it('shows the stair-tower loader while the screen runs', async () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
     let release = () => {}

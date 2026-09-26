@@ -33,7 +33,7 @@ export function CriteriaPanel({
         <Text fontWeight="semibold" fontSize="sm">
           Screening Criteria
         </Text>
-        <Button size="sm" colorPalette="emerald" onClick={onEdit}>
+        <Button size="sm" colorPalette="amber" onClick={onEdit}>
           Edit Criteria
         </Button>
       </Flex>
@@ -45,7 +45,7 @@ export function CriteriaPanel({
         <Wrap gap={2}>
           {enabled.map((criterion) => (
             <WrapItem key={criterion.key}>
-              <Badge variant="subtle">
+              <Badge variant="subtle" colorPalette="amber" className="font-mono tabular-nums">
                 {badgeText(catalog.get(criterion.key), criterion.key, criterion.value)}
               </Badge>
             </WrapItem>

@@ -260,6 +260,25 @@
       animation: none;
     }
   }
+
+  /* First-load row entrance: 12ms stagger, first 8 rows only. */
+  .vault-row-in {
+    animation: vault-row-in var(--duration-entrance) var(--ease-vault) both;
+    animation-delay: calc(var(--row-index, 0) * 12ms);
+  }
+
+  @keyframes vault-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-row-in {
+      animation: none;
+    }
+  }
 }
 
 /* Theme-toggle circular wipe (View Transitions API; instant fallback otherwise). */

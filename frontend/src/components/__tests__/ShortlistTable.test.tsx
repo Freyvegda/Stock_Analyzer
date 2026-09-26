@@ -48,4 +48,24 @@ describe('ShortlistTable', () => {
     expect(within(bodyRows[0]).getByText('LOW')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /score/i })).toHaveAttribute('aria-sort', 'ascending')
   })
+
+  it('renders numeric cells in mono tabular numerals', () => {
+    render(<ShortlistTable rows={[makeRow({ symbol: 'MONO', ratios: { pe: 21.4, pb: 2, roe: 9, roce: 9, debt_to_equity: 0.1 } })]} />)
+    const cell = screen.getByText('21.4')
+    expect(cell.className).toContain('font-mono')
+    expect(cell.className).toContain('tabular-nums')
+  })
+
+  it('renders skeleton rows while loading', () => {
+    render(<ShortlistTable rows={[]} loading />)
+    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThanOrEqual(5)
+    expect(screen.queryByRole('row', { name: /LOW/ })).not.toBeInTheDocument()
+  })
+
+  it('staggers the first rows on first paint only', () => {
+    render(<ShortlistTable rows={rows} />)
+    const bodyRows = screen.getAllByRole('row').slice(1)
+    expect(bodyRows[0].className).toContain('vault-row-in')
+    expect(bodyRows[0].style.getPropertyValue('--row-index')).toBe('0')
+  })
 })

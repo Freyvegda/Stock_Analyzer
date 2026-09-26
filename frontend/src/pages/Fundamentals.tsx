@@ -5,7 +5,9 @@ import type { LatestScreen, RatioSpec, ScreenRunResult, ShortlistRow, UserCriter
 import { CriteriaDialog } from '../components/CriteriaDialog'
 import { CriteriaPanel } from '../components/CriteriaPanel'
 import { ShortlistTable } from '../components/ShortlistTable'
+import { Num } from '../components/ui/Num'
 import { useStatusFact } from '../components/StatusRail'
+import { formatElapsed } from '../lib/format'
 import { BlurFade } from '../components/ui/BlurFade'
 import { BorderBeam } from '../components/ui/BorderBeam'
 import { DotPattern } from '../components/ui/DotPattern'
@@ -29,6 +31,8 @@ export default function Fundamentals() {
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [latestLoaded, setLatestLoaded] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
 
   const statusFact =
     summary !== null
@@ -39,6 +43,15 @@ export default function Fundamentals() {
           ? `last run ${lastRunDate}`
           : null
   useStatusFact('screen', statusFact)
+
+  useEffect(() => {
+    if (!running) {
+      setElapsed(0)
+      return
+    }
+    const id = window.setInterval(() => setElapsed((seconds) => seconds + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [running])
 
   async function loadCriteria() {
     try {
@@ -62,6 +75,8 @@ export default function Fundamentals() {
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return // no run yet
       setError(e instanceof Error ? e.message : 'Failed to load the latest run')
+    } finally {
+      setLatestLoaded(true)
     }
   }
 
@@ -130,7 +145,7 @@ export default function Fundamentals() {
           <BorderBeam active={running} />
           <Flex align="center" gap={4} wrap="wrap">
             <Button
-              colorPalette="emerald"
+              colorPalette="amber"
               loading={running}
               loadingText="Running…"
               onClick={runScreen}
@@ -142,13 +157,25 @@ export default function Fundamentals() {
                 <Text fontSize="sm" color="fg.muted">
                   Fetching fundamentals for ~500 stocks — takes a few minutes
                 </Text>
+                <Text data-testid="elapsed" fontSize="sm" color="fg.muted">
+                  <Num>{formatElapsed(elapsed)}</Num>
+                </Text>
                 <StairTowerLoader size={120} label="Running screen…" />
               </>
             ) : null}
             {summary !== null ? (
               <Text data-testid="summary" fontSize="sm" color="fg.muted">
-                <NumberTicker value={summary.shortlisted} /> shortlisted ·{' '}
-                <NumberTicker value={summary.failed} /> failed · <NumberTicker value={summary.total} />{' '}
+                <Num>
+                  <NumberTicker value={summary.shortlisted} />
+                </Num>{' '}
+                shortlisted ·{' '}
+                <Num>
+                  <NumberTicker value={summary.failed} />
+                </Num>{' '}
+                failed ·{' '}
+                <Num>
+                  <NumberTicker value={summary.total} />
+                </Num>{' '}
                 total
               </Text>
             ) : lastRunDate !== null ? (
@@ -167,9 +194,9 @@ export default function Fundamentals() {
         </Text>
       ) : null}
 
-      {rows.length > 0 ? (
+      {rows.length > 0 || !latestLoaded ? (
         <BlurFade>
-          <ShortlistTable rows={rows} />
+          <ShortlistTable rows={rows} loading={!latestLoaded} />
         </BlurFade>
       ) : null}
 

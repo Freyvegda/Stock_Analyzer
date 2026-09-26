@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Num } from '@/components/ui/Num'
+import { Skeleton } from '@/components/ui/Skeleton'
 import {
   Table,
   TableBody,
@@ -8,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 import { sortRows, type SortDir } from '../lib/sort'
 import type { ShortlistRow } from '../api/types'
 
@@ -27,6 +30,10 @@ const COLUMNS: { key: string; label: string; numeric: boolean }[] = [
   { key: 'score', label: 'Score', numeric: true },
 ]
 
+/** Row entrance applies to the first 8 rows only — long cascades exhaust the eye. */
+const STAGGER_ROWS = 8
+const SKELETON_ROWS = 5
+
 function flatten(rows: ShortlistRow[]): FlatRow[] {
   return rows.map((r) => ({ ...r, ...r.ratios }))
 }
@@ -35,7 +42,13 @@ function fmt(v: unknown): string {
   return typeof v === 'number' ? v.toFixed(1) : '—'
 }
 
-export function ShortlistTable({ rows }: { rows: ShortlistRow[] }) {
+export function ShortlistTable({
+  rows,
+  loading = false,
+}: {
+  rows: ShortlistRow[]
+  loading?: boolean
+}) {
   const [sortKey, setSortKey] = useState<string>('rank')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
@@ -48,7 +61,7 @@ export function ShortlistTable({ rows }: { rows: ShortlistRow[] }) {
     }
   }
 
-  const sorted = sortRows(flatten(rows), sortKey, sortDir)
+  const sorted = loading ? [] : sortRows(flatten(rows), sortKey, sortDir)
 
   return (
     <Table>
@@ -60,12 +73,12 @@ export function ShortlistTable({ rows }: { rows: ShortlistRow[] }) {
               aria-sort={
                 sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
               }
-              className={col.numeric ? 'text-right' : undefined}
+              className={cn(col.numeric && 'text-right')}
             >
               <button
                 type="button"
                 onClick={() => toggleSort(col.key)}
-                className="inline-flex cursor-pointer select-none items-center hover:text-foreground"
+                className="inline-flex cursor-pointer select-none items-center font-mono text-[11px] tracking-[0.08em] uppercase hover:text-foreground"
               >
                 {col.label}
                 {sortKey === col.key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''}
@@ -75,27 +88,59 @@ export function ShortlistTable({ rows }: { rows: ShortlistRow[] }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {sorted.map((r) => (
-          <TableRow key={r.symbol}>
-            <TableCell className="text-right tabular-nums">{r.rank}</TableCell>
-            <TableCell className="font-semibold">{r.symbol}</TableCell>
-            <TableCell>{r.name ?? '—'}</TableCell>
-            <TableCell>{r.sector ?? '—'}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmt(r.pe)}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmt(r.pb)}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmt(r.roe)}</TableCell>
-            <TableCell className="text-right tabular-nums">{fmt(r.roce)}</TableCell>
-            <TableCell className="text-right tabular-nums">
-              {typeof r.debt_to_equity === 'number' && r.debt_to_equity > 0.3 ? (
-                <Badge variant="destructive">{fmt(r.debt_to_equity)}</Badge>
-              ) : (
-                fmt(r.debt_to_equity)
-              )}
-            </TableCell>
-            <TableCell className="text-right tabular-nums">{fmt(r.market_cap)}</TableCell>
-            <TableCell className="text-right font-medium tabular-nums">{fmt(r.score)}</TableCell>
-          </TableRow>
-        ))}
+        {loading
+          ? Array.from({ length: SKELETON_ROWS }, (_, index) => (
+              <TableRow key={`skeleton-${index}`}>
+                <TableCell colSpan={COLUMNS.length}>
+                  <Skeleton className="h-5 w-full" />
+                </TableCell>
+              </TableRow>
+            ))
+          : sorted.map((r, index) => (
+              <TableRow
+                key={r.symbol}
+                className={index < STAGGER_ROWS ? 'vault-row-in' : undefined}
+                style={
+                  index < STAGGER_ROWS
+                    ? ({ '--row-index': index } as CSSProperties)
+                    : undefined
+                }
+              >
+                <TableCell className="text-right">
+                  <Num>{r.rank}</Num>
+                </TableCell>
+                <TableCell className="font-semibold">{r.symbol}</TableCell>
+                <TableCell>{r.name ?? '—'}</TableCell>
+                <TableCell>{r.sector ?? '—'}</TableCell>
+                <TableCell className="text-right">
+                  <Num>{fmt(r.pe)}</Num>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Num>{fmt(r.pb)}</Num>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Num>{fmt(r.roe)}</Num>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Num>{fmt(r.roce)}</Num>
+                </TableCell>
+                <TableCell className="text-right">
+                  {typeof r.debt_to_equity === 'number' && r.debt_to_equity > 0.3 ? (
+                    <Badge variant="destructive" className="font-mono tabular-nums">
+                      {fmt(r.debt_to_equity)}
+                    </Badge>
+                  ) : (
+                    <Num>{fmt(r.debt_to_equity)}</Num>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Num>{fmt(r.market_cap)}</Num>
+                </TableCell>
+                <TableCell className="text-right font-medium">
+                  <Num>{fmt(r.score)}</Num>
+                </TableCell>
+              </TableRow>
+            ))}
       </TableBody>
     </Table>
   )

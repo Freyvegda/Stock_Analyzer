@@ -48,6 +48,11 @@ describe('CriteriaPanel', () => {
     expect(onEdit).toHaveBeenCalledOnce()
   })
 
+  it('renders chips in mono numerals', () => {
+    renderPanel(<CriteriaPanel criteria={criteria} ratios={catalog} onEdit={() => {}} />)
+    expect(screen.getByText('PE ≤ 25×').className).toContain('font-mono')
+  })
+
   it('shows loading and error states instead of stale badges', () => {
     renderPanel(
       <CriteriaPanel criteria={null} ratios={catalog} onEdit={() => {}} error="Could not load criteria" />,
