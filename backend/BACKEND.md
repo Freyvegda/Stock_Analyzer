@@ -97,6 +97,7 @@ Nifty 500 list -> stocks table
 - Tests: `tests/` mirrors `app/` structure; fixtures in `tests/fixtures/`; all provider calls mocked; pipeline integration test uses 3 fixture stocks
 - Run: `uvicorn app.main:app --reload` from `backend/` with venv active
 - Test: `.venv/Scripts/python.exe -m pytest tests -q`
+- **pip on this machine**: user pip.ini has broken NVIDIA extra-index (`pypi.ngc.nvidia.com` unresolvable). ALWAYS install with `--isolated` flag: `pip install --isolated <pkg>` — skips config files, uses pypi.org directly
 
 ## Phase Gates
 
