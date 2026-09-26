@@ -23,6 +23,7 @@ class Fundamental(Base):
     roe: Mapped[float | None] = mapped_column(Float, nullable=True)
     roce: Mapped[float | None] = mapped_column(Float, nullable=True)
     debt_to_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    data_status: Mapped[str] = mapped_column(String, nullable=False, server_default="ok")
     raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
