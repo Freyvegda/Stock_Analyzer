@@ -51,14 +51,15 @@ export default function AmbientField({
   if (!hasWebGL() || reduced) return null
 
   return (
-    <Canvas
-      aria-hidden
-      className={cn(className)}
-      dpr={[1, 1.5]}
-      camera={{ position: [0, 0, 6], fov: 45 }}
-      gl={{ antialias: false, powerPreference: 'low-power' }}
-    >
-      <ParticleField />
-    </Canvas>
+    <div aria-hidden className={cn(className)}>
+      <Canvas
+        style={{ pointerEvents: 'none' }}
+        dpr={[1, 1.5]}
+        camera={{ position: [0, 0, 6], fov: 45 }}
+        gl={{ antialias: false, powerPreference: 'low-power' }}
+      >
+        <ParticleField />
+      </Canvas>
+    </div>
   )
 }

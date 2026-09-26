@@ -16,7 +16,7 @@ const navItems = [
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <Suspense fallback={null}>
         <AmbientField />
       </Suspense>
