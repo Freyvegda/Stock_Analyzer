@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Fundamentals from '../Fundamentals'
-import { api } from '../../api/client'
+import { api, ApiError } from '../../api/client'
+import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { AuthProvider } from '../../auth/AuthContext'
 import { RequireAuth } from '../../components/RequireAuth'
@@ -22,6 +23,8 @@ vi.mock('../../api/client', () => ({
   },
   AUTH_UNAUTHORIZED_EVENT: 'auth:unauthorized',
 }))
+
+vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
 const mockedApi = vi.mocked(api)
 
@@ -120,6 +123,28 @@ describe('Fundamentals', () => {
     })
     renderPage()
     expect(await screen.findByRole('alert')).toHaveTextContent(/criteria exploded/)
+  })
+
+  it('treats a 401 after a successful run as a session end, not a warning', async () => {
+    let latestCalls = 0
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        latestCalls += 1
+        if (latestCalls === 1) {
+          return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+        }
+        return Promise.reject(new ApiError(401, 'Not authenticated'))
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    mockedApi.post.mockResolvedValue({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    await waitFor(() => expect(latestCalls).toBe(2))
+    expect(toaster.create).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('redirects to /login when a 401 event fires mid-session', async () => {

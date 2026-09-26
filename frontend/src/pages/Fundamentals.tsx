@@ -72,7 +72,10 @@ export default function Fundamentals() {
       try {
         const latest = await api.get<LatestScreen>('/screen/latest')
         setRows(latest.shortlisted)
-      } catch {
+      } catch (e) {
+        // Session died mid-run: rethrow so the outer handler stays quiet; the
+        // client's auth:unauthorized event redirects to /login.
+        if (e instanceof ApiError && e.status === 401) throw e
         setRows(res.shortlisted)
         toaster.create({
           title: 'Showing screen result',
@@ -81,6 +84,7 @@ export default function Fundamentals() {
         })
       }
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return // global event handles the redirect
       const message = e instanceof Error ? e.message : 'Screen run failed'
       setError(message)
       toaster.create({ title: 'Screen run failed', description: message, type: 'error' })
