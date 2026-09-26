@@ -37,7 +37,7 @@ interface CandleSeed {
   angle: number
   base: number
   phase: number
-  /** Deterministic 0..0.8 tone step for the amber brightness ladder. */
+  /** Deterministic 0..0.8 tone step for the brand brightness ladder. */
   tone: number
 }
 
@@ -147,7 +147,7 @@ function RingScene({ seeds, primary, highlight, reduced }: RingSceneProps) {
 
 /**
  * Market Ring — 48 instanced candlesticks in a slowly rotating ring whose heights
- * breathe as a travelling wave with a slow harmonic. An amber highlight flares
+ * breathe as a travelling wave with a slow harmonic. A brand-hued highlight flares
  * around the ring while a thin arc counter-rotates beneath it; everything is one
  * hue (no gain/loss candles). Static frozen skyline under reduced motion; CSS
  * vault-pulse ring when WebGL is unavailable. The only sanctioned 3D loop besides

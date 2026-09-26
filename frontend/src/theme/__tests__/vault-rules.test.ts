@@ -51,6 +51,12 @@ describe('vault design rules', () => {
     const offenders = sourceFiles().filter((path) => pattern.test(read(path)))
     expect(offenders).toEqual([])
   })
+
+  it('contains no legacy amber tints', () => {
+    const pattern = /#FFB454|#B45309|rgba\(255,\s*180,\s*84|rgba\(180,\s*83,\s*9/i
+    const offenders = sourceFiles().filter((path) => pattern.test(read(path)))
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('paletteFor', () => {

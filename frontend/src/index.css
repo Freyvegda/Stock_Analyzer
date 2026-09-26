@@ -159,17 +159,17 @@
 }
 
 @layer components {
-  /* Vault texture: scanlines + amber glow (dark) / warm grain (light). */
+  /* Sakura texture: scanlines + blossom glow (dark) / petal grain (light). */
   .vault-backdrop {
     background-image:
       repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 3px),
-      radial-gradient(1200px 600px at 85% -10%, rgba(255, 180, 84, 0.06), transparent 60%);
+      radial-gradient(1200px 600px at 85% -10%, rgba(255, 169, 198, 0.05), transparent 60%);
   }
 
   :root:not(.dark) .vault-backdrop {
     background-image:
       repeating-linear-gradient(0deg, rgba(20, 24, 31, 0.012) 0 1px, transparent 1px 3px),
-      radial-gradient(1200px 600px at 85% -10%, rgba(180, 83, 9, 0.05), transparent 60%);
+      radial-gradient(1200px 600px at 85% -10%, rgba(176, 51, 106, 0.045), transparent 60%);
   }
 
   @media (prefers-contrast: more) {
@@ -261,7 +261,7 @@
   }
 
   [data-flash='neutral'] {
-    --flash-color: rgba(255, 180, 84, 0.18);
+    --flash-color: rgba(255, 169, 198, 0.18);
   }
 
   [data-flash='gain'] {
@@ -314,8 +314,8 @@
     border-radius: 9999px;
     border: 1px solid var(--primary);
     box-shadow:
-      0 0 0 4px rgba(255, 180, 84, 0.08),
-      inset 0 0 12px rgba(255, 180, 84, 0.25);
+      0 0 0 4px rgba(255, 169, 198, 0.08),
+      inset 0 0 12px rgba(255, 169, 198, 0.25);
     animation: vault-pulse 1.6s var(--ease-vault) infinite;
   }
 

@@ -1,5 +1,5 @@
 /**
- * Fixed vault texture layer: scanlines + amber radial glow (dark) / warm grain (light).
+ * Fixed vault texture layer: scanlines + blossom radial glow (dark) / petal grain (light).
  * Purely decorative — sits under `AmbientField` and never intercepts pointer events.
  */
 export function Backdrop() {

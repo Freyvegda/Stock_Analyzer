@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Signed change: colour + arrow + explicit sign, so P&L never depends on colour
- * alone. Gain/loss tones come from the vault tokens; amber is never used here.
+ * alone. Gain/loss tones come from the vault tokens; the brand hue is never used here.
  */
 export function Delta({
   value,
