@@ -29,11 +29,16 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
 - Theming v2 "Phosphor Vault": `src/theme/tokens.ts` is the single source of colour truth; the
   marked block in `src/index.css` is test-synced (`$env:VAULT_SYNC='1'; npm run tokens:sync`),
   Chakra `system.ts` derives from it, and `contrast.test.ts` gates WCAG AA in both modes.
+  `scenePalette` (same file) is the login-only Sakura Garden palette — outside `ThemeTokens`,
+  outside the synced block, scene-only (see DESIGN.md).
 - Typography: Geist UI + **Geist Mono for every number** via `Num`/`Delta`
   (`src/components/ui/Num.tsx`, `Delta.tsx`). Amber is attention only — never gain/loss polarity.
-- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — 3D instanced
-  candlestick ring, lazy chunk, WebGL-gated (CSS `vault-pulse` fallback), static under reduced
-  motion, hidden below `md`; ≥96px contexts only, inline buttons use Chakra `Spinner`.
+- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — amber-only 3D
+  instanced candlestick ring (travelling wave + harmonic, sweeping flare, counter-rotating
+  arc), lazy chunk, WebGL-gated (CSS `vault-pulse` fallback), static under reduced motion,
+  hidden below `md`; contexts: run card 120 (centred, hint + elapsed beneath, the only
+  animation during a run), login 120, criteria dialog 80. The run button swaps to "Running…"
+  + disables; no border crawl around the card.
 - Path alias `@/` -> `src/` (vite.config.ts + tsconfig paths, NO baseUrl — TS6 deprecated)
 
 ## Structure
@@ -51,14 +56,16 @@ frontend/src/
 ├── theme/
 │   └── system.ts       # Chakra v3 system (amber + brand/gain/loss); tokens.ts is the source
 ├── pages/
-│   ├── Login.tsx       # setup card (first run) | login card
+│   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
 │   ├── Fundamentals.tsx
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
-    ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton/BorderBeam
-    ├── three/          # AmbientField (embers) + MarketRingLoader — lazy, WebGL-gated
+    ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
+    ├── three/          # AmbientField + MarketRingLoader + SakuraScene — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + amber glow)
+    ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
+    ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
     ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
