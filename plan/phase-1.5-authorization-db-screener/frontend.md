@@ -268,6 +268,10 @@ git commit -m "feat: pure-CSS never-ending stair tower loader"
 > **Theme v2 note (2026-09-26):** `StairTowerLoader` was later replaced by the 3D
 > `MarketRingLoader` — see `docs/superpowers/specs/2026-09-26-theme-v2-phosphor-vault-design.md`
 > §Loader v2 and `frontend/THEME-V2-PLAN.md` task T4.
+>
+> **Sakura Leaf note (2026-09-27):** the Market Ring was itself replaced by the 3D
+> `SakuraLeafLoader` (a wind-flown sakura leaf streaming a candle tape of its own path) —
+> see `frontend/DESIGN.md` → "3D and the loader".
 
 ---
 

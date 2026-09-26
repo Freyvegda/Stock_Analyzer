@@ -105,7 +105,7 @@ Signatures (the whole inventory):
 9. Navbar — pointer sheen, hover brighten, spring active pill, one-shot entrance; no tilt or
    movement on pointer move (see the navbar section).
 
-**Loops — complete whitelist:** Market Ring loader, status-rail marquee (overflow only),
+**Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
 last-run status dot pulse, Sakura Garden falling petals (login only). Max one loop per
 viewport zone; `/login` swaps the ambient particle field out for the garden. Loops never
 render inside tables, summaries, or chart interiors.
@@ -136,16 +136,24 @@ and the theme toggle.
 
 ## 3D and the loader
 
-- **Market Ring** (`components/three/MarketRingLoader.tsx`) is the app loader: 48 instanced
-  candlesticks in a rotating ring with a brand-only tone ladder (no gain/loss candles),
-  breathing travelling wave plus a slow harmonic, a flare highlight sweeping the ring, a
-  counter-rotating thin arc, and a breathing brand-hued torus base. Contexts: run card 120
-  (centred with hint + elapsed timer beneath while a screen run is in flight), login 120,
-  criteria dialog 80. During a screen run this is the only running animation: the run button
-  swaps to "Running…" + disables, and no border crawl plays around the card.
+- **Sakura Leaf** (`components/three/SakuraLeafLoader.tsx`) is the app loader: a low-poly
+  sakura leaf flies downwind on gusting air, swaying in x, climbing and diving in y, banking
+  its nose into every rise and fall and fluttering as it goes. It leads a streaming tape of
+  candlesticks: the leaf's own flight path chopped into fixed-width slots — open at the
+  slot's start, close at its end, wicks from the extremes between — so a rising leaf writes
+  rising candles and a diving leaf writes falling ones. The tape stays on the brand ladder:
+  climbing candles brighten toward the palette's light pole, falling candles dim, and the
+  tail fades out as it streams past. Brand-only is deliberate — the loader never introduces
+  gain/loss polarity (green/red stays reserved for real data); direction reads as brightness.
+  Blade outline, surface curl, wind clock, price curve, candle slots, offset and fade are
+  pure, seeded helpers in `three/leafTrace.ts` (three-free, unit-tested); the scene component
+  is a thin renderer. Contexts: run card 120 (centred with hint + elapsed timer beneath while
+  a screen run is in flight), login 120, criteria dialog 80. During a screen run this is the
+  only running animation: the run button swaps to "Running…" + disables, and no border crawl
+  plays around the card.
 - Gates: lazy chunk, `hasWebGL()` else the CSS `vault-pulse` ring; hidden below `md`; paused
   when the tab is hidden; `role="status"` + sr-only label; reduced motion → frozen static
-  frame (no rotation, flare or breathing).
+  frame (no flight, bank, flutter, sway or streaming).
 - `AmbientField` (decorative background particles) keeps its gates: lazy chunk, WebGL-gated,
   hidden below `md`, paused when hidden, off under reduced motion. Three.js must never appear
   in the initial bundle chunk.
@@ -190,7 +198,7 @@ variable, never enters the synced `index.css` block, and reaches three.js as pro
   mesh each, no textures, no post-processing, no new dependency. `dpr` up to 2 with
   `antialias: true` on the canvas, `meshStandardMaterial` + `flatShading` (8-sided branches,
   detail-1 icosahedron blossoms) for crisp low-poly facets; unlit petals.
-- Gates: identical to the Market Ring — lazy chunk, `hasWebGL()` else the CSS fallback,
+- Gates: identical to the Sakura Leaf loader — lazy chunk, `hasWebGL()` else the CSS fallback,
   hidden below `md`, paused when the tab is hidden, `frameloop="demand"` with a still,
   spread-out petal field under reduced motion, `aria-hidden`, `pointer-events-none`, `-z-10`.
 - Below `md` / no WebGL: the CSS fallback (sky gradient, lit disc, `.vault-petal` petals)
@@ -198,7 +206,7 @@ variable, never enters the synced `index.css` block, and reaches three.js as pro
 - Only the auth card sits above the scene, and the card is opaque: no text or data is ever
   rendered over 3D.
 - `AmbientField` does not mount on `/login` — one decorative loop per viewport zone. The
-  Market Ring appears only during the `loading` phase, before the garden is drawn.
+  Sakura Leaf loader appears only during the `loading` phase, before the garden is drawn.
 
 The tree and petal field are the only sakura *motifs*; the rest of the app carries the sakura
 *palette* through the semantic tokens. Polarity stays green/red plus sign everywhere.

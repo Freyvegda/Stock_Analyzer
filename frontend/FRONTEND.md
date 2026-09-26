@@ -34,12 +34,14 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   DESIGN.md).
 - Typography: Geist UI + **Geist Mono for every number** via `Num`/`Delta`
   (`src/components/ui/Num.tsx`, `Delta.tsx`). Sakura is attention only — never gain/loss polarity.
-- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — brand-only 3D
-  instanced candlestick ring (travelling wave + harmonic, sweeping flare, counter-rotating
-  arc), lazy chunk, WebGL-gated (CSS `vault-pulse` fallback), static under reduced motion,
-  hidden below `md`; contexts: run card 120 (centred, hint + elapsed beneath, the only
-  animation during a run), login 120, criteria dialog 80. The run button swaps to "Running…"
-  + disables; no border crawl around the card.
+- Loader: `SakuraLeafLoader` (`src/components/three/SakuraLeafLoader.tsx`) — brand-only 3D
+  sakura leaf flying downwind (x sway + y climb/dive, banked nose, flutter) streaming a
+  candle tape of its own path (pure, three-free helpers in `three/leafTrace.ts`: blade,
+  curl, wind clock, price curve, candle slots/fade), lazy chunk, WebGL-gated (CSS
+  `vault-pulse` fallback), static under reduced motion, hidden below `md`; contexts: run card
+  120 (centred, hint + elapsed beneath, the only animation during a run), login 120,
+  criteria dialog 80. The run button swaps to "Running…" + disables; no border crawl around
+  the card.
 - Path alias `@/` -> `src/` (vite.config.ts + tsconfig paths, NO baseUrl — TS6 deprecated)
 
 ## Structure
@@ -63,7 +65,7 @@ frontend/src/
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # AmbientField + MarketRingLoader + SakuraScene — lazy, WebGL-gated
+    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt)
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
@@ -107,9 +109,10 @@ frontend/src/
 | Phase | UI work |
 |---|---|
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
-| 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2) |
+| 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2, itself replaced by the Sakura Leaf) |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
+| v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |
 | 2 | Documents page: stock sub-nav -> doc list + summary cards; badge shows `analysis_method` (gemini/fallback) and parse status ("n/m parsed") |
 | 3 | Signals chart: lightweight-charts candles + buy/sell markers from `/model/signals` |
 | 4 | Backtest report: metric cards (CAGR/Sharpe/drawdown) + equity-curve chart (recharts) vs Nifty line |

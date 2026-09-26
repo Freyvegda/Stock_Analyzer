@@ -9,7 +9,7 @@ import { BlurFade } from '@/components/ui/BlurFade'
 import { LoginBrandPanel } from '@/components/LoginBrandPanel'
 import { LoginGarden } from '@/components/LoginGarden'
 
-const MarketRingLoader = lazy(() => import('@/components/three/MarketRingLoader'))
+const SakuraLeafLoader = lazy(() => import('@/components/three/SakuraLeafLoader'))
 
 type Phase = 'loading' | 'setup' | 'login'
 
@@ -100,7 +100,7 @@ export default function Login() {
     return (
       <Flex minH="100vh" align="center" justify="center" px={6}>
         <Suspense fallback={null}>
-          <MarketRingLoader size={120} label="Checking session…" />
+          <SakuraLeafLoader size={120} label="Checking session…" />
         </Suspense>
       </Flex>
     )

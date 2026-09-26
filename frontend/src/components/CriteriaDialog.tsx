@@ -23,7 +23,7 @@ import type { Criterion, RatioSpec, UserCriteria } from '@/api/types'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import { toaster } from '@/components/ui/toaster'
 
-const MarketRingLoader = lazy(() => import('@/components/three/MarketRingLoader'))
+const SakuraLeafLoader = lazy(() => import('@/components/three/SakuraLeafLoader'))
 
 interface DraftRow {
   key: string
@@ -316,7 +316,7 @@ export function CriteriaDialog({
               ) : (
                 <Flex justify="center" py={4}>
                   <Suspense fallback={null}>
-                    <MarketRingLoader size={80} label="Loading criteria…" />
+                    <SakuraLeafLoader size={80} label="Loading criteria…" />
                   </Suspense>
                 </Flex>
               )}
