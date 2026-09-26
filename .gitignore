@@ -6,3 +6,4 @@ node_modules/
 dist/
 graphify-out/
 .pytest_cache/
+.superpowers/

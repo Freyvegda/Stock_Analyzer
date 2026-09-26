@@ -2,7 +2,6 @@ import concurrent.futures
 import json
 from datetime import date
 
-import yaml
 from fastapi import APIRouter, HTTPException
 
 from app.data.provider import DataProvider
@@ -96,7 +95,4 @@ def get_config() -> dict:
 
 @router.post("/config/reload")
 def reload() -> dict:
-    try:
-        return reload_config()
-    except yaml.YAMLError as e:
-        raise HTTPException(status_code=422, detail=f"Invalid screening.yaml: {e}")
+    return reload_config()
