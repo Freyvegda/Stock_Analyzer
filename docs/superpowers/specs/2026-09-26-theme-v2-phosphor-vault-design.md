@@ -85,17 +85,17 @@ Sources distilled into this design (firecrawl research, 2026-09-26):
 
 ```
 frontend/src/theme/
-├── tokens.ts            # SINGLE SOURCE: dark + light palette, amber scale, chart palette
-├── tokens.sync.mjs      # exports renderTokenBlock(tokens); CLI rewrites index.css block
-├── system.ts            # imports tokens.ts -> Chakra tokens + semantic tokens
+├── tokens.ts                  # SINGLE SOURCE: dark + light palette, amber scale, chart palette
+├── system.ts                  # imports tokens.ts -> Chakra tokens + semantic tokens
 └── __tests__/
-    ├── tokens.parity.test.ts   # index.css block === renderTokenBlock(tokens)
-    └── contrast.test.ts        # AA text pairs + 3:1 chart series, both modes
+    ├── tokens.sync.test.ts    # index.css marked block === tokens.ts; VAULT_SYNC=1 rewrites it
+    └── contrast.test.ts       # AA text pairs + 3:1 chart series, both modes
 ```
 
 - `src/index.css` contains a marked region
-  `/* @vault-tokens:start */ … /* @vault-tokens:end */` — **script-written, never hand-edited**.
-  Run `npm run tokens:sync` (new package.json script) after editing `tokens.ts`.
+  `/* @vault-tokens:start */ … /* @vault-tokens:end */` — **test-written, never hand-edited**.
+  Run `$env:VAULT_SYNC='1'; npm run tokens:sync` (PowerShell) after editing `tokens.ts` to
+  rewrite the block; a plain `npm run tokens:sync` fails when drift exists.
 - Token block covers color vars only. Radius, fonts, motion durations/easings stay
   hand-authored below it.
 - Canonical value format: hex (readable in review). `oklch()` conversions are unnecessary.
@@ -247,9 +247,9 @@ instant/linear, ≤ 120ms).
    pipeline stage runs.
 9. **Row entrance** — first load only: 12ms stagger, cap 8 rows, rest instant. Sorting,
    filtering, and reorders are always immediate.
-10. **Sanctioned loops (complete whitelist)** — stair-tower loader (inherits amber via
-    `--primary`), status rail marquee (only when overflowing), pipeline last-run dot pulse.
-    Max one loop per viewport zone; loops never render inside tables, summaries, or charts.
+10. **Sanctioned loops (complete whitelist)** — Market Ring 3D loader (see "Loader v2"),
+    status rail marquee (only when overflowing), pipeline last-run dot pulse. Max one loop per
+    viewport zone; loops never render inside tables, summaries, or charts.
 11. **Stretch tier (explicitly optional, not required for acceptance):** pointer spotlight
     glow on run card/metric tiles (pointer-fine only, ~4% amber); CriteriaDialog
     morph-from-trigger; wireframe grid floor in `AmbientField`.
@@ -323,8 +323,23 @@ or does not run. New animated components ship tests using the existing
 ### Loading
 
 - New shared `Skeleton`: surface-ladder base + 6% white shimmer sweep (tone-matched; never a
-  bright spinner). Tables/cards/charts use it; pipeline = tower loader; inline saves = mini
-  tower. Reduced motion → static block.
+  bright spinner). Tables/cards/charts use it; reduced motion → static block.
+
+#### Loader v2 — Market Ring (replaces the stair-tower loader)
+
+- 48 instanced candlesticks in a slowly rotating ring; heights breathe as a traveling wave;
+  most candles amber, a few fixed ones pulse gain/loss; thin amber torus base + center glow.
+  Stops motion → frozen "skyline" that reads as intentional.
+- Implementation: hand-rolled R3F (`@react-three/fiber` + `three`, both installed; no drei,
+  no shaders), `InstancedMesh`, `useFrame` matrix updates. Colors come from `tokens.ts` /
+  Chakra `brand`/`gain`/`loss` semantic tokens (no hardcoded hex). Lazy-loaded chunk.
+- Sizes: rendered only at ≥ 96px (run card 120px, Login session check 120px, dialog load
+  80px). Inline submit buttons (Login, CriteriaDialog save) use Chakra `Spinner` in amber —
+  3D at 20px is waste.
+- Gates: `hasWebGL()` else CSS "vault pulse" fallback ring; hidden below `md`; scene paused
+  when the tab is hidden; `role="status"` + sr-only label; reduced motion → static single
+  frame (`frameloop="demand"`).
+- `StairTowerLoader.tsx`, `stair-tower.css`, and `StairTowerLoader.test.tsx` are deleted.
 
 ### Icons & accessibility
 
@@ -333,15 +348,17 @@ or does not run. New animated components ship tests using the existing
 - Every color signal has shape/sign redundancy (`Delta`). Contrast test guards tokens. Focus
   rings always visible. Loops stop under reduced motion.
 
-## Phase 1.5 interaction
+## Phase 1.5 retrofit (Phase 1.5 has shipped)
 
-- Land order: theme v2 (this spec) → Phase 1.5 as planned.
-- Rebaseline edits to `plan/phase-1.5/frontend.md` (wording only): "emerald tokens only" →
-  "vault/amber tokens only"; DESIGN.md references remain valid (DESIGN.md is rewritten in
-  place). Phase 1.5's "No new dependencies" constraint stands — the mono font is added by
-  theme v2 before 1.5 starts.
-- `StairTowerLoader` needs no changes: it reads `var(--primary)`/`var(--chart-1)` and turns
-  amber automatically.
+- Phase 1.5 is merged (auth, `Login`, `CriteriaDialog`, criteria panel, stair-tower loader);
+  theme v2 lands on top and retrofits those surfaces instead of the originally planned
+  rebaseline. One docs-only line is added to `plan/phase-1.5/frontend.md` noting the loader
+  swap.
+- Call sites switch: Fundamentals run card → Market Ring 120px; `Login` session check →
+  Market Ring 120px; CriteriaDialog load phase → Market Ring 80px; Login + dialog submit
+  spinners → Chakra `Spinner` (amber).
+- No new dependency for the loader (R3F + three already installed); the only dependency this
+  spec adds is the mono font.
 
 ## Rollout
 
@@ -349,17 +366,18 @@ or does not run. New animated components ship tests using the existing
 |---|---|---|
 | T0 | Foundation | Add `@fontsource-variable/geist-mono` + `tokens:sync` script; `tokens.ts`; `tokens.sync.mjs`; rewrite `index.css` token block, add `--font-mono`, motion vars, texture classes; `system.ts` v2 (amber + gain/loss, drop emerald); update `src/theme/system.test.ts`; new parity + contrast tests; rewrite `DESIGN.md` v2 |
 | T1 | Shell | `App.tsx` nav v2 + `StatusContext` + `StatusRail.tsx` (+ marquee), texture layer, `ThemeToggle` wipe, focus-ring utility, `Num`/`Delta` components |
-| T2 | Motion kit | `ValueFlash`, NumberTicker v2, `Skeleton`, BlurFade retune, BorderBeam retint, reduced-motion tests |
-| T3 | Fundamentals re-skin | RunCard (elapsed timer + amber tower), CriteriaPanel chips, ShortlistTable (mono numerals, chips, selected row); update affected tests |
-| T4 | Ambient v2 | AmbientField embers retint/tuning; verify WebGL gates + chunk isolation |
-| T5 | Phase 1.5 rebaseline | Wording edits in `plan/phase-1.5/frontend.md`; no structural change |
+| T2 | Motion kit | `ValueFlash`, NumberTicker v2, `Skeleton`, BlurFade retune, BorderBeam radius, reduced-motion tests |
+| T3 | Fundamentals re-skin | RunCard (elapsed timer), CriteriaPanel chips, ShortlistTable (mono numerals, loss chips); update affected tests |
+| T4 | Market Ring loader | `MarketRingLoader` (R3F instanced candles) + vault-pulse no-WebGL fallback; delete `StairTowerLoader` + CSS + test; swap call sites + Chakra `Spinner` inline; chunk assertion |
+| T5 | Ambient v2 + Phase 1.5 retrofit | AmbientField embers retint/tuning, WebGL gates; retrofit `Login`/`CriteriaDialog` visuals to vault tokens; docs-only loader note in `plan/phase-1.5/frontend.md` |
 | T6 | Verify + docs | Full suite, build, greps, manual checklist, `FRONTEND.md` sync, graphify update |
 
 Six PR-sized tasks; each leaves `npm run test` green and `npm run build` clean.
 
 ## Verification
 
-- **New tests:** `tokens.parity.test.ts` (index.css block === `renderTokenBlock(tokens)`);
+- **New tests:** `tokens.sync.test.ts` (index.css marked block === `tokens.ts` values;
+  `VAULT_SYNC=1` rewrites the block);
   `contrast.test.ts` (text pairs ≥ 4.5:1: foreground/background, card-foreground/card,
   popover-foreground/popover, primary-foreground/primary, muted-foreground/background,
   muted-foreground/card, gain/background, gain/card, loss/background, loss/card both modes;
@@ -382,7 +400,8 @@ Six PR-sized tasks; each leaves `npm run test` green and `npm run build` clean.
 | Motion creep | stretch tier explicit; loop whitelist; reduced-motion tests |
 | Token drift returns | sync script + parity test |
 | 3D/bundle weight | existing WebGL/visibility gates; chunk isolation assertion |
-| Phase 1.5 conflicts | rebaseline task (wording only); loader auto-inherits amber |
+| 3D loader perf (extra canvas while running) | transient canvas only during runs; ~48 instances, no shaders/lights; paused when hidden; no-WebGL fallback ring |
+| Phase 1.5 retrofit breaks its tests | delete `StairTowerLoader.test.tsx` with the component; update call-site tests (dialog save asserts `Spinner`); add Market Ring announcement + reduced-motion + no-WebGL tests |
 
 ## Non-goals
 
@@ -397,3 +416,5 @@ Six PR-sized tasks; each leaves `npm run test` green and `npm run build` clean.
 - DESIGN.md v2, FRONTEND.md, and the Phase 1.5 plan agree with the shipped UI.
 - Both modes read as Phosphor Vault: amber attention, green/red polarity with sign/arrow,
   mono numerals, hairlines, ember ambient, calm data areas.
+- Market Ring renders in the run card and on Login; static frozen pose under reduced motion;
+  vault-pulse ring when WebGL is missing; Chakra `Spinner` inline.
