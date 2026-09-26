@@ -1,21 +1,23 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach } from 'vitest'
 
 afterEach(() => cleanup())
 
 // jsdom has no matchMedia; next-themes, Chakra, and usePrefersReducedMotion read it.
+// Deliberately a plain function (not vi.fn) so vi.resetAllMocks() cannot strip its
+// implementation mid-suite.
 if (!window.matchMedia) {
-  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+  window.matchMedia = ((query: string) => ({
     matches: false,
     media: query,
     onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }))
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
 }
 
 // Chakra popper (floating-ui) observes element size; jsdom has no ResizeObserver.
