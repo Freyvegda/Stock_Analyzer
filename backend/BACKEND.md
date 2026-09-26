@@ -5,7 +5,7 @@
 ## Purpose
 
 Python + FastAPI service. Runs 4-stage pipeline for Indian-market (Nifty 500) analysis:
-1. **Screen** — fetch fundamentals for ~500 stocks, filter to ~10 via the caller's DB-stored criteria (YAML retired in Phase 1.5)
+1. **Screen** — gate the stored snapshot (newest ok row per symbol + `stocks.market_cap`) with the caller's DB-stored criteria, refresh only gate survivors from yfinance, filter to ~10 (YAML retired in Phase 1.5)
 2. **Docs** — fetch + parse PDFs (concalls, quarterly results, investor presentations, audit reports) for shortlisted stocks only, analyze with Gemini Flash (free tier) with keyword fallback
 3. **Model** — XGBoost on 5yr daily OHLC features -> buy/sell/hold signals per shortlisted stock
 4. **Backtest** — walk-forward (3y train / 1q test, rolling 2019-2024), report CAGR/Sharpe/max-drawdown vs Nifty 500
@@ -81,8 +81,10 @@ backend/
 
 ```
 Nifty 500 list -> stocks table
-  -> fundamentals(symbol) per stock -> fundamentals table (data_status ok|failed)
-  -> service.py + engine.py apply the caller's DB criteria -> screen_runs.shortlisted_json (~10 symbols)
+  -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
+  -> engine.py staged gates on the snapshot -> survivors (~10-150 of 500)
+  -> fundamentals(symbol) for survivors only -> fundamentals table (data_status ok|failed)
+  -> fresh values re-checked; a failed fetch keeps the stored row -> screen_runs.shortlisted_json (~10 symbols)
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table
@@ -92,7 +94,7 @@ Nifty 500 list -> stocks table
 
 ## Error Handling
 
-- Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> serve cached data + staleness flag
+- Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
 - PDF parse failure: log, `parse_status=failed`, continue; UI shows "n/m docs parsed"
 - Gemini: backoff queue -> keyword fallback, flagged in DB
 - API errors: HTTP 422 for bad input, 502 for upstream data-source failures, 500 with structured `{"detail": ...}`; never raw tracebacks to frontend

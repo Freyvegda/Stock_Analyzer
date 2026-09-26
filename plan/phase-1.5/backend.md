@@ -24,12 +24,17 @@ more than 10 rows.
 - `app/screener/criteria.py` — pydantic validation (`extra="forbid"`,
   unknown key / duplicate / non-finite / zero-enabled / thesis > 500 / client-sent
   `shortlist_size` all 422), Phase-1 defaults, JSON round-trip, `ConfigError`.
-- `app/screener/engine.py` — `evaluate_screen(rows, criteria, shortlist_size)`;
-  enabled-only evaluation; raw `.info` values scaled; clamp `min(size, 10)`.
+- `app/screener/engine.py` — `screen_rows(rows, criteria)` staged gates in
+  criteria order (each gate sees only survivors; rejected reports the first
+  failed gate), `rank_shortlist(survivors, size)`, `evaluate_screen` = both;
+  raw `.info` values scaled; clamp `min(size, 10)`.
 - `app/screener/service.py` — `run_screen(provider, session_factory, user, criteria,
-  shortlist_size)` stores `user_id` + verbatim `criteria_json`; `latest_screen`
-  filters by user; `get_criteria`/`save_criteria` (first read seeds defaults;
-  corrupt JSON falls back to defaults).
+  shortlist_size)` gates the stored snapshot first (newest ok row per symbol +
+  `stocks.market_cap`), fetches only gate survivors plus symbols with no stored
+  row, re-checks fresh values, and falls back to the stored row per failed fetch
+  (`data_date` per row, `stale` on the run); stores `user_id` + verbatim
+  `criteria_json`; `latest_screen` filters by user; `get_criteria`/`save_criteria`
+  (first read seeds defaults; corrupt JSON falls back to defaults).
 - API — `GET /screen/ratios`, `GET/PUT /screen/criteria`, `POST /screen/run`,
   `GET /screen/latest`, all session-gated; `/docs`, `/model`, `/backtest` gated too.
 

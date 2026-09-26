@@ -115,6 +115,7 @@ Model outputs. Composite PK allows multiple models per stock/day.
 ## Access Patterns
 
 - All DB access through `SessionLocal()` sessions (FastAPI dependency or context manager)
+- Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`_latest_ok_fundamentals`); criteria gate that snapshot before any fetch, then only gate survivors are refreshed
 - Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)
 - Dates as ISO strings — sortable, comparable, timezone-free (market data is date-granular)
 - JSON-in-Text columns (`shortlisted_json`, `criteria_json`, `report_json`, `red_flags_json`) for variable-shape payloads; parse at service layer, never in SQL

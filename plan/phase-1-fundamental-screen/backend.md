@@ -14,13 +14,13 @@ Nifty 500 list → fetch fundamentals → apply `config/screening.yaml` ratios �
    - `ohlc()` / `filings()`: leave `NotImplementedError` (Phases 2–3).
 
 2. **`screener/engine.py`**:
-   - `evaluate_screen(rows, config) -> (shortlist, rejected)`; `apply_screen(rows, config)` returns the shortlist only.
-   - Rule: stock passes if every configured criterion passes. NULL ratio → criterion fails; the rejected entry records `{symbol, failed: [criteria]}`.
+   - `evaluate_screen(rows, config) -> (shortlist, rejected)`; `apply_screen(rows, config)` returns the shortlist only. (Staged since the 2026-09-27 fix: `screen_rows` gates in criteria order and a cut stock is never checked against later gates, so `rejected` records only the first failed criterion.)
+   - Rule: stock passes if every configured criterion passes. NULL ratio → criterion fails.
    - Rank survivors: score = roe + roce − (debt_to_equity × 20); sort desc; cut at `shortlist_size`.
-   - Return `[{rank, symbol, score, ratios: {...}, failed: []}]`.
+   - Return `[{rank, symbol, score, ratios: {...}, failed: [], data_date}]`.
 
 3. **`screener/service.py` + `api/screen.py`** — logic in service (BACKEND.md rule 6), routers thin:
-   - `POST /screen/run`: sync stocks; fetch `fundamentals()` per stock with per-stock try/except (fetch failure → `fundamentals` row with `data_status=failed`, NULL ratios, error in `raw_json`); upsert `fundamentals` (`data_status=ok`); evaluate; insert `screen_runs` row (verbatim YAML snapshot + shortlist JSON). Return `{run_id, shortlisted, failed_count, failed_symbols, failed_details, stale, total}`.
+   - `POST /screen/run` (staged since the 2026-09-27 fix): gate the stored snapshot (newest ok row per symbol + `stocks.market_cap`) first; fetch `fundamentals()` only for gate survivors plus symbols with no stored row, per-stock try/except (fetch failure → `fundamentals` row with `data_status=failed`, NULL ratios, error in `raw_json`, and the stored row stays in play); upsert ok rows; re-check fresh values; insert `screen_runs` row (verbatim criteria snapshot since Phase 1.5 + shortlist JSON). Return `{run_id, shortlisted, failed_count, failed_symbols, failed_details, stale, total}`; shortlist rows carry `data_date`.
    - `GET /screen/latest`: latest `screen_runs` row, parsed JSON, joined with stocks name/sector/market_cap.
    - `GET /screen/config`: validated YAML as JSON. `POST /screen/config/reload`: `reload_config()`, return new config. Validation via pydantic `ScreenConfig` in `screener/config.py`: criteria required, keys must be known, `shortlist_size` int ≥ 1 (default 10). Invalid file → `ConfigError` → HTTP 422 (handler in `app/main.py`).
 
