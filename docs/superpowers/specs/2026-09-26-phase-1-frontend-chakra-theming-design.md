@@ -1,7 +1,7 @@
 # Phase 1 Frontend — Hybrid shadcn + Chakra UI with Light/Dark Theming
 
 **Date:** 2026-09-26
-**Status:** Approved (design), pending spec review
+**Status:** Approved (design Rev 2: design system + motion + 3D)
 **Scope:** `frontend/` only. Phase 1 (Fundamentals page + app shell).
 
 ## Intent
@@ -198,3 +198,83 @@ src/
 - [ ] Failed requests show inline errors (config panel and page level), never silent.
 - [ ] Zero stock shortlist shows the empty state.
 - [ ] Vitest covers `sortRows`, `CriteriaPanel`, `ShortlistTable` per table above.
+
+---
+
+# Revision 2 — Design system, motion, Three.js (approved 2026-09-26)
+
+Extends the approved design above. The interview the user answered: 3D = ambient shell +
+run-loading only; design direction = Terminal emerald; icons = lucide-react only.
+
+## Additions
+
+### A. Design set — `frontend/DESIGN.md` (source of truth)
+
+A new doc every frontend change follows; `FRONTEND.md` links to it. Contents:
+
+- **Palette (Terminal emerald):** zinc neutrals; emerald primary; red destructive;
+  emerald = gain, red = loss; emerald focus ring; emerald chart-1. Values live in two
+  synced places — Chakra `theme.tokens` (`src/theme/system.ts`) and the shadcn/Tailwind
+  CSS vars (`src/index.css` `:root` / `.dark`) — with DESIGN.md's table as the contract.
+  Pinned values:
+  - Light: `--primary: oklch(0.596 0.145 163.225)`, `--primary-foreground: oklch(0.985 0 0)`,
+    `--ring: oklch(0.596 0.145 163.225)`.
+  - Dark: `--primary: oklch(0.696 0.17 162.48)`, `--primary-foreground: oklch(0.145 0 0)`,
+    `--ring: oklch(0.696 0.17 162.48)`.
+- **Type:** Geist Variable; numeric data uses `tabular-nums`; sizes xs 12 / sm 14 / base 16 /
+  lg 18 / xl 20–24.
+- **Shape/spacing:** radii 6/8/10; 1px hairline borders; elevation only on popovers, menus,
+  toasts; 4px spacing grid.
+- **Motion:** durations 150 (fast) / 220 (base) / 320 (entrance) ms; no continuous animation
+  inside data areas; every animation honors `prefers-reduced-motion` (instant render).
+- **Icons:** `lucide-react` only; 16px default (14px in dense table headers);
+  `strokeWidth={1.75}`; decorative icons `aria-hidden="true"`; icon-only buttons carry
+  `aria-label`; no `react-icons`.
+- **3D rules:** decorative only, never blocks readability; lazy-loaded; hidden below `md`;
+  paused when the tab is hidden; skipped for reduced-motion users; must degrade to a static
+  fallback when WebGL is unavailable.
+- **Light/dark parity:** both modes designed; no inverted-only colors; AA contrast.
+
+### B. Motion components
+
+Dependency: `motion` (v13, React 19 compatible). Magic UI patterns are hand-copied into
+`src/components/ui/` and restyled to our tokens; no runtime dependency on Magic UI.
+
+- `NumberTicker` — animated count-up for summary numbers (`X shortlisted · Y failed ·
+  Z total`); instant final value under reduced motion.
+- `BlurFade` — entrance for panels/table; staggered, capped delay.
+- `BorderBeam` — animated border overlay for the run card while a screen is running;
+  static or hidden under reduced motion.
+- `DotPattern` — empty-state background.
+- Shared hook `src/lib/usePrefersReducedMotion.ts` gates all of the above.
+
+### C. Three.js
+
+Dependencies: `three` + `@react-three/fiber` (no drei initially).
+
+- `src/components/three/AmbientField.tsx` — shell-level ambient particle field: lazy
+  (`React.lazy` + `Suspense`), fixed behind content, `pointer-events-none`, `aria-hidden`,
+  low opacity, emerald tint, DPR capped at 1.5, pauses on `visibilitychange`, hidden below
+  `md`, skipped under reduced motion.
+- `src/components/three/RunVisual.tsx` — rotating wireframe cluster (~160px) shown inside
+  the run-loading card.
+- `src/lib/webgl.ts` `hasWebGL(): boolean` — safe WebGL probe; components render the
+  fallback (nothing / `DotPattern`) when false or when reduced motion is preferred.
+- 3D code loads only in an async chunk; the initial bundle must not include `three`
+  (verified from `npm run build` output).
+
+### D. Tests and docs
+
+- Tests: `NumberTicker` final value + reduced-motion instant; `BlurFade`/`BorderBeam`
+  reduced-motion render children; `hasWebGL` returns false in jsdom; `AmbientField` /
+  `RunVisual` render the fallback without throwing when WebGL is unavailable.
+- `DESIGN.md` created; `FRONTEND.md` links it and lists the motion/3D dependencies.
+
+## Revised acceptance additions
+
+- [ ] Both modes follow DESIGN.md; no hardcoded zinc in shell/screen components.
+- [ ] All icons are lucide-react at the documented size/stroke.
+- [ ] Motion components honor `prefers-reduced-motion` (no animation, correct content).
+- [ ] 3D appears on the shell and during a run only; missing WebGL degrades gracefully;
+      initial JS bundle excludes `three` (async chunk only).
+
