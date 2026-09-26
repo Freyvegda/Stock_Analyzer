@@ -109,7 +109,7 @@ describe('CriteriaDialog', () => {
     mockLoadSuccess()
     mockedApi.put.mockResolvedValue(criteria)
     renderDialog()
-    const input = await screen.findByPlaceholderText(/add ratio/i)
+    expect(await screen.findByPlaceholderText(/add ratio/i)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /toggle suggestions/i }))
     const option = await screen.findByRole('option', { name: /current ratio/i })
     expect(screen.queryByRole('option', { name: 'PE' })).not.toBeInTheDocument()
