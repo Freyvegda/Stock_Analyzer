@@ -1,20 +1,47 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Fundamentals from '../Fundamentals'
-import { api } from '../../api/client'
+import { api, ApiError } from '../../api/client'
+import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
+import { AuthProvider } from '../../auth/AuthContext'
+import { RequireAuth } from '../../components/RequireAuth'
+import type { RatioSpec, UserCriteria } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn() },
-  ApiError: class ApiError extends Error {},
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  ApiError: class ApiError extends Error {
+    status: number
+    detail: string
+    constructor(status: number, detail: string) {
+      super(`API error ${status}: ${detail}`)
+      this.status = status
+      this.detail = detail
+    }
+  },
+  AUTH_UNAUTHORIZED_EVENT: 'auth:unauthorized',
 }))
 
-vi.mock('../../components/three/RunVisual', () => ({ default: () => null }))
+vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
 const mockedApi = vi.mocked(api)
 
-const config = { criteria: { pe_max: 25 }, shortlist_size: 10 }
+const criteria: UserCriteria = {
+  criteria: [
+    { key: 'pe', enabled: true, value: 25 },
+    { key: 'roe', enabled: true, value: 15 },
+  ],
+  thesis: null,
+  shortlist_size: 10,
+}
+
+const catalog: RatioSpec[] = [
+  { key: 'pe', label: 'PE', unit: '×', category: 'Valuation', direction: 'max' },
+  { key: 'roe', label: 'ROE', unit: '%', category: 'Profitability', direction: 'min' },
+]
+
 const row = {
   symbol: 'TCS',
   rank: 1,
@@ -25,7 +52,14 @@ const row = {
   market_cap: 1200000,
 }
 
-beforeEach(() => vi.resetAllMocks())
+function mockLoads(latest: unknown) {
+  mockedApi.get.mockImplementation((path: string) => {
+    if (path === '/screen/criteria') return Promise.resolve(criteria)
+    if (path === '/screen/ratios') return Promise.resolve(catalog)
+    if (path === '/screen/latest') return Promise.resolve(latest)
+    return Promise.reject(new Error(`unexpected GET ${path}`))
+  })
+}
 
 function renderPage() {
   return render(
@@ -35,17 +69,19 @@ function renderPage() {
   )
 }
 
+beforeEach(() => vi.resetAllMocks())
+
 describe('Fundamentals', () => {
-  it('shows an error when initial loads fail', async () => {
-    mockedApi.get.mockRejectedValue(new Error('API error 500: boom'))
+  it('renders criteria badges from the per-user criteria endpoint', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
     renderPage()
-    expect(await screen.findByRole('alert')).toHaveTextContent(/boom/)
+    expect(await screen.findByText('PE ≤ 25×')).toBeInTheDocument()
+    expect(screen.getByText('ROE ≥ 15%')).toBeInTheDocument()
+    expect(screen.getByText('Top 10')).toBeInTheDocument()
   })
 
   it('renders the latest run rows with stock metadata', async () => {
-    mockedApi.get
-      .mockResolvedValueOnce(config)
-      .mockResolvedValueOnce({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
     renderPage()
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
@@ -53,29 +89,93 @@ describe('Fundamentals', () => {
   })
 
   it('shows empty state for a zero-row run', async () => {
-    mockedApi.get
-      .mockResolvedValueOnce(config)
-      .mockResolvedValueOnce({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
-      .mockResolvedValueOnce({ run_id: 2, run_date: '2026-09-26', shortlisted: [] })
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+    })
     mockedApi.post.mockResolvedValue({ run_id: 2, shortlisted: [], failed_count: 500, total: 500 })
     renderPage()
-    await userEvent.setup().click(await screen.findByRole('button', { name: /run screen/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     expect(await screen.findByText(/no stocks passed the screen/i)).toBeInTheDocument()
     await waitFor(() =>
       expect(screen.getByTestId('summary')).toHaveTextContent('0 shortlisted · 500 failed · 500 total'),
     )
   })
 
-  it('reloads config through POST /screen/config/reload', async () => {
-    mockedApi.get
-      .mockResolvedValueOnce(config)
-      .mockResolvedValueOnce({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
-    mockedApi.post.mockResolvedValue({ ...config, criteria: { pe_max: 30 } })
+  it('shows the stair-tower loader while the screen runs', async () => {
+    mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    mockedApi.post.mockReturnValue(gate.then(() => ({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })))
     renderPage()
-    await userEvent.setup().click(await screen.findByRole('button', { name: /reload config/i }))
-    await waitFor(() =>
-      expect(mockedApi.post).toHaveBeenCalledWith('/screen/config/reload', {}),
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+    release()
+  })
+
+  it('shows the panel error when criteria loading fails', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/latest') return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+      return Promise.reject(new Error('criteria exploded'))
+    })
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/criteria exploded/)
+  })
+
+  it('treats a 401 after a successful run as a session end, not a warning', async () => {
+    let latestCalls = 0
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        latestCalls += 1
+        if (latestCalls === 1) {
+          return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+        }
+        return Promise.reject(new ApiError(401, 'Not authenticated'))
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    mockedApi.post.mockResolvedValue({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })
+    renderPage()
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    await waitFor(() => expect(latestCalls).toBe(2))
+    expect(toaster.create).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('redirects to /login when a 401 event fires mid-session', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/auth/me') return Promise.resolve({ id: 1, username: 'solo' })
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    render(
+      <Provider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  <RequireAuth>
+                    <Fundamentals />
+                  </RequireAuth>
+                }
+              />
+              <Route path="/login" element={<div>login page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </Provider>,
     )
-    expect(await screen.findByText('PE ≤ 30')).toBeInTheDocument()
+    expect(await screen.findByText('PE ≤ 25×')).toBeInTheDocument()
+    act(() => window.dispatchEvent(new Event('auth:unauthorized')))
+    expect(await screen.findByText('login page')).toBeInTheDocument()
   })
 })

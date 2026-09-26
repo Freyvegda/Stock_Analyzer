@@ -48,6 +48,9 @@ Rules:
 
 - Durations: 150 ms (fast feedback) / 220 ms (base) / 320 ms (entrance).
 - No continuous or looping animation inside data areas (tables, ratios, summaries).
+- Exception: `StairTowerLoader` (`src/components/ui/StairTowerLoader.tsx` + `stair-tower.css`) is the
+  single sanctioned continuous/looping animation. It renders in control surfaces only — the run
+  card (~120px) and login/save buttons (~20px) — never inside data areas.
 - Honoring `prefers-reduced-motion: reduce` is mandatory: animations render their final
   state instantly, or do not run at all. Use `usePrefersReducedMotion`.
 
