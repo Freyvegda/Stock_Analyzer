@@ -26,14 +26,15 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   (`src/auth/AuthContext.tsx`) resolves `GET /auth/me` on mount; `RequireAuth` gates every route
   except `/login`. Any non-login/setup 401 dispatches `auth:unauthorized`, clears the user, and the
   guard redirects to `/login`.
-- Theming v2 "Phosphor Vault": `src/theme/tokens.ts` is the single source of colour truth; the
+- Theming v3 "Sakura Vault": `src/theme/tokens.ts` is the single source of colour truth; the
   marked block in `src/index.css` is test-synced (`$env:VAULT_SYNC='1'; npm run tokens:sync`),
-  Chakra `system.ts` derives from it, and `contrast.test.ts` gates WCAG AA in both modes.
-  `scenePalette` (same file) is the login-only Sakura Garden palette — outside `ThemeTokens`,
-  outside the synced block, scene-only (see DESIGN.md).
+  Chakra `system.ts` derives from it (sakura scale + `colorPalette="sakura"`, `bg.panel`), and
+  `contrast.test.ts` gates WCAG AA in both modes. `scenePalette` (same file) is the login-only
+  Sakura Garden palette — outside `ThemeTokens`, outside the synced block, scene-only (see
+  DESIGN.md).
 - Typography: Geist UI + **Geist Mono for every number** via `Num`/`Delta`
-  (`src/components/ui/Num.tsx`, `Delta.tsx`). Amber is attention only — never gain/loss polarity.
-- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — amber-only 3D
+  (`src/components/ui/Num.tsx`, `Delta.tsx`). Sakura is attention only — never gain/loss polarity.
+- Loader: `MarketRingLoader` (`src/components/three/MarketRingLoader.tsx`) — brand-only 3D
   instanced candlestick ring (travelling wave + harmonic, sweeping flare, counter-rotating
   arc), lazy chunk, WebGL-gated (CSS `vault-pulse` fallback), static under reduced motion,
   hidden below `md`; contexts: run card 120 (centred, hint + elapsed beneath, the only
@@ -46,7 +47,7 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
 ```
 frontend/src/
 ├── main.tsx            # BrowserRouter + StrictMode + Provider + AuthProvider
-├── App.tsx             # /login public; everything else inside RequireAuth + nav shell (+ logout)
+├── App.tsx             # /login public; everything else inside RequireAuth + GlassNav shell
 ├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
 │   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", 401 event
@@ -54,7 +55,7 @@ frontend/src/
 ├── auth/
 │   └── AuthContext.tsx # session user state, logout, listens for auth:unauthorized
 ├── theme/
-│   └── system.ts       # Chakra v3 system (amber + brand/gain/loss); tokens.ts is the source
+│   └── system.ts       # Chakra v3 system (sakura + brand/gain/loss + bg.panel); tokens.ts is the source
 ├── pages/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
 │   ├── Fundamentals.tsx
@@ -63,7 +64,8 @@ frontend/src/
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
     ├── three/          # AmbientField + MarketRingLoader + SakuraScene — lazy, WebGL-gated
-    ├── Backdrop.tsx    # fixed texture layer (scanlines + amber glow)
+    ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
+    ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt)
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
     ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
@@ -96,9 +98,9 @@ frontend/src/
 - Build check: `npm run build` (tsc -b && vite build) must pass; dev: `npm run dev`
 - Tests: vitest + jsdom + Testing Library; run `npm run test`; mock all network/api/WebGL
   in tests
-- Design contract: `DESIGN.md` (Phosphor Vault: dark-first amber identity, Geist + Geist Mono,
-  motion signatures + loop whitelist, lucide-only icons, 3D rules) — every frontend change
-  follows it
+- Design contract: `DESIGN.md` (Sakura Vault: dark-first sakura identity, Geist + Geist Mono,
+  motion signatures + loop whitelist, liquid-glass navbar rules, lucide-only icons, 3D rules) —
+  every frontend change follows it
 
 ## Phase Gates
 
@@ -107,6 +109,7 @@ frontend/src/
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
 | 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2) |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
+| v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | 2 | Documents page: stock sub-nav -> doc list + summary cards; badge shows `analysis_method` (gemini/fallback) and parse status ("n/m parsed") |
 | 3 | Signals chart: lightweight-charts candles + buy/sell markers from `/model/signals` |
 | 4 | Backtest report: metric cards (CAGR/Sharpe/drawdown) + equity-curve chart (recharts) vs Nifty line |
