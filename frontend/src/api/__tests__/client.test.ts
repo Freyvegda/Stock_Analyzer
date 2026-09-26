@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError } from '../client'
+import { AUTH_UNAUTHORIZED_EVENT, api, ApiError } from '../client'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -37,5 +37,52 @@ describe('api client', () => {
     })
     const err = await api.get('/screen/latest').catch((e: unknown) => e)
     expect((err as Error).message).toContain('500')
+  })
+
+  it('sends PUT with a JSON body', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await api.put('/screen/criteria', { criteria: [] })
+    expect(fetchMock).toHaveBeenCalledWith('/api/screen/criteria', {
+      method: 'PUT',
+      body: '{"criteria":[]}',
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+
+  it('resolves undefined for 204 responses', async () => {
+    mockFetch({ ok: true, status: 204 })
+    await expect(api.post('/auth/logout', undefined)).resolves.toBeUndefined()
+  })
+
+  it('dispatches auth:unauthorized on a 401', async () => {
+    mockFetch({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      json: async () => ({ detail: 'Not authenticated' }),
+    })
+    const listener = vi.fn()
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, listener)
+    await api.get('/screen/latest').catch(() => {})
+    window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, listener)
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it('does not dispatch auth:unauthorized for login and setup 401s', async () => {
+    mockFetch({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      json: async () => ({ detail: 'Invalid username or password' }),
+    })
+    const listener = vi.fn()
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, listener)
+    await api.post('/auth/login', {}).catch(() => {})
+    await api.post('/auth/setup', {}).catch(() => {})
+    window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, listener)
+    expect(listener).not.toHaveBeenCalled()
   })
 })

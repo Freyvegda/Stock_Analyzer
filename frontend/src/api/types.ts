@@ -1,5 +1,38 @@
+// Retired by Phase 1.5 (per-user DB criteria); kept until the last consumers are rewritten.
 export interface ScreenConfig {
   criteria: Record<string, number>
+  shortlist_size: number
+}
+
+export interface AuthUser {
+  id: number
+  username: string
+}
+
+export interface AuthState {
+  users_exist: boolean
+  user: AuthUser | null
+}
+
+export type RatioDirection = 'min' | 'max'
+
+export interface RatioSpec {
+  key: string
+  label: string
+  unit: string
+  category: string
+  direction: RatioDirection
+}
+
+export interface Criterion {
+  key: string
+  enabled: boolean
+  value: number
+}
+
+export interface UserCriteria {
+  criteria: Criterion[]
+  thesis: string | null
   shortlist_size: number
 }
 
