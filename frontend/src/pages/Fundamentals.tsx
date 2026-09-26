@@ -1,16 +1,16 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Flex, Text } from '@chakra-ui/react'
 import { ApiError, api } from '../api/client'
-import type { LatestScreen, ScreenConfig, ScreenRunResult, ShortlistRow } from '../api/types'
+import type { LatestScreen, RatioSpec, ScreenRunResult, ShortlistRow, UserCriteria } from '../api/types'
+import { CriteriaDialog } from '../components/CriteriaDialog'
 import { CriteriaPanel } from '../components/CriteriaPanel'
 import { ShortlistTable } from '../components/ShortlistTable'
 import { BlurFade } from '../components/ui/BlurFade'
 import { BorderBeam } from '../components/ui/BorderBeam'
 import { DotPattern } from '../components/ui/DotPattern'
 import { NumberTicker } from '../components/ui/NumberTicker'
+import { StairTowerLoader } from '../components/ui/StairTowerLoader'
 import { toaster } from '../components/ui/toaster'
-
-const RunVisual = lazy(() => import('../components/three/RunVisual'))
 
 interface RunSummary {
   shortlisted: number
@@ -19,37 +19,27 @@ interface RunSummary {
 }
 
 export default function Fundamentals() {
-  const [config, setConfig] = useState<ScreenConfig | null>(null)
-  const [configError, setConfigError] = useState<string | null>(null)
-  const [reloading, setReloading] = useState(false)
+  const [criteria, setCriteria] = useState<UserCriteria | null>(null)
+  const [ratios, setRatios] = useState<RatioSpec[]>([])
+  const [criteriaError, setCriteriaError] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
   const [rows, setRows] = useState<ShortlistRow[]>([])
   const [summary, setSummary] = useState<RunSummary | null>(null)
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadConfig() {
+  async function loadCriteria() {
     try {
-      const cfg = await api.get<ScreenConfig>('/screen/config')
-      setConfig(cfg)
-      setConfigError(null)
+      const [saved, ratioList] = await Promise.all([
+        api.get<UserCriteria>('/screen/criteria'),
+        api.get<RatioSpec[]>('/screen/ratios'),
+      ])
+      setCriteria(saved)
+      setRatios(ratioList)
+      setCriteriaError(null)
     } catch (e) {
-      setConfigError(e instanceof Error ? e.message : 'Failed to load screening config')
-    }
-  }
-
-  async function reloadConfig() {
-    setReloading(true)
-    try {
-      const cfg = await api.post<ScreenConfig>('/screen/config/reload', {})
-      setConfig(cfg)
-      setConfigError(null)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Config reload failed'
-      setConfigError(message)
-      toaster.create({ title: 'Config reload failed', description: message, type: 'error' })
-    } finally {
-      setReloading(false)
+      setCriteriaError(e instanceof Error ? e.message : 'Failed to load screening criteria')
     }
   }
 
@@ -65,7 +55,7 @@ export default function Fundamentals() {
   }
 
   useEffect(() => {
-    loadConfig()
+    loadCriteria()
     loadLatest()
   }, [])
 
@@ -108,10 +98,16 @@ export default function Fundamentals() {
       </Text>
 
       <CriteriaPanel
-        config={config}
-        onReload={reloadConfig}
-        reloading={reloading}
-        error={configError}
+        criteria={criteria}
+        ratios={ratios}
+        onEdit={() => setDialogOpen(true)}
+        error={criteriaError}
+      />
+
+      <CriteriaDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSaved={(saved) => setCriteria(saved)}
       />
 
       <BlurFade>
@@ -131,9 +127,7 @@ export default function Fundamentals() {
                 <Text fontSize="sm" color="fg.muted">
                   Fetching fundamentals for ~500 stocks — takes a few minutes
                 </Text>
-                <Suspense fallback={null}>
-                  <RunVisual size={96} />
-                </Suspense>
+                <StairTowerLoader size={120} label="Running screen…" />
               </>
             ) : null}
             {summary !== null ? (
@@ -152,7 +146,7 @@ export default function Fundamentals() {
       </BlurFade>
 
       {/* CriteriaPanel already renders this failure with role="alert"; avoid a duplicate alert. */}
-      {error !== null && configError === null ? (
+      {error !== null && criteriaError === null ? (
         <Text role="alert" color="fg.error" fontSize="sm">
           {error}
         </Text>

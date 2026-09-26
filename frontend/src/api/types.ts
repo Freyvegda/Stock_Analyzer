@@ -1,9 +1,3 @@
-// Retired by Phase 1.5 (per-user DB criteria); kept until the last consumers are rewritten.
-export interface ScreenConfig {
-  criteria: Record<string, number>
-  shortlist_size: number
-}
-
 export interface AuthUser {
   id: number
   username: string

@@ -20,7 +20,7 @@ describe('api client', () => {
       statusText: 'Unprocessable Entity',
       json: async () => ({ detail: 'pe_max must be a number' }),
     })
-    const err = await api.post('/screen/config/reload', {}).catch((e: unknown) => e)
+    const err = await api.post('/screen/criteria', {}).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect((err as ApiError).status).toBe(422)
     expect((err as Error).message).toContain('pe_max must be a number')
