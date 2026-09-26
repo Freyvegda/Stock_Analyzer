@@ -10,9 +10,28 @@ Rationale: zero setup, zero cost, single-file backup. 500 stocks x 5yr daily pri
 
 **Hard rule: schema stays Postgres-compatible.** No SQLite-only column types, no SQLite-specific SQL. If scale ever demands it, swap = change connection string only. Mongo/NoSQL NOT used — documents live on the filesystem (`data/docs/{symbol}/`), their metadata + AI results in relational tables.
 
-## Tables (8)
+## Tables (10)
 
 Defined in `backend/app/db/models.py`. SQLAlchemy 2.x typed mappings (`Mapped[...]`).
+
+### users (Phase 1.5)
+Single account in practice; multi-user-ready schema.
+| Column | Type | Notes |
+|---|---|---|
+| id | Int PK autoincr | |
+| username | String unique, NOT NULL | trimmed, 3–32 chars, stored lowercase |
+| password_hash | String NOT NULL | `scrypt$n$r$p$salt$hash` (stdlib hashlib.scrypt) |
+| created_at | String NOT NULL | ISO date-time |
+
+### user_criteria (Phase 1.5)
+One row per user — the retired `screening.yaml`, per user.
+| Column | Type | Notes |
+|---|---|---|
+| user_id | Int PK, FK → users.id | one row per user |
+| criteria_json | Text NOT NULL | JSON array `[{key, enabled, value}]`; keys owned by `screener/catalog.py` |
+| thesis | Text? | free-text note, ≤ 500 chars |
+| shortlist_size | Int NOT NULL default 10 | server-set; engine clamps to `min(value, 10)` |
+| updated_at | String NOT NULL | ISO date-time |
 
 ### stocks
 Universe of Nifty-listed companies.
@@ -34,12 +53,13 @@ Point-in-time ratios per stock. Composite PK enables daily re-runs with history.
 | raw_json | Text? | full provider payload, for future ratios without re-fetch; `{"error": ...}` when `data_status=failed` |
 
 ### screen_runs
-Audit trail of every screen execution.
+Audit trail of every screen execution, per user (Phase 1.5).
 | Column | Type | Notes |
 |---|---|---|
 | id | Int PK autoincr | |
 | run_date | String | ISO date |
-| config_yaml | Text | snapshot of screening.yaml used — results reproducible |
+| user_id | Int NOT NULL, indexed, FK → users.id | run owner; read pattern `WHERE user_id = ? ORDER BY id DESC LIMIT 1` |
+| criteria_json | Text | verbatim criteria used — results reproducible |
 | shortlisted_json | Text | JSON array of {symbol, ratios, rank} |
 
 ### documents
@@ -97,7 +117,8 @@ Model outputs. Composite PK allows multiple models per stock/day.
 - All DB access through `SessionLocal()` sessions (FastAPI dependency or context manager)
 - Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)
 - Dates as ISO strings — sortable, comparable, timezone-free (market data is date-granular)
-- JSON-in-Text columns (`shortlisted_json`, `report_json`, `red_flags_json`) for variable-shape payloads; parse at service layer, never in SQL
+- JSON-in-Text columns (`shortlisted_json`, `criteria_json`, `report_json`, `red_flags_json`) for variable-shape payloads; parse at service layer, never in SQL
+- Session signing secret lives at `data/.session_secret` (file, not a table; gitignored, delete/rotate = logout all)
 
 ## Rules
 

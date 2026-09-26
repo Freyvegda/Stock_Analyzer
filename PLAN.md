@@ -28,7 +28,7 @@ Long holding horizon (fundamental-driven). Signals only — no auto-trading. Bud
 | Filings/PDFs | NSE/BSE announcement endpoints | Free, official |
 | Doc AI | Gemini Flash free tier; keyword-based fallback | 0 INR at 10 stocks/quarter volume |
 | Price model | XGBoost primary, LSTM optional experiment, behind `Model` interface | Custom transformer = overfit on ~1250 rows; dropped |
-| Screener config | `config/screening.yaml` + hot-reload endpoint | User requirement: changeable ratios |
+| Screener config | DB-backed per-user criteria (`user_criteria` + `screener/catalog.py`); `screening.yaml` retired in Phase 1.5 | changeable ratios per user, no file edits or restarts |
 | Pipeline trigger | Manual UI buttons now; scheduler later | MVP scope |
 | Testing | pytest + vitest (unit/integration) + walk-forward backtest (strategy) | Backtest = real validation |
 
@@ -90,7 +90,9 @@ D:\CODES\Projects\stock-analyzer\
 
 - `stocks(symbol PK, name, sector, market_cap)`
 - `fundamentals(symbol, date, pe, pb, roe, roce, debt_to_equity, raw_json, PK(symbol,date))`
-- `screen_runs(id PK, run_date, config_yaml, shortlisted_json)`
+- `users(id PK, username unique, password_hash, created_at)` — Phase 1.5
+- `user_criteria(user_id PK/FK, criteria_json, thesis, shortlist_size, updated_at)` — Phase 1.5
+- `screen_runs(id PK, run_date, user_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5
 - `documents(id PK, symbol, type[concall|results|presentation|audit], period, url, local_path, parse_status)`
 - `doc_analysis(document_id PK, method[gemini|fallback], sentiment, guidance, red_flags_json, summary)`
 - `prices(symbol, date, open, high, low, close, volume, PK(symbol,date))`
@@ -112,6 +114,13 @@ D:\CODES\Projects\stock-analyzer\
 - API: POST /screen/run, GET /screen/latest
 - UI Fundamentals page: run button + shortlist table
 - Unit tests: ratio math vs hand-computed fixtures; YAML validation
+
+### Phase 1.5 — Authorization + DB-driven screener
+- Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card
+- Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired
+- Dynamic ratio catalog (`app/screener/catalog.py`) with on/off toggles and thresholds; unknown keys → 422
+- Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
+- Backend: `plan/phase-1.5/{backend,database}.md`; spec `docs/superpowers/specs/2026-09-26-phase-1.5-...md`
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk
