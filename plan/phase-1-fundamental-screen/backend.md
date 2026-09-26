@@ -10,7 +10,7 @@ Nifty 500 list → fetch fundamentals → apply `config/screening.yaml` ratios �
 
 1. **`data/yfinance_impl.py`** — implement `DataProvider`:
    - `list_stocks()`: download Nifty 500 constituent CSV from `https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv` (httpx, timeout 30s). Parse `Symbol`, `Company Name`, `Industry`. Cache CSV to `data/nifty500.csv`; if fetch fails and cache exists, use cache and set `provider.stale = True` (surfaced as `stale` by `/screen/run`).
-   - `fundamentals(symbol)`: `yfinance.Ticker(f"{symbol}.NS").info` → extract `trailingPE`, `priceToBook`, `returnOnEquity` (×100), `returnOnCapitalEmployed` if present else None, `debtToEquity` (÷100 to ratio), `marketCap` (÷1e7 → crore). Missing key → None, never raise. Store full dict in `raw_json`.
+   - `fundamentals(symbol)`: `yfinance.Ticker(f"{symbol}.NS")` → `.info` gives `trailingPE`, `priceToBook`, `returnOnEquity` (×100), `debtToEquity` (÷100 to ratio), `marketCap` (÷1e7 → crore). `.info` often lacks `returnOnEquity`/`returnOnCapitalEmployed` for NSE tickers, so when absent derive from annual statements: ROCE = EBIT / (Total Assets − Current Liabilities), ROE = Net Income / Stockholders Equity (both ×100); statement fetch failure degrades to None. Missing value → None, never raise. Store full `.info` dict in `raw_json`.
    - `ohlc()` / `filings()`: leave `NotImplementedError` (Phases 2–3).
 
 2. **`screener/engine.py`**:
