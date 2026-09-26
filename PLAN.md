@@ -50,8 +50,10 @@ D:\CODES\Projects\stock-analyzer\
 │   │   │   ├── screener_impl.py
 │   │   │   └── nse_impl.py
 │   │   ├── screener/
+│   │   │   ├── catalog.py         # RATIO_CATALOG — valid criteria keys
+│   │   │   ├── criteria.py        # pydantic criteria models + defaults
 │   │   │   ├── engine.py          # apply ratios -> shortlist
-│   │   │   └── config.py          # YAML load + validate + hot reload
+│   │   │   └── service.py         # fetch + persist + evaluate orchestration
 │   │   ├── docs/
 │   │   │   ├── fetcher.py         # download PDFs -> data/docs/{symbol}/
 │   │   │   ├── parser.py          # pdfplumber text extraction
@@ -66,7 +68,6 @@ D:\CODES\Projects\stock-analyzer\
 │   │   └── db/
 │   │       ├── database.py        # SQLAlchemy engine/session
 │   │       └── models.py          # tables below
-│   ├── config/screening.yaml
 │   ├── tests/                     # pytest, fixtures, offline
 │   ├── requirements.txt
 │   └── pyproject.toml

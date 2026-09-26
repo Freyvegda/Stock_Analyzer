@@ -172,3 +172,42 @@ def test_pipeline_routers_require_auth(client, test_db):
     assert client.post("/model/train").status_code == 401
     assert client.post("/backtest/run").status_code == 401
     assert client.get("/health").status_code == 200
+
+
+def test_concurrent_setup_creates_exactly_one_account(db, monkeypatch):
+    """Two tabs racing setup must not be able to create two accounts when the
+    usernames differ (uniqueness alone does not stop that)."""
+    import threading
+    import time
+
+    real_hash = service.hash_password
+
+    def slow_hash(password):
+        time.sleep(0.05)  # widen the check-then-insert window for the race
+        return real_hash(password)
+
+    monkeypatch.setattr(service, "hash_password", slow_hash)
+
+    usernames = [f"user{i}" for i in range(8)]
+    start = threading.Barrier(len(usernames), timeout=15)
+    outcomes: list[str] = []
+    outcomes_lock = threading.Lock()
+
+    def attempt(username):
+        start.wait()
+        try:
+            service.create_user(db, username, "password123")
+            with outcomes_lock:
+                outcomes.append("created")
+        except UserExistsError:
+            with outcomes_lock:
+                outcomes.append("rejected")
+
+    threads = [threading.Thread(target=attempt, args=(u,)) for u in usernames]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    assert outcomes.count("created") == 1
+    assert outcomes.count("rejected") == len(usernames) - 1

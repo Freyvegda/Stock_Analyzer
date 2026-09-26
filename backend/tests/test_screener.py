@@ -77,6 +77,12 @@ def test_cut_is_clamped_to_ten():
     assert len(apply_screen(rows, CRITERIA, shortlist_size=3)) == 3
 
 
+def test_negative_or_zero_shortlist_size_yields_empty():
+    rows = [row(f"S{i}", roe=20 + i) for i in range(5)]
+    assert apply_screen(rows, CRITERIA, shortlist_size=-1) == []
+    assert apply_screen(rows, CRITERIA, shortlist_size=0) == []
+
+
 def test_unknown_criterion_raises_config_error():
     with pytest.raises(ConfigError):
         apply_screen([row("X")], [{"key": "bogus", "enabled": True, "value": 1}])

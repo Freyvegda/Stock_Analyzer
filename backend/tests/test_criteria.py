@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -85,6 +87,23 @@ def test_json_round_trip():
 
 def test_corrupt_json_falls_back_to_defaults():
     assert criteria_from_json("{not json") == default_criteria()
+
+
+def test_semantically_invalid_json_falls_back_to_defaults():
+    # Stored/tampered payloads that parse as JSON but break the invariants must
+    # not silently turn the screen into "everything passes" (or anything else).
+    assert criteria_from_json("[]") == default_criteria()
+    all_disabled = '[{"key": "pe", "enabled": false, "value": 25}]'
+    assert criteria_from_json(all_disabled) == default_criteria()
+    duplicates = (
+        '[{"key": "pe", "enabled": true, "value": 25},'
+        ' {"key": "pe", "enabled": true, "value": 30}]'
+    )
+    assert criteria_from_json(duplicates) == default_criteria()
+    too_many = json.dumps(
+        [{"key": "pe", "enabled": True, "value": i} for i in range(51)]
+    )
+    assert criteria_from_json(too_many) == default_criteria()
 
 
 def test_every_default_key_in_catalog():

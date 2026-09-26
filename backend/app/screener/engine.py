@@ -82,7 +82,7 @@ def evaluate_screen(
         survivors.append({"symbol": row["symbol"], "score": round(score, 2), "ratios": ratios, "failed": []})
 
     survivors.sort(key=lambda r: r["score"], reverse=True)
-    size = min(int(shortlist_size), MAX_SHORTLIST)
+    size = max(0, min(int(shortlist_size), MAX_SHORTLIST))
     shortlist = [{"rank": i + 1, **r} for i, r in enumerate(survivors[:size])]
     return shortlist, rejected
 

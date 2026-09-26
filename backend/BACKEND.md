@@ -74,7 +74,6 @@ backend/
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
 5. **Gemini fallback**: on rate limit/error, queue with exponential backoff, then keyword-based sentiment; always record `method = gemini|fallback` in `doc_analysis`.
 6. **Thin API layer**: routers validate input and call services. Business logic lives in `screener/`, `docs/`, `models/`, `backtest/` — not in `api/`.
-6. **Thin API layer**: routers validate input and call services. Business logic lives in `screener/`, `docs/`, `models/`, `backtest/` — not in `api/`.
 7. **Criteria live in the database, per user** (Phase 1.5 retired `config/screening.yaml`). Valid keys are owned by `screener/catalog.py`; validation/defaults by `screener/criteria.py`; the engine reads only enabled criteria and clamps every run to 10 rows. `shortlist_size` is server-owned and never accepted from clients.
 8. **Auth**: scrypt password hashing + signed `sa_session` cookie (Starlette `SessionMiddleware`, secret at `data/.session_secret`). Every route except `/health` and public `/auth` state/login/setup requires `current_user` (401 `Not authenticated`).
 

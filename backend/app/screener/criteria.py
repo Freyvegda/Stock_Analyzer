@@ -74,10 +74,13 @@ def criteria_to_json(criteria: list[dict[str, Any]]) -> str:
 
 
 def criteria_from_json(text: str) -> list[dict[str, Any]]:
-    """Parse stored criteria; corrupt/tampered payloads fall back to defaults."""
+    """Parse stored criteria; corrupt or invariant-breaking payloads fall back
+    to defaults. Full ``CriteriaUpdate`` validation means an empty list,
+    all-disabled set, duplicate keys, or >50 items can never silently change
+    what a run means."""
     try:
         data = json.loads(text)
-        validated = [CriterionItem.model_validate(item) for item in data]
+        model = CriteriaUpdate.model_validate({"criteria": data})
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
         return default_criteria()
-    return [item.model_dump() for item in validated]
+    return [item.model_dump() for item in model.criteria]
