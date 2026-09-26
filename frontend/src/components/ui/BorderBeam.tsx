@@ -37,7 +37,7 @@ export function BorderBeam({
     >
       <motion.span
         className="absolute aspect-square w-16 bg-gradient-to-l from-primary via-primary/40 to-transparent"
-        style={{ offsetPath: 'rect(0 auto auto 0 round 16px)' }}
+        style={{ offsetPath: 'rect(0 auto auto 0 round 10px)' }}
         initial={{ offsetDistance: '0%' }}
         animate={{ offsetDistance: '100%' }}
         transition={{ repeat: Infinity, ease: 'linear', duration: 4 }}

@@ -22,7 +22,7 @@ export function NumberTicker({
     }
 
     const controls = animate(0, value, {
-      duration: 0.32,
+      duration: 0.2,
       onUpdate: (latest) => setDisplay(latest),
     })
     return () => controls.cancel()

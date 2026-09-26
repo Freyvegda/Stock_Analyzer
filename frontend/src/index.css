@@ -27,6 +27,8 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-gain: var(--gain);
+    --color-loss: var(--loss);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
     --color-muted-foreground: var(--muted-foreground);
@@ -191,6 +193,70 @@
 
   @media (prefers-reduced-motion: reduce) {
     .vault-rail-track {
+      animation: none;
+    }
+  }
+
+  /* Tone-matched loading shimmer. */
+  .vault-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: var(--muted);
+  }
+
+  .vault-skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+    animation: vault-shimmer 1.4s linear infinite;
+  }
+
+  @keyframes vault-shimmer {
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-skeleton::after {
+      animation: none;
+    }
+  }
+
+  /* Value-change flash: colour hold 80ms, fade 220ms; never movement. */
+  [data-flash] {
+    animation: vault-flash 300ms var(--ease-vault);
+    border-radius: 2px;
+  }
+
+  [data-flash='neutral'] {
+    --flash-color: rgba(255, 180, 84, 0.18);
+  }
+
+  [data-flash='gain'] {
+    --flash-color: rgba(61, 214, 140, 0.16);
+  }
+
+  [data-flash='loss'] {
+    --flash-color: rgba(255, 107, 110, 0.16);
+  }
+
+  @keyframes vault-flash {
+    0% {
+      background-color: transparent;
+    }
+    27% {
+      background-color: var(--flash-color);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-flash] {
       animation: none;
     }
   }
