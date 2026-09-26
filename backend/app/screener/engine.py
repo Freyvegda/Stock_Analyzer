@@ -20,17 +20,25 @@ def _passes(value: float | None, limit: float, direction: str) -> bool:
     return value <= limit if direction == "max" else value >= limit
 
 
-def apply_screen(rows: list[dict], config: dict) -> list[dict]:
-    """rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap}]
-
-    Returns ranked shortlist: [{symbol, rank, score, ratios, failed}].
-    """
+def _criteria_limits(config: dict) -> dict[str, float]:
     criteria = {k: float(v) for k, v in (config.get("criteria") or {}).items()}
     unknown = set(criteria) - set(CRITERIA)
     if unknown:
         raise ValueError(f"Unknown criteria in screening.yaml: {sorted(unknown)}")
+    return criteria
+
+
+def evaluate_screen(rows: list[dict], config: dict) -> tuple[list[dict], list[dict]]:
+    """Evaluate every row and split into (ranked shortlist, rejected).
+
+    rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap}]
+    shortlist: [{rank, symbol, score, ratios, failed: []}] cut to shortlist_size
+    rejected: [{symbol, failed: [criterion names]}] — NULL ratio counts as failed
+    """
+    criteria = _criteria_limits(config)
 
     survivors = []
+    rejected = []
     for row in rows:
         ratios = {key: row.get(key) for key, _direction in CRITERIA.values()}
         failed = [
@@ -39,10 +47,17 @@ def apply_screen(rows: list[dict], config: dict) -> list[dict]:
             if not _passes(row.get(CRITERIA[name][0]), limit, CRITERIA[name][1])
         ]
         if failed:
+            rejected.append({"symbol": row["symbol"], "failed": failed})
             continue
         score = (row.get("roe") or 0) + (row.get("roce") or 0) - (row.get("debt_to_equity") or 0) * 20
         survivors.append({"symbol": row["symbol"], "score": round(score, 2), "ratios": ratios, "failed": []})
 
     survivors.sort(key=lambda r: r["score"], reverse=True)
     size = int(config.get("shortlist_size", 10))
-    return [{"rank": i + 1, **r} for i, r in enumerate(survivors[:size])]
+    shortlist = [{"rank": i + 1, **r} for i, r in enumerate(survivors[:size])]
+    return shortlist, rejected
+
+
+def apply_screen(rows: list[dict], config: dict) -> list[dict]:
+    """Ranked shortlist only. See evaluate_screen for the rejected criteria."""
+    return evaluate_screen(rows, config)[0]

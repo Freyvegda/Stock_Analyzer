@@ -1,4 +1,4 @@
-from app.screener.engine import apply_screen
+from app.screener.engine import apply_screen, evaluate_screen
 
 CONFIG = {
     "criteria": {"pe_max": 25, "pb_max": 5, "roe_min": 15, "roce_min": 15,
@@ -50,3 +50,27 @@ def test_unknown_criterion_raises():
         assert False, "should raise"
     except ValueError as e:
         assert "bogus_min" in str(e)
+
+
+def test_evaluate_screen_splits_shortlist_and_rejected():
+    rows = [row("PASS"), row("FAIL_PE", pe=30), row("FAIL_NULL", pe=None)]
+    shortlist, rejected = evaluate_screen(rows, CONFIG)
+    assert [r["symbol"] for r in shortlist] == ["PASS"]
+    assert shortlist[0]["failed"] == []
+    assert {r["symbol"]: r["failed"] for r in rejected} == {
+        "FAIL_PE": ["pe_max"],
+        "FAIL_NULL": ["pe_max"],
+    }
+
+
+def test_evaluate_screen_rejected_is_symbol_and_criteria_only():
+    _shortlist, rejected = evaluate_screen([row("BAD", pe=30, roe=10, de=2.0)], CONFIG)
+    assert len(rejected) == 1
+    assert set(rejected[0]) == {"symbol", "failed"}
+    assert set(rejected[0]["failed"]) == {"pe_max", "roe_min", "debt_to_equity_max"}
+
+
+def test_apply_screen_shortlist_matches_evaluate_screen():
+    rows = [row("A"), row("B", pe=30), row("C", roe=30)]
+    shortlist, _rejected = evaluate_screen(rows, CONFIG)
+    assert apply_screen(rows, CONFIG) == shortlist
