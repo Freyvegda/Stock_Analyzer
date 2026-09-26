@@ -8,7 +8,6 @@ from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
 from app.screener import service
 from app.screener.catalog import RATIO_CATALOG
-from app.screener.config import load_config, reload_config
 from app.screener.criteria import CriteriaUpdate
 
 router = APIRouter()
@@ -62,13 +61,3 @@ def latest_screen(user: dict = Depends(current_user)) -> dict:
     if latest is None:
         raise HTTPException(status_code=404, detail="No screen run yet")
     return latest
-
-
-@router.get("/config")
-def get_config() -> dict:
-    return load_config()
-
-
-@router.post("/config/reload")
-def reload() -> dict:
-    return reload_config()
