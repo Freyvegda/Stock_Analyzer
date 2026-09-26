@@ -29,76 +29,55 @@
 
 ---
 
-### Task 1: Sakura palette through the token pipeline
+### Task 1: Sakura ThemeTokens swap (site-wide palette)
 
 **Files:**
-- Modify: `frontend/src/theme/tokens.ts` (both palettes, `amberScale`→`sakuraScale`, `chartPalette`, dark `scenePalette.skyTop`/`star`)
-- Modify: `frontend/src/theme/system.ts` (palette rename + virtual tokens)
-- Modify: `frontend/src/theme/system.test.ts`
+- Modify: `frontend/src/theme/tokens.ts` (dark + light values incl. `panel`, `chartPalette`)
 - Modify: `frontend/src/index.css` (only via the sync script)
 
 **Interfaces:**
-- Produces: `sakuraScale: Record<number, string>` (replaces `amberScale`; exact steps in spec "Sakura scale"), `dark`/`light: ThemeTokens` with spec values, `chartPalette`, `scenePalette`. `system.ts` registers `colors.sakura` with virtual tokens `contrast/fg/subtle/muted/emphasized/solid/focusRing/border` so `colorPalette="sakura"` works. All other exports keep their names.
+- Consumes (already shipped in `60cbec0`): `sakuraScale`, the Chakra `colors.sakura` palette, the `panel` field on `ThemeTokens`.
+- Produces: `dark`/`light: ThemeTokens` carrying the spec tables (incl. dark `panel` `#201821`, light `panel` `#FDF2F6`), `chartPalette` with sakura crosshairs. `scenePalette` is left exactly as shipped.
 
-- [ ] **Step 1: Point `system.test.ts` at the sakura scale**
+- [ ] **Step 1: Apply the spec tables in `tokens.ts`**
 
-Change the three assertions to `system.token('colors.sakura.400')`, `...sakura.700`, and `colors.sakura.{solid,contrast,subtle,focusRing}`; rename the describe blocks.
+Swap the dark and light `ThemeTokens` values (including `panel`) and the `chartPalette` crosshairs. Do not touch `sakuraScale`, `system.ts`, `system.test.ts`, or `scenePalette` — already shipped.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run the theme suite and watch the sync gate go red**
 
-Run: `npm run test -- src/theme/system.test.ts`
-Expected: FAIL — `colors.sakura.400` undefined.
+Run: `npm run test -- src/theme`
+Expected: `tokens.sync.test.ts` FAILS (marked `index.css` block still holds the obsidian values); `contrast`, `vault-rules`, `scene-palette`, `system` pass (new values were pre-verified against them, including the `panel` pairs).
 
-- [ ] **Step 3: Swap the values in `tokens.ts` and `system.ts`**
-
-Apply the spec's tables exactly: dark/light `ThemeTokens`, rename `amberScale` → `sakuraScale` with the spec's ramp, `chartPalette` values + crosshair, dark `scenePalette.skyTop` `#0B0710` and `star` `#E7DCE8`. In `system.ts`, register `colors: { sakura }` and redefine the virtual tokens for `sakura` (tint strengths from the spec; `fg` light = `{colors.sakura.800}`, dark = `{colors.sakura.300}`; `border` light = 600, dark = 500). Update the file comments that still say "amber".
-
-- [ ] **Step 4: Regenerate the synced CSS block**
+- [ ] **Step 3: Regenerate the synced CSS block**
 
 Run: `$env:VAULT_SYNC='1'; npm run tokens:sync`
-Expected: PASS, and `src/index.css` marked block now holds the new values.
+Expected: PASS, block now holds the sakura values (incl. `--panel`).
 
-- [ ] **Step 5: Run the theme suite and the full suite**
+- [ ] **Step 4: Full suite**
 
 Run: `npm run test`
-Expected: PASS — `contrast`, `vault-rules`, `scene-palette`, `tokens.sync` all green (values were pre-verified against these gates).
+Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```powershell
-git add frontend/src/theme frontend/src/index.css
-git commit -m "feat: sakura vault palette through token pipeline"
+git add frontend/src/theme/tokens.ts frontend/src/index.css
+git commit -m "feat: sakura vault theme tokens site-wide"
 ```
 
 ---
 
-### Task 2: Chakra call sites switch to the sakura palette
+### Task 2: Verify shipped sakura call sites (already done in `60cbec0`)
 
-**Files:**
-- Modify: `frontend/src/components/CriteriaPanel.tsx` (2 sites), `frontend/src/components/CriteriaDialog.tsx` (1), `frontend/src/pages/Fundamentals.tsx` (1), `frontend/src/pages/Login.tsx` (1)
+**Files:** none.
 
 **Interfaces:**
-- Consumes: Task 1's `colorPalette="sakura"` registration.
-- Produces: no new API — `colorPalette="amber"` no longer exists anywhere in `src/`.
+- Consumes: `colorPalette="sakura"` registration shipped in `60cbec0`.
 
-- [ ] **Step 1: Replace all five `colorPalette="amber"` with `colorPalette="sakura"`**
+- [ ] **Step 1: Audit**
 
-- [ ] **Step 2: Audit for leftovers**
-
-Run: `rg "colorPalette=\"amber\"|amberScale" frontend/src`
-Expected: no matches (test files may mention `sakura` only).
-
-- [ ] **Step 3: Run tests and build**
-
-Run: `npm run test` then `npm run build`
-Expected: PASS, build clean.
-
-- [ ] **Step 4: Commit**
-
-```powershell
-git add frontend/src
-git commit -m "feat: switch chakra call sites to sakura palette"
-```
+Run: `rg "colorPalette=\"amber\"|amberScale" frontend/src` (or grep tool)
+Expected: no matches. Record in the ledger as pre-shipped; no commit.
 
 ---
 

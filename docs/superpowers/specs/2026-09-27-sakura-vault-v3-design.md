@@ -6,6 +6,12 @@ records the exact decisions so `frontend/DESIGN.md` and the code can be updated 
 **Supersedes parts of:** `2026-09-26-theme-v2-phosphor-vault-design.md` (palette identity and
 the "sakura pink is scene-only" rule). The v2 loader/motion/token architecture is kept.
 
+> **Update 2026-09-27 (after `60cbec0`):** the login session already shipped `sakuraScale`
+> (exact values below), the Chakra `colors.sakura` palette with `colorPalette="sakura"` at every
+> call site, a new `panel` surface token, and its own tuned `scenePalette`. This spec keeps all
+> of that. Remaining scope: the `ThemeTokens` value swap (including `panel`), `chartPalette`,
+> shell retints, the glass navbar, and the docs.
+
 ## Goal
 
 Make the sakura identity the site-wide design language, in both dark and light mode, and
@@ -32,6 +38,7 @@ The candidate values below pass all of them; verified with the gate pairs before
 |---|---|---|---|
 | background | `#0C080B` | foreground | `#F2EAF0` |
 | card | `#140F13` | card-foreground | `#F2EAF0` |
+| panel (floating overlay) | `#201821` | panel-foreground | `#F2EAF0` |
 | popover | `#201821` | popover-foreground | `#F2EAF0` |
 | secondary | `#1A1219` | secondary-foreground | `#F2EAF0` |
 | muted | `#120D11` | muted-foreground | `#A4939E` |
@@ -54,6 +61,7 @@ primary `#FFA9C6`, primary-foreground `#2B0D1A`, accent `#1A1219`, accent-foregr
 |---|---|---|---|
 | background | `#FBF6F8` | foreground | `#1A1116` |
 | card | `#FFFFFF` | card-foreground | `#1A1116` |
+| panel (floating overlay) | `#FDF2F6` | panel-foreground | `#1A1116` |
 | popover | `#FFFFFF` | popover-foreground | `#1A1116` |
 | secondary | `#F3E7EC` | secondary-foreground | `#1A1116` |
 | muted | `#F5EDF0` | muted-foreground | `#6E5F68` |
@@ -71,8 +79,9 @@ Sidebar: sidebar `#FFFFFF`, foreground `#1A1116`, primary `#B0336A`, primary-for
 
 ### Sakura scale
 
-`amberScale` is renamed `sakuraScale` (Chakra `colors.sakura.*` + `colorPalette="sakura"`).
-No component ever writes a raw palette utility; semantic tokens only.
+Already shipped in `60cbec0`: `sakuraScale` is the Chakra `colors.sakura.*` palette
+(`colorPalette="sakura"`), and every call site already uses it. No component ever writes a raw
+palette utility; semantic tokens only.
 
 | Step | Value | Step | Value |
 |---|---|---|---|
@@ -94,11 +103,12 @@ tint strengths (`subtle` dark = `rgba(255, 169, 198, 0.12)`, `muted` dark = 0.20
 `chartPalette` keeps its shape; values follow the table above. Crosshair:
 dark `rgba(255, 169, 198, 0.5)`, light `rgba(176, 51, 106, 0.5)`. Grid lines unchanged.
 
-### Login scene harmonisation
+### Login scene
 
-`scenePalette` remains sakura and login-only. Two dark-mode tweaks so the night sky sits in
-the plum-ink family: `skyTop` `#04060B` → `#0B0710`, `star` `#DCE4F5` → `#E7DCE8`.
-Light scene unchanged. Petal-vs-sky contrast stays ≥ 3:1 (`scene-palette.test.ts`).
+`scenePalette` stays exactly as shipped in `60cbec0` (its tuning was just validated by the
+scene tests and the owner's review; the earlier sky-harmonisation tweak is dropped). It remains
+login-only and outside `ThemeTokens`. Petal-vs-sky contrast stays ≥ 3:1
+(`scene-palette.test.ts`).
 
 ## Liquid-glass 3D navbar
 
@@ -164,15 +174,18 @@ carry an explicit tint and must be retinted in the same change:
 Everything else already uses semantic tokens (`bg-background`, `bg-card`, `bg.panel`,
 `fg.muted`, `border-border`, `chartPalette`), so no component-level colour edits are needed.
 The 5 `colorPalette="amber"` call sites (`CriteriaPanel.tsx` ×2, `CriteriaDialog.tsx`,
-`Fundamentals.tsx`, `Login.tsx`) become `colorPalette="sakura"`.
+`Fundamentals.tsx`, `Login.tsx`) already became `colorPalette="sakura"` in `60cbec0`; verify
+only.
 
 ## Gates and documentation
 
 - `tokens.sync.test.ts`: regenerate the `index.css` block with
   `$env:VAULT_SYNC='1'; npm run tokens:sync`.
-- `contrast.test.ts`, `vault-rules.test.ts`, `scene-palette.test.ts`: keep green; no rule
-  weakening is expected (values were chosen against them).
-- `system.test.ts`: update to assert the `sakura` scale and virtual tokens.
+- `contrast.test.ts` (now also gating `foreground/panel` and `muted-foreground/panel`),
+  `vault-rules.test.ts`, `scene-palette.test.ts`: keep green; no rule weakening is expected
+  (values were chosen against them).
+- `system.test.ts`: already asserts the `sakura` scale, virtual tokens, and `bg.panel`
+  (shipped in `60cbec0`); no change needed.
 - New `GlassNav.test.tsx`: active link `aria-current` + exactly one pill inside it; `data-tilt="off"`
   under reduced motion (jsdom's `matchMedia` reports no fine pointer); logout + theme toggle
   present; nav landmark labelled.
