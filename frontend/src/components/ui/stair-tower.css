@@ -1,0 +1,145 @@
+/*
+ * Stair-tower loader — every dimension derives from --tower-size so one file
+ * scales from 16px (buttons) to 140px (run card).
+ *
+ * Steps: 8 cells in two columns spawn at the top and fall away; negative
+ * animation delays offset them into a seamless infinite stream.
+ * Dot: climbs bottom -> top over the same cycle while stepping between the
+ * two columns.
+ */
+
+.stair-tower {
+  --tower-size: 120px;
+  display: inline-block;
+  width: var(--tower-size);
+  height: var(--tower-size);
+  flex: none;
+}
+
+.stair-tower__stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.stair-tower__step {
+  --unit: calc(var(--tower-size) / 12);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--unit) * 2.4);
+  height: var(--unit);
+  border-radius: calc(var(--unit) * 0.25);
+  background: var(--chakra-colors-brand, #10b981);
+  opacity: 0;
+  animation: stair-tower-fall 2s linear infinite;
+  animation-delay: calc(var(--step) * -0.25s);
+}
+
+/* Two columns: odd cells sit on the right, even cells on the left. */
+.stair-tower__step:nth-child(odd) {
+  left: calc(50% + var(--unit) * 0.8);
+}
+
+.stair-tower__step:nth-child(even) {
+  left: calc(50% - var(--unit) * 3.2);
+}
+
+.stair-tower__dot {
+  --unit: calc(var(--tower-size) / 12);
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: var(--unit);
+  height: var(--unit);
+  margin-left: calc(var(--unit) * -0.5);
+  border-radius: 999px;
+  background: var(--chakra-colors-brand, #10b981);
+  box-shadow: 0 0 calc(var(--unit) * 1.5) var(--chakra-colors-brand, #10b981);
+  animation:
+    stair-tower-climb 2s linear infinite,
+    stair-tower-zigzag 1s steps(2, jump-none) infinite alternate;
+}
+
+@keyframes stair-tower-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(var(--tower-size) * -0.12));
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(var(--tower-size) * 1.6));
+  }
+}
+
+@keyframes stair-tower-climb {
+  0% {
+    transform: translateY(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(calc(var(--tower-size) * -1));
+  }
+}
+
+@keyframes stair-tower-zigzag {
+  from {
+    margin-left: calc(var(--unit) * -3);
+  }
+  to {
+    margin-left: calc(var(--unit) * 2);
+  }
+}
+
+/* Reduced motion: freeze to a static pose (component also sets data-reduced). */
+@media (prefers-reduced-motion: reduce) {
+  .stair-tower__step,
+  .stair-tower__dot {
+    animation: none;
+  }
+  .stair-tower__step {
+    opacity: 1;
+  }
+  .stair-tower__step:nth-child(odd) {
+    transform: translateY(calc(var(--tower-size) * 0.28));
+  }
+  .stair-tower__step:nth-child(even) {
+    transform: translateY(calc(var(--tower-size) * 0.56));
+  }
+  .stair-tower__dot {
+    opacity: 1;
+    transform: translateY(calc(var(--tower-size) * -0.5));
+  }
+}
+
+[data-reduced='true'] .stair-tower__step,
+[data-reduced='true'] .stair-tower__dot {
+  animation: none;
+}
+
+[data-reduced='true'] .stair-tower__step {
+  opacity: 1;
+}
+
+[data-reduced='true'] .stair-tower__step:nth-child(odd) {
+  transform: translateY(calc(var(--tower-size) * 0.28));
+}
+
+[data-reduced='true'] .stair-tower__step:nth-child(even) {
+  transform: translateY(calc(var(--tower-size) * 0.56));
+}
+
+[data-reduced='true'] .stair-tower__dot {
+  opacity: 1;
+  transform: translateY(calc(var(--tower-size) * -0.5));
+}
