@@ -1,9 +1,12 @@
+import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import Backtest from './pages/Backtest'
 import Documents from './pages/Documents'
 import Fundamentals from './pages/Fundamentals'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Toaster } from '@/components/ui/toaster'
+
+const AmbientField = lazy(() => import('./components/three/AmbientField'))
 
 const navItems = [
   { to: '/', label: 'Fundamental Analysis' },
@@ -14,6 +17,9 @@ const navItems = [
 export default function App() {
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <Suspense fallback={null}>
+        <AmbientField />
+      </Suspense>
       <nav className="border-b border-border px-6 py-3 flex items-center gap-6">
         <span className="font-bold text-lg">Stock Analyzer</span>
         {navItems.map((item) => (
