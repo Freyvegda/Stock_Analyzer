@@ -7,12 +7,15 @@ synchronous for the MVP; an async job queue is a later optimization.
 
 import concurrent.futures
 import json
+import logging
 from datetime import date
 
 from app.data.provider import DataProvider
 from app.db.models import Fundamental, ScreenRun, Stock
 from app.screener.config import read_config_text
 from app.screener.engine import evaluate_screen
+
+logger = logging.getLogger(__name__)
 
 # yfinance .info is network-bound; 8 workers keeps a ~500-stock run to minutes.
 WORKERS = 8
@@ -29,6 +32,7 @@ def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, d
         try:
             return stock, provider.fundamentals(stock["symbol"]), None
         except Exception as e:  # noqa: BLE001 — per-stock isolation, never re-raise
+            logger.warning("fundamentals fetch failed for %s: %s", stock["symbol"], e)
             return stock, None, str(e)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:

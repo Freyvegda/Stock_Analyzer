@@ -1,11 +1,13 @@
 import textwrap
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import screen
 from app.main import app
 from app.screener import config as config_module
-from app.screener.config import ConfigError, load_config
+from app.screener.config import ConfigError, load_config, reload_config
 
 client = TestClient(app)
 
@@ -71,3 +73,26 @@ def test_bad_config_endpoints_return_422(tmp_path, monkeypatch):
     assert res.status_code == 422
     assert "roe_min" in res.json()["detail"]
     assert client.post("/screen/config/reload").status_code == 422
+
+
+def test_run_endpoint_returns_422_on_invalid_config(tmp_path, monkeypatch):
+    use_config(tmp_path, monkeypatch, VALID_CRITERIA.replace("roe_min: 15", "roe_min: abc"))
+    monkeypatch.setattr(screen, "init_db", lambda: None)
+
+    res = client.post("/screen/run")
+
+    assert res.status_code == 422
+    assert "roe_min" in res.json()["detail"]
+
+
+def test_reload_config_picks_up_file_change(tmp_path, monkeypatch):
+    use_config(tmp_path, monkeypatch, VALID_CRITERIA)
+    assert load_config()["criteria"]["pe_max"] == 25.0
+
+    Path(config_module.CONFIG_PATH).write_text(
+        VALID_CRITERIA.replace("pe_max: 25", "pe_max: 10"), encoding="utf-8"
+    )
+    assert load_config()["criteria"]["pe_max"] == 25.0  # cached until reload
+
+    assert reload_config()["criteria"]["pe_max"] == 10.0
+    assert load_config()["criteria"]["pe_max"] == 10.0

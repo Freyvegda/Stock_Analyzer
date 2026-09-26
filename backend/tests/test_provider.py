@@ -4,7 +4,14 @@ import pytest
 from app.data import yfinance_impl
 from app.data.yfinance_impl import YFinanceProvider
 
-CSV_TEXT = "Symbol,Company Name,Industry\nAAA,Alpha Ltd,IT\nBBB,Beta Ltd,Banks\n"
+def big_csv(count: int = 120) -> str:
+    """Realistic Nifty-500-shaped CSV above the sanity threshold."""
+    rows = ["Symbol,Company Name,Industry", "AAA,Alpha Ltd,IT", "BBB,Beta Ltd,Banks"]
+    rows += [f"SYM{i},Company {i},Industry {i}" for i in range(count - 2)]
+    return "\n".join(rows) + "\n"
+
+
+HTML_BODY = "<html><body>Request blocked by WAF</body></html>"
 
 
 class FakeResponse:
@@ -22,26 +29,28 @@ def fail_network(*_args, **_kwargs):
 def test_list_stocks_downloads_and_caches(tmp_path, monkeypatch):
     cache = tmp_path / "nifty500.csv"
     monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(cache))
-    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse(CSV_TEXT))
+    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse(big_csv()))
 
     provider = YFinanceProvider()
     stocks = provider.list_stocks()
 
     assert stocks[0] == {"symbol": "AAA", "name": "Alpha Ltd", "sector": "IT", "market_cap": None}
+    assert len(stocks) == 120
     assert provider.stale is False
-    assert cache.read_text(encoding="utf-8") == CSV_TEXT
+    assert cache.read_text(encoding="utf-8") == big_csv()
 
 
 def test_list_stocks_falls_back_to_cache_with_stale_flag(tmp_path, monkeypatch):
     cache = tmp_path / "nifty500.csv"
-    cache.write_text(CSV_TEXT, encoding="utf-8")
+    cache.write_text(big_csv(), encoding="utf-8")
     monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(cache))
     monkeypatch.setattr(yfinance_impl.httpx, "get", fail_network)
 
     provider = YFinanceProvider()
     stocks = provider.list_stocks()
 
-    assert [s["symbol"] for s in stocks] == ["AAA", "BBB"]
+    assert [s["symbol"] for s in stocks[:2]] == ["AAA", "BBB"]
+    assert len(stocks) == 120
     assert provider.stale is True
 
 
@@ -50,6 +59,36 @@ def test_list_stocks_raises_when_network_and_cache_both_fail(tmp_path, monkeypat
     monkeypatch.setattr(yfinance_impl.httpx, "get", fail_network)
 
     with pytest.raises(httpx.ConnectError):
+        YFinanceProvider().list_stocks()
+
+
+def test_list_stocks_html_response_falls_back_to_cache(tmp_path, monkeypatch):
+    cache = tmp_path / "nifty500.csv"
+    cache.write_text(big_csv(), encoding="utf-8")
+    monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(cache))
+    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse(HTML_BODY))
+
+    provider = YFinanceProvider()
+    stocks = provider.list_stocks()
+
+    assert len(stocks) == 120
+    assert provider.stale is True
+    assert cache.read_text(encoding="utf-8") == big_csv()  # good cache NOT poisoned
+
+
+def test_list_stocks_html_response_without_cache_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(tmp_path / "missing.csv"))
+    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse(HTML_BODY))
+
+    with pytest.raises(ValueError):
+        YFinanceProvider().list_stocks()
+
+
+def test_list_stocks_too_few_rows_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(tmp_path / "missing.csv"))
+    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse("Symbol,Company Name,Industry\nAAA,Alpha,IT\n"))
+
+    with pytest.raises(ValueError):
         YFinanceProvider().list_stocks()
 
 
@@ -192,6 +231,18 @@ def test_fundamentals_negative_capital_employed_gives_no_roce(monkeypatch):
     f = YFinanceProvider().fundamentals("AAA")
 
     assert f["roce"] is None
+
+
+def test_fundamentals_negative_equity_gives_no_roe(monkeypatch):
+    import pandas as pd
+
+    income = pd.DataFrame({"2025": [-100.0]}, index=["Net Income"])
+    balance = pd.DataFrame({"2025": [-200.0]}, index=["Stockholders Equity"])
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_ticker_class({}, income, balance))
+
+    f = YFinanceProvider().fundamentals("AAA")
+
+    assert f["roe"] is None  # loss-making + negative equity must not look profitable
 
 
 def test_ohlc_and_filings_are_not_implemented():
