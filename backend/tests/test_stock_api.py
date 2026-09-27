@@ -230,3 +230,41 @@ def test_ohlc_served_from_cache(client, sign_in, provider, test_db):
     client.get("/stock/AAA/ohlc?range=6m&interval=1mo")
 
     assert p.ohlc_calls == [("AAA", 5)]
+
+
+DIGEST_RAW = {
+    "longBusinessSummary": "Makes things",
+    "industry": "Oil & Gas",
+    "fullTimeEmployees": 350000,
+    "city": "Mumbai",
+    "totalRevenue": 9.3e12,
+    "revenueGrowth": 0.112,
+}
+
+
+def test_detail_has_profile_and_sections(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    sign_in()
+    provider(FakeProvider(fundamentals={"AAA": {**GOOD, "raw": DIGEST_RAW}}))
+
+    body = client.get("/stock/AAA").json()
+
+    assert body["profile"]["industry"] == "Oil & Gas"
+    assert body["profile"]["employees"] == 350000
+    assert next(m for m in body["main_ratios"] if m["key"] == "pe")["value"] == 20.0
+    assert next(m for m in body["has"] if m["key"] == "totalRevenue")["value"] == 930000.0
+    assert next(m for m in body["done"] if m["key"] == "revenueGrowth")["value"] == pytest.approx(11.2)
+    assert isinstance(body["other_groups"], list)
+
+
+def test_refresh_keeps_sections_shape(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    seed_stored(test_db)
+    sign_in()
+    provider(FakeProvider(fundamentals={"AAA": {**GOOD, "raw": DIGEST_RAW}}))
+
+    body = client.post("/stock/AAA/refresh").json()
+
+    assert body["refreshed"] is True
+    assert body["profile"]["description"] == "Makes things"
+    assert {"main_ratios", "has", "done", "other_groups"} <= set(body)

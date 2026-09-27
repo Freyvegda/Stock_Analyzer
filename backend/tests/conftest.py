@@ -40,15 +40,18 @@ def test_db(tmp_path, monkeypatch):
     from app.api import auth as auth_api
     from app.api import screen as screen_api
     from app.api import stock as stock_api
+    from app.api import stocks as stocks_api
     from app.auth import deps as auth_deps
 
     monkeypatch.setattr(auth_api, "SessionLocal", TestSession)
     monkeypatch.setattr(screen_api, "SessionLocal", TestSession)
     monkeypatch.setattr(stock_api, "SessionLocal", TestSession)
+    monkeypatch.setattr(stocks_api, "SessionLocal", TestSession)
     monkeypatch.setattr(auth_deps, "SessionLocal", TestSession)
     monkeypatch.setattr(auth_api, "init_db", lambda: None)
     monkeypatch.setattr(screen_api, "init_db", lambda: None)
     monkeypatch.setattr(stock_api, "init_db", lambda: None)
+    monkeypatch.setattr(stocks_api, "init_db", lambda: None)
     return TestSession
 
 
