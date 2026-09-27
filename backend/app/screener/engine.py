@@ -16,8 +16,11 @@ MAX_SHORTLIST = 10
 _DERIVED_KEYS = [spec.key for spec in RATIO_CATALOG if spec.source == "derived"]
 
 
-def _resolve(row: dict, spec: RatioSpec) -> float | None:
-    """Value for one criterion on one stock; None means "fails the criterion"."""
+def resolve_value(row: dict, spec: RatioSpec) -> float | None:
+    """Value for one criterion on one stock; None means "fails the criterion".
+
+    Public: shared by the engine and the stock report builder.
+    """
     if spec.source == "derived":
         value = row.get(spec.key)
     else:
@@ -42,7 +45,8 @@ def _passes(value: float | None, limit: float, direction: str) -> bool:
     return value <= limit if direction == "max" else value >= limit
 
 
-def _enabled_criteria(criteria: list[dict]) -> list[tuple[RatioSpec, float]]:
+def enabled_criteria(criteria: list[dict]) -> list[tuple[RatioSpec, float]]:
+    """Enabled ``(spec, threshold)`` pairs in stored order; unknown keys raise."""
     enabled = []
     for item in criteria:
         spec = CATALOG_BY_KEY.get(item["key"])
@@ -51,6 +55,14 @@ def _enabled_criteria(criteria: list[dict]) -> list[tuple[RatioSpec, float]]:
         if item["enabled"]:
             enabled.append((spec, float(item["value"])))
     return enabled
+
+
+def score_row(row: dict) -> float:
+    """Ranking score: ``roe + roce − 20 × debt_to_equity``; missing values count 0.
+
+    Public: shared by ``rank_shortlist`` and the stock report builder.
+    """
+    return (row.get("roe") or 0) + (row.get("roce") or 0) - (row.get("debt_to_equity") or 0) * 20
 
 
 def screen_rows(
@@ -65,14 +77,14 @@ def screen_rows(
     rows: [{symbol, pe, pb, roe, roce, debt_to_equity, market_cap, raw, data_date?}]
     criteria: [{key, enabled, value}] — only enabled criteria are evaluated
     """
-    enabled = _enabled_criteria(criteria)
+    enabled = enabled_criteria(criteria)
 
     survivors = list(rows)
     rejected = []
     for spec, limit in enabled:
         kept = []
         for row in survivors:
-            if _passes(_resolve(row, spec), limit, spec.direction):
+            if _passes(resolve_value(row, spec), limit, spec.direction):
                 kept.append(row)
             else:
                 rejected.append({"symbol": row["symbol"], "failed": [spec.key]})
@@ -88,7 +100,7 @@ def rank_shortlist(survivors: list[dict], shortlist_size: int = 10) -> list[dict
     """
     ranked = []
     for row in survivors:
-        score = (row.get("roe") or 0) + (row.get("roce") or 0) - (row.get("debt_to_equity") or 0) * 20
+        score = score_row(row)
         ratios = {key: row.get(key) for key in _DERIVED_KEYS}
         ranked.append(
             {
