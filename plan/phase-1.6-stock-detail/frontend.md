@@ -16,7 +16,7 @@ report card, the catalog fundamentals grid and a candlestick chart with
 **Architecture:** page `pages/StockDetail.tsx` fetches `/stock/{symbol}` +
 `/stock/{symbol}/ohlc`; `components/StockReportCard.tsx` renders the report;
 `components/StockChart.tsx` wraps lightweight-charts to the existing FRONTEND.md
-contract; `components/three/CandleRidge.tsx` + `candleRidge.ts` are the new lazy
+contract; `components/three/CandleRidge.tsx` + `ridgeGeometry.ts` are the new lazy
 3D hero (pure helpers + thin renderer, same gates as the 3D kit).
 `ShortlistTable` symbol cells become links.
 
@@ -170,9 +170,11 @@ git commit -m "feat: lightweight-charts candlestick wrapper with optional marker
 ### Task F3: Candle Ridge pure helpers
 
 **Files:**
-- Create: `frontend/src/components/three/candleRidge.ts`
+- Create: `frontend/src/components/three/ridgeGeometry.ts`
 - Test: covered in Task F4's test file (`CandleRidge.test.tsx`) — same pattern as
   `leafTrace` inside `SakuraLeafLoader.test.tsx`.
+- Naming note: `ridgeGeometry.ts`, not `candleRidge.ts` — on Windows, a helper and
+  a component whose paths differ only by case resolve to the same module.
 
 **Interfaces:**
 - Produces:
@@ -365,7 +367,7 @@ Expected: tests PASS; build clean; no hardcoded base URLs or palette hex in `src
 
 - `FRONTEND.md`: structure entries (`pages/StockDetail.tsx`,
   `components/StockReportCard.tsx`, `components/StockChart.tsx`,
-  `components/three/CandleRidge.tsx` + `candleRidge.ts`), API integration
+  `components/three/CandleRidge.tsx` + `ridgeGeometry.ts`), API integration
   (`/stock/{symbol}`, `POST /stock/{symbol}/refresh`, `/stock/{symbol}/ohlc`),
   phase gate row `1.6`.
 - `DESIGN.md`: new "Stock hero — Candle Ridge" section under 3D (data-driven ridge,
