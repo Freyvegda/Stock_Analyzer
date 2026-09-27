@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.api import screen as screen_api
-from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
+from app.db.models import CompanyProfile, Fundamental, ScreenRun, Stock, UserCriteria
 from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
@@ -240,15 +240,16 @@ def test_stored_snapshot_keeps_screen_alive_when_refresh_fails(client, sign_in, 
     body = client.post("/screen/run").json()
 
     assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
-    assert body["failed_count"] == 1 and body["failed_symbols"] == ["AAA"]  # only passers refresh
+    assert body["failed_count"] == 3  # the whole stale universe is refreshed now
+    assert sorted(body["failed_symbols"]) == ["AAA", "BBB", "CCC"]
     assert body["stale"] is True
     assert body["shortlisted"][0]["data_date"] == STORED_DATE
     latest = client.get("/screen/latest").json()
     assert latest["shortlisted"][0]["data_date"] == STORED_DATE
 
 
-def test_run_fetches_only_stored_gate_passers(client, sign_in, provider, test_db):
-    """Progressive narrow: gate failures are cut before any network call."""
+def test_screen_run_refreshes_every_stale_symbol(client, sign_in, provider, test_db):
+    """Survivor-only fetching is gone: every stale symbol lands in the shared DB."""
     sign_in()
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **GOOD}])
     p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
@@ -256,9 +257,49 @@ def test_run_fetches_only_stored_gate_passers(client, sign_in, provider, test_db
 
     body = client.post("/screen/run").json()
 
-    assert p.calls == ["AAA", "CCC"]  # BBB lost the PE gate, never fetched
+    assert sorted(p.calls) == ["AAA", "BBB", "CCC"]  # BBB lost the PE gate but is still refreshed
     assert {r["symbol"] for r in body["shortlisted"]} == {"AAA", "CCC"}
     assert {"symbol": "BBB", "failed": ["pe"]} in body["failed_details"]
+
+
+def test_screen_rerun_same_day_makes_no_fundamentals_calls(client, sign_in, provider, test_db):
+    """Second run the same day finds a current snapshot for every symbol."""
+    sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+    provider(p)
+
+    client.post("/screen/run")
+    p.calls.clear()
+    body = client.post("/screen/run").json()
+
+    assert p.calls == []
+    assert body["failed_count"] == 0
+
+
+def test_screen_run_writes_company_profiles(client, sign_in, provider, test_db):
+    sign_in()
+    raw = {
+        "src": "fake",
+        "longBusinessSummary": "Makes things",
+        "industry": "Oil & Gas",
+        "fullTimeEmployees": 350000,
+    }
+    p = MapProvider(
+        data={
+            "AAA": {**GOOD, "raw": raw},
+            "BBB": {**BAD, "raw": raw},
+            "CCC": {**GOOD, "raw": raw},
+        }
+    )
+    provider(p)
+
+    client.post("/screen/run")
+
+    with test_db() as session:
+        profiles = {row.symbol: row for row in session.query(CompanyProfile).all()}
+    assert sorted(profiles) == ["AAA", "BBB", "CCC"]
+    assert profiles["AAA"].industry == "Oil & Gas"
+    assert profiles["AAA"].employees == 350000
 
 
 def test_first_run_fetches_whole_universe_when_nothing_stored(client, sign_in, provider, test_db):

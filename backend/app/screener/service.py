@@ -4,12 +4,13 @@ Business logic for the fundamental screen lives here (BACKEND.md rule 6: thin
 API layer). Routers validate input and call these functions. The endpoint is
 synchronous for the MVP; an async job queue is a later optimization.
 
-Run flow (staged, few network calls):
+Run flow (shared universe, one network stage):
 1. gate the stored snapshot (newest ``ok`` row per symbol + ``stocks.market_cap``)
    with the caller's criteria — no network;
-2. refresh yfinance fundamentals only for gate survivors (plus symbols with no
-   stored row) — this is where 500 calls collapse to the survivors;
-3. re-check refreshed rows on fresh values; a failed refresh keeps stored values.
+2. refresh fundamentals for every symbol whose snapshot is not from today (plus
+   symbols with no stored row) — first run of the day fills the shared DB for all
+   users; same-day reruns cost zero calls;
+3. re-check all rows on fresh-or-stored values; a failed refresh keeps stored values.
 """
 
 import concurrent.futures
@@ -22,6 +23,7 @@ from app.data.provider import DataProvider
 from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
 from app.screener.criteria import criteria_from_json, criteria_to_json
 from app.screener.engine import rank_shortlist, screen_rows
+from app.stock.store import trim_raw, upsert_profile
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, d
         return list(pool.map(fetch_one, stocks))
 
 
-def _latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamental]:
+def latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamental]:
     """Newest ``data_status='ok'`` row per symbol — the stored reference snapshot."""
     if not symbols:
         return {}
@@ -63,7 +65,7 @@ def _latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamenta
     return latest
 
 
-def _stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) -> dict:
+def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) -> dict:
     """Engine row from the stored snapshot; ``raw_json`` back to dict for raw criteria."""
     try:
         raw = json.loads(fundamental.raw_json) if fundamental.raw_json else {}
@@ -112,19 +114,22 @@ def run_screen(
             stock.sector = stock_data["sector"]
 
         symbols = [stock_data["symbol"] for stock_data in stocks]
-        latest = _latest_ok_fundamentals(session, symbols)
+        latest = latest_ok_fundamentals(session, symbols)
         stored_rows = {
-            symbol: _stored_row(symbol, latest[symbol], existing[symbol].market_cap)
+            symbol: stored_row(symbol, latest[symbol], existing[symbol].market_cap)
             for symbol in symbols
             if symbol in latest
         }
 
-        # Stage 1: narrow the universe on the stored snapshot (no network).
-        passers, rejected = screen_rows(list(stored_rows.values()), criteria)
+        # Stage 1: evaluate the stored snapshot (no network) so stored-only rows
+        # still contribute their rejection detail.
+        _stored_passers, rejected = screen_rows(list(stored_rows.values()), criteria)
 
-        # Stage 2: refresh gate survivors + symbols that have no stored row yet.
-        refresh_symbols = [row["symbol"] for row in passers]
-        refresh_symbols += [symbol for symbol in symbols if symbol not in latest]
+        # Stage 2: refresh every symbol whose snapshot is not from today (plus
+        # symbols with no stored row), so one run fills the shared DB for all users.
+        refresh_symbols = [
+            symbol for symbol in symbols if symbol not in latest or latest[symbol].date != today
+        ]
         stock_by_symbol = {stock_data["symbol"]: stock_data for stock_data in stocks}
         results = _fetch_all(provider, [stock_by_symbol[symbol] for symbol in refresh_symbols])
 
@@ -161,15 +166,17 @@ def run_screen(
                     roce=f["roce"],
                     debt_to_equity=f["debt_to_equity"],
                     data_status="ok",
-                    raw_json=json.dumps(f["raw"], default=str),
+                    raw_json=json.dumps(trim_raw(f["raw"]), default=str),
                 )
             )
+            upsert_profile(session, symbol, f["raw"], today)
             fresh_rows[symbol] = {**f, "market_cap": f.get("market_cap"), "data_date": today}
 
-        # Fresh values win; a failed refresh falls back to the stored row.
+        # Fresh values win; a failed refresh falls back to the stored row. Every
+        # symbol with data (today's or stored) is re-evaluated on the best values.
         candidates = [
             fresh_rows.get(symbol) or stored_rows[symbol]
-            for symbol in refresh_symbols
+            for symbol in symbols
             if symbol in fresh_rows or symbol in stored_rows
         ]
         survivors, fresh_rejected = screen_rows(candidates, criteria)
