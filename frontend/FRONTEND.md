@@ -4,8 +4,8 @@
 
 ## Purpose
 
-React + TypeScript dashboard for the analysis pipeline. Three nav sections mirroring the pipeline:
-1. **Fundamental Analysis** (`/`) — run screen button, per-user criteria panel fed by `GET /screen/criteria` (Top 10 is server-fixed), Edit Criteria dialog, shortlist table with all ratios, sortable/filterable; each symbol links to its stock detail page (`/stock/:symbol`)
+React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (Fundamental Analysis · Documents · Model & Backtest); Fundamental Analysis carries its own side rail:
+1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: per-user criteria badges from `GET /screen/criteria`, Edit Criteria dialog, Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). `/fundamentals/top10`: the shortlist the last run produced (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
 2. **Stock detail** (`/stock/:symbol`) — two equal-height halves (company description, clipped with "More" opening the full profile dialog | per-user verdict with score and criteria checks), then the price chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), then main fundamental ratios, "What it has" (market cap first), "What it's done" and all other ratios; Refresh button in the header
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
@@ -63,8 +63,8 @@ frontend/src/
 │   └── system.ts       # Chakra v3 system (sakura + brand/gain/loss + bg.panel); tokens.ts is the source
 ├── pages/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
-│   ├── Fundamentals.tsx
-│   ├── Stocks.tsx      # /stocks — Nifty 500 search/filter/sort table with per-user verdict chips
+│   ├── fundamentals/   # FundamentalsLayout (rail + shared run state) · ScreeningCriteria · TopTen
+│   ├── Stocks.tsx      # /fundamentals/stocks — Nifty 500 search/filter/sort table with per-user verdict chips
 │   ├── StockDetail.tsx # /stock/:symbol — description|verdict halves, chart controls, main/has/done/other sections
 │   ├── Documents.tsx
 │   └── Backtest.tsx
@@ -73,6 +73,7 @@ frontend/src/
     ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
+    ├── FundamentalNav.tsx   # floating glass side rail (Screen Criteria · Top 10 Results · Stocks)
     ├── NavSearch.tsx   # navbar stock search: Ctrl/Cmd+K glass combobox over GET /stocks, verdict chips
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
     ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
