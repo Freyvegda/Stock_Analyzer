@@ -140,9 +140,12 @@ and the theme toggle.
 a `.glass-rail` capsule on the same glass recipe as the navbar, no sheen. It reads as
 **floating** (owner request, 2026-09-27) — detached from the page edges and the content column,
 with a larger, softer drop shadow than the capsule; hover brightens the border and inner top
-highlight toward sakura (colour only, never movement). One-shot entrance: 320 ms fade + 12 px
-slide-from-left + blur clear. The active child link carries the same glass pill
-(`layoutId="fundamental-nav-pill"`, static highlight under reduced motion,
+highlight toward sakura (colour only, never movement). Dark mode carries its own depth recipe
+(`.dark .glass-rail`): a drop shadow dies on the near-black page, so the capsule gets a lifted
+surface mix with a specular top sheen, an inner bevel (top highlight, bottom shadow, side rims)
+and a faint sakura under-glow; dark hover brightens the same edges toward sakura. One-shot
+entrance: 320 ms fade + 12 px slide-from-left + blur clear. The active child link carries the
+same glass pill (`layoutId="fundamental-nav-pill"`, static highlight under reduced motion,
 `data-motion="animated|static"` on the rail). No loop animation — the whitelist above is
 unchanged.
 
