@@ -1,10 +1,12 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FundamentalsLayout from '../fundamentals/FundamentalsLayout'
 import ScreeningCriteria from '../fundamentals/ScreeningCriteria'
 import TopTen from '../fundamentals/TopTen'
 import { api, ApiError } from '../../api/client'
+import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { StatusProvider } from '../../components/StatusRail'
 import type { RatioSpec, UserCriteria } from '../../api/types'
@@ -142,5 +144,60 @@ describe('TopTen', () => {
     )
     expect(await screen.findByText(/no screen run yet/i)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(toaster.create).not.toHaveBeenCalled()
+  })
+
+  it('shows a load error instead of the no-run state when /screen/latest fails', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.reject(new ApiError(500, 'latest exploded'))
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/top10']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="top10" element={<TopTen />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(/latest exploded/)
+    expect(screen.queryByText(/no screen run yet/i)).not.toBeInTheDocument()
+  })
+
+  it('shows progress while a run is in flight and no rows are loaded yet', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    mockedApi.post.mockReturnValue(new Promise(() => {}))
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/criteria']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="criteria" element={<ScreeningCriteria />} />
+                <Route path="top10" element={<TopTen />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    await userEvent.click(screen.getByRole('link', { name: 'Top 10 Results' }))
+    expect(await screen.findByText(/run in progress/i)).toBeInTheDocument()
+    expect(screen.getByTestId('top10-elapsed')).toHaveTextContent('00:00')
   })
 })

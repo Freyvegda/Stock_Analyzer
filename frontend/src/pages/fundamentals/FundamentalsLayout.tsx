@@ -32,6 +32,7 @@ export interface FundamentalsOutletContext {
   summary: RunSummary | null
   lastRunDate: string | null
   latestLoaded: boolean
+  latestError: string | null
   running: boolean
   elapsed: number
   runError: string | null
@@ -49,6 +50,7 @@ export default function FundamentalsLayout() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [latestLoaded, setLatestLoaded] = useState(false)
+  const [latestError, setLatestError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
 
   const location = useLocation()
@@ -96,9 +98,12 @@ export default function FundamentalsLayout() {
       const latest = await api.get<LatestScreen>('/screen/latest')
       setRows(latest.shortlisted)
       setLastRunDate(latest.run_date)
+      setLatestError(null)
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) return // no run yet
-      setError(e instanceof Error ? e.message : 'Failed to load the latest run')
+      const message = e instanceof Error ? e.message : 'Failed to load the latest run'
+      setError(message)
+      setLatestError(message)
     } finally {
       setLatestLoaded(true)
     }
@@ -130,6 +135,7 @@ export default function FundamentalsLayout() {
       try {
         const latest = await api.get<LatestScreen>('/screen/latest')
         setRows(latest.shortlisted)
+        setLatestError(null)
       } catch (e) {
         // Session died mid-run: rethrow so the outer handler stays quiet; the
         // client's auth:unauthorized event redirects to /login.
@@ -164,6 +170,7 @@ export default function FundamentalsLayout() {
     summary,
     lastRunDate,
     latestLoaded,
+    latestError,
     running,
     elapsed,
     runError: error,

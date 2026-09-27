@@ -10,10 +10,11 @@ import { BlurFade } from '@/components/ui/BlurFade'
 import { DotPattern } from '@/components/ui/DotPattern'
 import { NumberTicker } from '@/components/ui/NumberTicker'
 import { Num } from '@/components/ui/Num'
+import { formatElapsed } from '@/lib/format'
 import type { FundamentalsOutletContext } from './FundamentalsLayout'
 
 export default function TopTen() {
-  const { rows, summary, lastRunDate, latestLoaded, running } =
+  const { rows, summary, lastRunDate, latestLoaded, latestError, running, elapsed } =
     useOutletContext<FundamentalsOutletContext>()
 
   const todayIso = (() => {
@@ -26,9 +27,15 @@ export default function TopTen() {
       .filter((d): d is string => Boolean(d))
       .sort()[0] ?? null
 
-  const emptyRun = !running && rows.length === 0 && (summary !== null || lastRunDate !== null)
+  const emptyRun =
+    latestError === null && !running && rows.length === 0 && (summary !== null || lastRunDate !== null)
   const noRunYet =
-    !running && latestLoaded && rows.length === 0 && summary === null && lastRunDate === null
+    latestError === null &&
+    !running &&
+    latestLoaded &&
+    rows.length === 0 &&
+    summary === null &&
+    lastRunDate === null
 
   return (
     <div className="space-y-4">
@@ -63,10 +70,25 @@ export default function TopTen() {
         ) : null}
       </Flex>
 
-      {rows.length > 0 || !latestLoaded ? (
+      {latestError !== null ? (
+        <Text role="alert" color="fg.error" fontSize="sm">
+          {latestError}
+        </Text>
+      ) : null}
+
+      {rows.length > 0 || !latestLoaded || running ? (
         <BlurFade>
           <ShortlistTable rows={rows} loading={!latestLoaded} />
         </BlurFade>
+      ) : null}
+
+      {running ? (
+        <Text fontSize="sm" color="fg.muted">
+          Screen run in progress — results appear here when it finishes.{' '}
+          <span data-testid="top10-elapsed">
+            <Num>{formatElapsed(elapsed)}</Num>
+          </span>
+        </Text>
       ) : null}
 
       {emptyRun ? (
