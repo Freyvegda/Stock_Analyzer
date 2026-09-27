@@ -5,9 +5,10 @@
 ## Purpose
 
 React + TypeScript dashboard for the analysis pipeline. Three nav sections mirroring the pipeline:
-1. **Fundamental Analysis** (`/`) — run screen button, per-user criteria panel fed by `GET /screen/criteria` (Top 10 is server-fixed), Edit Criteria dialog, shortlist table with all ratios, sortable/filterable
-2. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
-3. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
+1. **Fundamental Analysis** (`/`) — run screen button, per-user criteria panel fed by `GET /screen/criteria` (Top 10 is server-fixed), Edit Criteria dialog, shortlist table with all ratios, sortable/filterable; each symbol links to its stock detail page (`/stock/:symbol`)
+2. **Stock detail** (`/stock/:symbol`) — per-user report card (verdict/score/criteria checks), catalog fundamentals grid, candlestick chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), Refresh button, Candle Ridge 3D hero
+3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
+4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
 
 Dense, tabular, dark-themed. This is a tool, not a marketing site.
 
@@ -61,11 +62,12 @@ frontend/src/
 ├── pages/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
 │   ├── Fundamentals.tsx
+│   ├── StockDetail.tsx # /stock/:symbol — report, groups, chart controls, ridge hero
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
+    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene + CandleRidge — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt)
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
@@ -74,7 +76,8 @@ frontend/src/
     ├── RequireAuth.tsx
     ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
     ├── CriteriaDialog.tsx   # criteria editor subwindow
-    └── StockChart.tsx  # lightweight-charts wrapper (to be built, Phase 3)
+    ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes
+    └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})
 ```
 
 ## API Integration
@@ -82,6 +85,7 @@ frontend/src/
 - Dev server proxies `/api/*` -> `http://localhost:8000/*` (vite.config.ts `server.proxy`). ALWAYS call via `api.get('/screen/latest')` etc. — never hardcode `localhost:8000`.
 - Auth endpoints: `GET /auth/state`, `POST /auth/setup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. Login and setup 401s are handled inline and are exempt from the global `auth:unauthorized` event.
 - Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/criteria`, `PUT /screen/criteria` (body `{criteria, thesis}`; `shortlist_size` is server-owned). The old YAML-config endpoints are retired — do not reintroduce them.
+- Stock endpoints: `GET /stock/{symbol}` (shared snapshot + per-user report), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
 - Backend endpoints (see BACKEND.md): `/auth/*`, `/screen/*`, `/docs/*`, `/model/*`, `/backtest/*`, `/health`.
 - All pipeline stages triggered by button clicks (manual pipeline — no polling/scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
 - Handle `{"status":"not_implemented","phase":N}` placeholders gracefully until phases land.
@@ -110,6 +114,7 @@ frontend/src/
 |---|---|
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
 | 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2, itself replaced by the Sakura Leaf) |
+| 1.6 | Stock detail page: shortlist symbol links to `/stock/:symbol` — per-user report card, catalog metric groups, `StockChart` with range/interval switchers, Candle Ridge hero; refresh fallback keeps stored data |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |

@@ -65,7 +65,9 @@ function mockLoads(latest: unknown) {
 function renderPage() {
   return render(
     <Provider>
-      <Fundamentals />
+      <MemoryRouter>
+        <Fundamentals />
+      </MemoryRouter>
     </Provider>,
   )
 }
@@ -93,10 +95,12 @@ describe('Fundamentals', () => {
     mockLoads({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
     render(
       <Provider>
-        <StatusProvider>
-          <Fundamentals />
-          <StatusRail />
-        </StatusProvider>
+        <MemoryRouter>
+          <StatusProvider>
+            <Fundamentals />
+            <StatusRail />
+          </StatusProvider>
+        </MemoryRouter>
       </Provider>,
     )
     expect(await screen.findByTestId('status-rail')).toHaveTextContent('screen 1 shortlisted')
