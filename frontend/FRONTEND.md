@@ -62,7 +62,8 @@ frontend/src/
 ├── pages/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
 │   ├── Fundamentals.tsx
-│   ├── StockDetail.tsx # /stock/:symbol — report, groups, chart controls, ridge hero
+│   ├── Stocks.tsx      # /stocks — Nifty 500 search/filter/sort table with per-user verdict chips
+│   ├── StockDetail.tsx # /stock/:symbol — screen data, profile, has/main/done/other ratios, chart controls, ridge hero
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
@@ -77,6 +78,7 @@ frontend/src/
     ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
     ├── CriteriaDialog.tsx   # criteria editor subwindow
     ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes
+    ├── StocksTable.tsx  # universe table: sortable columns, verdict chips, links
     └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})
 ```
 
@@ -85,7 +87,8 @@ frontend/src/
 - Dev server proxies `/api/*` -> `http://localhost:8000/*` (vite.config.ts `server.proxy`). ALWAYS call via `api.get('/screen/latest')` etc. — never hardcode `localhost:8000`.
 - Auth endpoints: `GET /auth/state`, `POST /auth/setup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. Login and setup 401s are handled inline and are exempt from the global `auth:unauthorized` event.
 - Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/criteria`, `PUT /screen/criteria` (body `{criteria, thesis}`; `shortlist_size` is server-owned). The old YAML-config endpoints are retired — do not reintroduce them.
-- Stock endpoints: `GET /stock/{symbol}` (shared snapshot + per-user report), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
+- Stock endpoints: `GET /stock/{symbol}` (shared snapshot + per-user report + profile + digest sections `main_ratios`/`has`/`done`/`other_groups`), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
+- Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side.
 - Backend endpoints (see BACKEND.md): `/auth/*`, `/screen/*`, `/docs/*`, `/model/*`, `/backtest/*`, `/health`.
 - All pipeline stages triggered by button clicks (manual pipeline — no polling/scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
 - Handle `{"status":"not_implemented","phase":N}` placeholders gracefully until phases land.
@@ -115,6 +118,7 @@ frontend/src/
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
 | 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2, itself replaced by the Sakura Leaf) |
 | 1.6 | Stock detail page: shortlist symbol links to `/stock/:symbol` — per-user report card, catalog metric groups, `StockChart` with range/interval switchers, Candle Ridge hero; refresh fallback keeps stored data |
+| 1.6b | `/stocks` browse page (search + sector/verdict filters, sortable, verdict chips) with nav link; stock detail gains description, "What it has", "Main fundamental ratios", "What it's done", "All other ratios" — screen data first |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |
