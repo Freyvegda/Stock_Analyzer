@@ -9,8 +9,7 @@ import { useAuth } from '@/auth/AuthContext'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 
 const navItems = [
-  { to: '/', label: 'Fundamental Analysis' },
-  { to: '/stocks', label: 'Stocks' },
+  { to: '/fundamentals', label: 'Fundamental Analysis' },
   { to: '/documents', label: 'Documents' },
   { to: '/backtest', label: 'Model & Backtest' },
 ]

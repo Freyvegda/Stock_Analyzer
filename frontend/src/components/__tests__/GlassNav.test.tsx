@@ -53,9 +53,18 @@ describe('GlassNav', () => {
     expect(screen.getByRole('button', { name: /color mode/i })).toBeInTheDocument()
   })
 
-  it('links to the stocks browse page', () => {
+  it('links the three top-level sections and drops the old Stocks item', () => {
     renderNav()
-    expect(screen.getByRole('link', { name: 'Stocks' })).toHaveAttribute('href', '/stocks')
+    expect(screen.getByRole('link', { name: 'Fundamental Analysis' })).toHaveAttribute(
+      'href',
+      '/fundamentals',
+    )
+    expect(screen.getByRole('link', { name: 'Documents' })).toHaveAttribute('href', '/documents')
+    expect(screen.getByRole('link', { name: 'Model & Backtest' })).toHaveAttribute(
+      'href',
+      '/backtest',
+    )
+    expect(screen.queryByRole('link', { name: 'Stocks' })).not.toBeInTheDocument()
   })
 
   it('renders the stock search in the nav capsule', () => {
