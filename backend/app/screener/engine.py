@@ -39,9 +39,13 @@ def resolve_value(row: dict, spec: RatioSpec) -> float | None:
     return value * spec.scale
 
 
-def _passes(value: float | None, limit: float, direction: str) -> bool:
+def passes(value: float | None, limit: float, direction: str) -> bool:
+    """Does ``value`` satisfy the criterion? Missing data never passes.
+
+    Public: shared by the engine and the universe verdict calculation.
+    """
     if value is None:
-        return False  # missing data fails the criterion
+        return False
     return value <= limit if direction == "max" else value >= limit
 
 
@@ -84,7 +88,7 @@ def screen_rows(
     for spec, limit in enabled:
         kept = []
         for row in survivors:
-            if _passes(resolve_value(row, spec), limit, spec.direction):
+            if passes(resolve_value(row, spec), limit, spec.direction):
                 kept.append(row)
             else:
                 rejected.append({"symbol": row["symbol"], "failed": [spec.key]})

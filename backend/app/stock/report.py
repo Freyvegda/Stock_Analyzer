@@ -56,20 +56,7 @@ def build_report(snapshot: dict, criteria: list[dict]) -> dict:
         )
 
     # Catalog metrics grouped by category, in catalog order (first appearance).
-    groups: list[dict] = []
-    group_by_category: dict[str, dict] = {}
-    for spec in RATIO_CATALOG:
-        value = resolve_value(snapshot, spec)
-        if value is None:
-            continue
-        group = group_by_category.get(spec.category)
-        if group is None:
-            group = {"category": spec.category, "metrics": []}
-            group_by_category[spec.category] = group
-            groups.append(group)
-        group["metrics"].append(
-            {"key": spec.key, "label": spec.label, "unit": spec.unit, "value": value}
-        )
+    groups = build_catalog_groups(snapshot)
 
     enabled = len(criteria_rows)
     return {
@@ -81,3 +68,29 @@ def build_report(snapshot: dict, criteria: list[dict]) -> dict:
         "notes": notes,
         "groups": groups,
     }
+
+
+def build_catalog_groups(
+    row: dict, skip_keys: frozenset[str] = frozenset()
+) -> list[dict]:
+    """Catalog metrics grouped by category, in catalog order (first appearance).
+
+    ``skip_keys`` omits specs already rendered by another section (the digest).
+    """
+    groups: list[dict] = []
+    group_by_category: dict[str, dict] = {}
+    for spec in RATIO_CATALOG:
+        if spec.key in skip_keys:
+            continue
+        value = resolve_value(row, spec)
+        if value is None:
+            continue
+        group = group_by_category.get(spec.category)
+        if group is None:
+            group = {"category": spec.category, "metrics": []}
+            group_by_category[spec.category] = group
+            groups.append(group)
+        group["metrics"].append(
+            {"key": spec.key, "label": spec.label, "unit": spec.unit, "value": value}
+        )
+    return groups
