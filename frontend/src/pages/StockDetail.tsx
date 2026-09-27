@@ -16,8 +16,11 @@ import type {
   Candle,
   ChartInterval,
   ChartRange,
+  CompanyProfile,
+  MetricGroup,
   OhlcResponse,
   StockDetail as StockDetailData,
+  StockFact,
 } from '../api/types'
 import { BlurFade } from '../components/ui/BlurFade'
 import { Num } from '../components/ui/Num'
@@ -43,6 +46,119 @@ const INTERVALS: { key: ChartInterval; label: string }[] = [
 
 function fmt(value: number): string {
   return value.toFixed(1)
+}
+
+function hasProfile(profile: CompanyProfile): boolean {
+  return Object.values(profile).some((value) => value !== null)
+}
+
+function DescriptionCard({ profile }: { profile: CompanyProfile }) {
+  if (!hasProfile(profile)) return null
+  return (
+    <BlurFade>
+      <section
+        data-testid="company-description"
+        className="rounded-lg border border-border bg-card p-4"
+      >
+        <Text fontSize="sm" fontWeight="medium">
+          What the company does
+        </Text>
+        {profile.description !== null ? (
+          <Text mt={2} fontSize="sm" color="fg.muted" className="whitespace-pre-line">
+            {profile.description}
+          </Text>
+        ) : null}
+        <Flex mt={3} gap={3} wrap="wrap" align="center">
+          {profile.industry !== null ? <Badge variant="subtle">{profile.industry}</Badge> : null}
+          {profile.sector !== null ? <Badge variant="outline">{profile.sector}</Badge> : null}
+          {profile.website !== null ? (
+            <a
+              href={profile.website}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm underline-offset-4 hover:underline"
+            >
+              Website
+            </a>
+          ) : null}
+          {profile.employees !== null ? (
+            <Text fontSize="xs" color="fg.muted">
+              Employees <Num>{profile.employees}</Num>
+            </Text>
+          ) : null}
+          {profile.hq !== null ? (
+            <Text fontSize="xs" color="fg.muted">
+              {profile.hq}
+            </Text>
+          ) : null}
+        </Flex>
+      </section>
+    </BlurFade>
+  )
+}
+
+function FactTiles({ title, facts }: { title: string; facts: StockFact[] }) {
+  if (facts.length === 0) return null
+  return (
+    <BlurFade>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <Text fontSize="sm" fontWeight="medium">
+          {title}
+        </Text>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {facts.map((fact) => (
+            <div key={fact.key} className="rounded-md border border-border bg-background/40 p-3">
+              <Text fontSize="xs" color="fg.muted">
+                {fact.label}
+              </Text>
+              <Text fontSize="sm" mt={1}>
+                <Num>{fmt(fact.value)}</Num>{' '}
+                <span className="text-xs text-muted-foreground">{fact.unit}</span>
+              </Text>
+            </div>
+          ))}
+        </div>
+      </section>
+    </BlurFade>
+  )
+}
+
+function OtherGroups({ groups }: { groups: MetricGroup[] }) {
+  if (groups.length === 0) return null
+  return (
+    <BlurFade>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <Text fontSize="sm" fontWeight="medium">
+          All other ratios
+        </Text>
+        <div className="mt-3 space-y-4">
+          {groups.map((group) => (
+            <div key={group.category}>
+              <Text fontSize="xs" color="fg.muted" className="uppercase tracking-[0.08em]">
+                {group.category}
+              </Text>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {group.metrics.map((metric) => (
+                  <div
+                    key={metric.key}
+                    className="rounded-md border border-border bg-background/40 p-3"
+                  >
+                    <Text fontSize="xs" color="fg.muted">
+                      {metric.label}
+                    </Text>
+                    <Text fontSize="sm" mt={1}>
+                      <Num>{fmt(metric.value)}</Num>{' '}
+                      <span className="text-xs text-muted-foreground">{metric.unit}</span>
+                    </Text>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </BlurFade>
+  )
 }
 
 export default function StockDetail() {
@@ -242,33 +358,11 @@ export default function StockDetail() {
         <StockReportCard report={detail.report} />
       </BlurFade>
 
-      <BlurFade>
-        <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-          {detail.report.groups.map((group) => (
-            <div key={group.category}>
-              <Text fontSize="xs" color="fg.muted" className="uppercase tracking-[0.08em]">
-                {group.category}
-              </Text>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                {group.metrics.map((metric) => (
-                  <div
-                    key={metric.key}
-                    className="rounded-md border border-border bg-background/40 p-3"
-                  >
-                    <Text fontSize="xs" color="fg.muted">
-                      {metric.label}
-                    </Text>
-                    <Text fontSize="sm" mt={1}>
-                      <Num>{fmt(metric.value)}</Num>{' '}
-                      <span className="text-xs text-muted-foreground">{metric.unit}</span>
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </BlurFade>
+      <DescriptionCard profile={detail.profile} />
+      <FactTiles title="What it has" facts={detail.has} />
+      <FactTiles title="Main fundamental ratios" facts={detail.main_ratios} />
+      <FactTiles title="What it's done" facts={detail.done} />
+      <OtherGroups groups={detail.other_groups} />
 
       <BlurFade>
         <section className="rounded-lg border border-border bg-card p-4">

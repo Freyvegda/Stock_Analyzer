@@ -67,6 +67,26 @@ const detail: StockDetailData = {
   run: { run_id: 4, run_date: '2026-09-26', rank: 2, score: 12.3 },
   refreshed: null,
   warning: null,
+  profile: {
+    description: 'IT services giant',
+    industry: 'Information Technology Services',
+    sector: 'Technology',
+    website: 'https://tcs.test',
+    employees: 600000,
+    hq: 'Mumbai, Maharashtra, India',
+  },
+  main_ratios: [
+    { key: 'pe', label: 'P/E', unit: '×', value: 22.1 },
+    { key: 'roe', label: 'ROE', unit: '%', value: 41 },
+  ],
+  has: [
+    { key: 'totalRevenue', label: 'Revenue', unit: '₹ cr', value: 250000 },
+    { key: 'totalCash', label: 'Total Cash', unit: '₹ cr', value: 10000 },
+  ],
+  done: [{ key: 'revenueGrowth', label: 'Revenue Growth', unit: '%', value: 8.5 }],
+  other_groups: [
+    { category: 'Risk', metrics: [{ key: 'beta', label: 'Beta', unit: '×', value: 0.8 }] },
+  ],
 }
 
 const ohlc: OhlcResponse = {
@@ -109,7 +129,7 @@ describe('StockDetail', () => {
     expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
     expect(screen.getByText('Passes your screen')).toBeInTheDocument()
-    expect(screen.getByText('Valuation')).toBeInTheDocument()
+    expect(screen.getByText('Risk')).toBeInTheDocument()
     expect(screen.getAllByText('22.1').length).toBeGreaterThanOrEqual(2) // report row + metric tile
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Data as of 2026-09-26')).toBeInTheDocument()
@@ -179,10 +199,10 @@ describe('StockDetail', () => {
       ...detail,
       refreshed: true,
       snapshot: { ...detail.snapshot, pe: 20.1 },
-      report: {
-        ...detail.report,
-        groups: [{ category: 'Valuation', metrics: [{ key: 'pe', label: 'P/E', unit: '×', value: 20.1 }] }],
-      },
+      main_ratios: [
+        { key: 'pe', label: 'P/E', unit: '×', value: 20.1 },
+        { key: 'roe', label: 'ROE', unit: '%', value: 41 },
+      ],
     })
     renderPage()
     await screen.findByText('Passes your screen')
@@ -215,5 +235,80 @@ describe('StockDetail', () => {
     expect(screen.getByTestId('refresh-warning')).toHaveTextContent(
       'Live refresh failed: fetch failed for TCS',
     )
+  })
+
+  it('renders screen data before description', async () => {
+    mockLoads()
+    renderPage()
+    await screen.findByText('Passes your screen')
+
+    const report = screen.getByTestId('stock-report')
+    const description = screen.getByTestId('company-description')
+    expect(report.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(description.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+  })
+
+  it('renders the company description and industry', async () => {
+    mockLoads()
+    renderPage()
+
+    const description = await screen.findByTestId('company-description')
+    expect(description).toHaveTextContent('What the company does')
+    expect(description).toHaveTextContent('IT services giant')
+    expect(description).toHaveTextContent('Information Technology Services')
+    expect(screen.getByRole('link', { name: 'Website' })).toHaveAttribute('href', 'https://tcs.test')
+    expect(description).toHaveTextContent('600000')
+    expect(description).toHaveTextContent('Mumbai, Maharashtra, India')
+  })
+
+  it('skips missing metrics and a null profile', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
+      return Promise.resolve({
+        ...detail,
+        profile: {
+          description: null,
+          industry: null,
+          sector: null,
+          website: null,
+          employees: null,
+          hq: null,
+        },
+        main_ratios: [],
+        has: [],
+        done: [],
+        other_groups: [],
+      })
+    })
+    renderPage()
+
+    expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.queryByTestId('company-description')).not.toBeInTheDocument()
+    expect(screen.queryByText('What it has')).not.toBeInTheDocument()
+    expect(screen.queryByText('Main fundamental ratios')).not.toBeInTheDocument()
+    expect(screen.queryByText("What it's done")).not.toBeInTheDocument()
+    expect(screen.queryByText('All other ratios')).not.toBeInTheDocument()
+  })
+
+  it('renders has, done and other-ratio tiles', async () => {
+    mockLoads()
+    renderPage()
+    await screen.findByText('Passes your screen')
+
+    expect(screen.getByText('What it has')).toBeInTheDocument()
+    expect(screen.getByText('Revenue')).toBeInTheDocument()
+    expect(screen.getByText('250000.0')).toBeInTheDocument()
+    expect(screen.getByText('Main fundamental ratios')).toBeInTheDocument()
+    expect(screen.getByText("What it's done")).toBeInTheDocument()
+  })
+
+  it('renders the other groups by category', async () => {
+    mockLoads()
+    renderPage()
+    await screen.findByText('Passes your screen')
+
+    expect(screen.getByText('All other ratios')).toBeInTheDocument()
+    expect(screen.getByText('Risk')).toBeInTheDocument()
+    expect(screen.getByText('Beta')).toBeInTheDocument()
   })
 })

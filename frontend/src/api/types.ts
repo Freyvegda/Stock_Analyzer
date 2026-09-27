@@ -121,6 +121,22 @@ export interface RunContext {
   score: number | null
 }
 
+export interface CompanyProfile {
+  description: string | null
+  industry: string | null
+  sector: string | null
+  website: string | null
+  employees: number | null
+  hq: string | null
+}
+
+export interface StockFact {
+  key: string
+  label: string
+  unit: string
+  value: number
+}
+
 export interface StockDetail {
   symbol: string
   name: string
@@ -128,6 +144,11 @@ export interface StockDetail {
   market_cap: number | null
   snapshot: StockSnapshot
   report: StockReport
+  profile: CompanyProfile
+  main_ratios: StockFact[]
+  has: StockFact[]
+  done: StockFact[]
+  other_groups: MetricGroup[]
   data_date: string
   stale: boolean
   run: RunContext | null
