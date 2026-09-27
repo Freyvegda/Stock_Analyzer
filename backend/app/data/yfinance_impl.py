@@ -146,17 +146,18 @@ class YFinanceProvider(DataProvider):
         )
         rows: list[dict] = []
         for index, row in frame.iterrows():
-            close = row["Close"]
-            if pd.isna(close):
+            open_, high, low, close = row["Open"], row["High"], row["Low"], row["Close"]
+            if pd.isna(open_) or pd.isna(high) or pd.isna(low) or pd.isna(close):
                 continue
+            volume = row["Volume"]
             rows.append(
                 {
                     "time": index.date().isoformat(),
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
+                    "open": float(open_),
+                    "high": float(high),
+                    "low": float(low),
                     "close": float(close),
-                    "volume": float(row["Volume"]),
+                    "volume": 0.0 if pd.isna(volume) else float(volume),
                 }
             )
         return rows

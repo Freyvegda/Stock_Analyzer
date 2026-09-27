@@ -134,14 +134,18 @@ def run_screen(
             symbol = stock_data["symbol"]
             if f is None:
                 failed_symbols.append(symbol)
-                session.merge(
-                    Fundamental(
-                        symbol=symbol,
-                        date=today,
-                        data_status="failed",
-                        raw_json=json.dumps({"error": error or "fetch failed"}),
+                # A failed refresh must never clobber a good same-day snapshot
+                # (same rule as the stock detail path).
+                today_row = session.get(Fundamental, (symbol, today))
+                if today_row is None or today_row.data_status != "ok":
+                    session.merge(
+                        Fundamental(
+                            symbol=symbol,
+                            date=today,
+                            data_status="failed",
+                            raw_json=json.dumps({"error": error or "fetch failed"}),
+                        )
                     )
-                )
                 continue
 
             # Never null out a known market cap because a later fetch failed.

@@ -312,6 +312,28 @@ def test_ohlc_requests_daily_history_for_period(monkeypatch):
     assert calls == [{"period": "2y", "interval": "1d", "auto_adjust": False}]
 
 
+def test_ohlc_drops_rows_with_nan_prices_and_zeroes_nan_volume(monkeypatch):
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "Open": [1.0, float("nan")],
+            "High": [1.5, 2.5],
+            "Low": [0.5, 1.5],
+            "Close": [1.2, 2.2],
+            "Volume": [float("nan"), 100],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+    )
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_history_ticker(frame))
+
+    rows = YFinanceProvider().ohlc("AAA")
+
+    assert len(rows) == 1
+    assert rows[0]["time"] == "2026-01-02"  # valid prices survive
+    assert rows[0]["volume"] == 0.0  # NaN volume never reaches JSON
+
+
 def test_filings_is_not_implemented():
     provider = YFinanceProvider()
     with pytest.raises(NotImplementedError):

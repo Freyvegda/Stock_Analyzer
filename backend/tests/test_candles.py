@@ -87,6 +87,18 @@ def test_aggregate_monthly_buckets_by_calendar_month():
     assert [b["volume"] for b in buckets] == [200.0, 100.0]
 
 
+def test_15d_buckets_are_stable_across_ranges():
+    start = date(2026, 1, 1)
+    rows = rows_from([(start + timedelta(days=offset)).isoformat() for offset in range(400)])
+
+    full = aggregate_candles(slice_range(rows, "5y"), "15d")
+    yearly = aggregate_candles(slice_range(rows, "1y"), "15d")
+
+    # Absolute 15-calendar-day windows: the newest bucket is the same regardless
+    # of which range was requested (a relative anchor would shift it).
+    assert full[-1] == yearly[-1]
+
+
 def test_aggregate_preserves_extremes_and_order():
     start = date(2026, 1, 1)
     rows = rows_from([(start + timedelta(days=offset)).isoformat() for offset in range(60)])

@@ -217,6 +217,17 @@ export default function StockDetail() {
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </Button>
         </Flex>
+        {detail.warning !== null ? (
+          <Text
+            data-testid="refresh-warning"
+            role="status"
+            fontSize="xs"
+            color="fg.muted"
+            mt={2}
+          >
+            {detail.warning}
+          </Text>
+        ) : null}
       </BlurFade>
 
       {candles.length > 1 ? (

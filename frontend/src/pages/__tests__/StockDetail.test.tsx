@@ -212,5 +212,8 @@ describe('StockDetail', () => {
       ),
     )
     expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getByTestId('refresh-warning')).toHaveTextContent(
+      'Live refresh failed: fetch failed for TCS',
+    )
   })
 })

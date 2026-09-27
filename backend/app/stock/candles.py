@@ -42,10 +42,10 @@ def aggregate_candles(rows: list[dict], interval: str) -> list[dict]:
         raise ValueError(f"Unknown interval {interval!r}")
 
     if interval == "15d":
-        first_ordinal = date.fromisoformat(rows[0]["time"]).toordinal()
-
         def bucket_key(row: dict) -> int:
-            return (date.fromisoformat(row["time"]).toordinal() - first_ordinal) // _BUCKET_DAYS
+            # Absolute 15-calendar-day windows: the same dates always fall in the
+            # same bucket, so switching range never shifts the aggregated candles.
+            return date.fromisoformat(row["time"]).toordinal() // _BUCKET_DAYS
 
     else:  # "1mo"
         def bucket_key(row: dict) -> str:

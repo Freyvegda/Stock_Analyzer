@@ -273,6 +273,20 @@ def test_first_run_fetches_whole_universe_when_nothing_stored(client, sign_in, p
     assert body["stale"] is False
 
 
+def test_failed_refresh_keeps_same_day_ok_row(client, sign_in, provider, test_db):
+    """Same-day ok snapshot must survive a failed refresh in the screen path too."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}], date_iso=date.today().isoformat())
+    provider(DeadFundamentalsProvider())
+
+    body = client.post("/screen/run").json()
+
+    assert [r["symbol"] for r in body["shortlisted"]] == ["AAA"]
+    with test_db() as session:
+        row = session.get(Fundamental, ("AAA", date.today().isoformat()))
+        assert row.data_status == "ok" and row.pe == GOOD["pe"]
+
+
 def test_refreshed_values_override_stored_snapshot(client, sign_in, provider, test_db):
     """A passer is re-checked on fresh data; a regressed fresh PE cuts it."""
     sign_in()
