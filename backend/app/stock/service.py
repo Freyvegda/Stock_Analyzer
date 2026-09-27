@@ -14,7 +14,9 @@ from datetime import date
 from app.data.provider import DataProvider
 from app.db.models import Fundamental, ScreenRun, Stock
 from app.screener import service as screener_service
+from app.stock import digest as digest_builder
 from app.stock import report as report_builder
+from app.stock import store
 from app.stock.candles import aggregate_candles, slice_range
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ def _latest_ok(session, symbol: str) -> Fundamental | None:
 
 def _store_ok(session, stock: Stock, payload: dict, today: str) -> None:
     """Upsert today's snapshot (composite PK -> same-day rerun overwrites)."""
+    raw = payload.get("raw") or {}
     session.merge(
         Fundamental(
             symbol=stock.symbol,
@@ -65,9 +68,10 @@ def _store_ok(session, stock: Stock, payload: dict, today: str) -> None:
             roce=payload.get("roce"),
             debt_to_equity=payload.get("debt_to_equity"),
             data_status="ok",
-            raw_json=json.dumps(payload.get("raw") or {}, default=str),
+            raw_json=json.dumps(store.trim_raw(raw), default=str),
         )
     )
+    store.upsert_profile(session, stock.symbol, raw, today)
     if payload.get("market_cap") is not None:
         stock.market_cap = payload["market_cap"]
     session.commit()
@@ -146,6 +150,7 @@ def _detail_payload(
 ) -> dict:
     snapshot = _snapshot(row, stock)
     criteria = screener_service.get_criteria(session_factory, user_id)["criteria"]
+    sections = digest_builder.build_sections(snapshot)
     public_snapshot = {
         key: snapshot[key]
         for key in ("date", "pe", "pb", "roe", "roce", "debt_to_equity", "data_status")
@@ -157,6 +162,11 @@ def _detail_payload(
         "market_cap": stock.market_cap,
         "snapshot": public_snapshot,
         "report": report_builder.build_report(snapshot, criteria),
+        "profile": store.read_profile(session, stock.symbol),
+        "main_ratios": sections["main_ratios"],
+        "has": sections["has"],
+        "done": sections["done"],
+        "other_groups": sections["other_groups"],
         "data_date": snapshot["date"],
         "stale": snapshot["date"] != _today(),
         "run": _latest_run_entry(session, user_id, stock.symbol),

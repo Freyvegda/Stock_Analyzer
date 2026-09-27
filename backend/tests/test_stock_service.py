@@ -7,12 +7,25 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
-from app.db.models import Fundamental, ScreenRun, Stock, User, UserCriteria
-from app.stock import service
+from app.db.models import CompanyProfile, Fundamental, ScreenRun, Stock, User, UserCriteria
+from app.stock import service, store
 from app.stock.candles import CandleCache
 
 TODAY = date.today().isoformat()
 STORED_DATE = "2026-09-20"
+
+PROFILE_INFO = {
+    "longBusinessSummary": "Makes things",
+    "industry": "Oil & Gas",
+    "sector": "Energy",
+    "website": "https://x.test",
+    "fullTimeEmployees": 350000,
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "country": "India",
+    "totalRevenue": 9.3e12,
+    "revenueGrowth": 0.112,
+}
 
 GOOD = {
     "pe": 20.0,
@@ -217,6 +230,66 @@ def test_refresh_failure_without_stored_raises(session_factory):
     user_id = seed_user(session_factory)
     with pytest.raises(service.StockDataUnavailable):
         service.refresh_stock(session_factory, FakeProvider(fail_fundamentals=("AAA",)), user_id, "AAA")
+
+
+def test_detail_includes_profile_and_sections(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory)
+    user_id = seed_user(session_factory)
+    with session_factory() as session:
+        store.upsert_profile(session, "AAA", PROFILE_INFO, STORED_DATE)
+        session.commit()
+
+    detail = service.get_stock_detail(session_factory, FakeProvider(), user_id, "AAA")
+
+    assert detail["profile"]["industry"] == "Oil & Gas"
+    assert detail["profile"]["employees"] == 350000
+    assert detail["profile"]["hq"] == "Mumbai, Maharashtra, India"
+    assert next(m for m in detail["main_ratios"] if m["key"] == "pe")["value"] == 20.0
+    assert next(m for m in detail["has"] if m["key"] == "market_cap")["value"] == 5000.0
+    assert isinstance(detail["other_groups"], list)
+
+
+def test_lazy_fetch_stores_profile(session_factory):
+    seed_stock(session_factory)
+    user_id = seed_user(session_factory)
+    provider = FakeProvider(fundamentals={"AAA": {**GOOD, "raw": PROFILE_INFO}})
+
+    detail = service.get_stock_detail(session_factory, provider, user_id, "AAA")
+
+    assert detail["profile"]["description"] == "Makes things"
+    assert next(m for m in detail["has"] if m["key"] == "totalRevenue")["value"] == 930000.0
+    assert next(m for m in detail["done"] if m["key"] == "revenueGrowth")["value"] == pytest.approx(11.2)
+    with session_factory() as session:
+        row = session.get(CompanyProfile, "AAA")
+        assert row is not None and row.industry == "Oil & Gas"
+
+
+def test_refresh_updates_profile(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory, date_iso=TODAY)
+    user_id = seed_user(session_factory)
+    with session_factory() as session:
+        store.upsert_profile(session, "AAA", {**PROFILE_INFO, "industry": "Old"}, TODAY)
+        session.commit()
+    provider = FakeProvider(fundamentals={"AAA": {**GOOD, "raw": {**PROFILE_INFO, "industry": "New"}}})
+
+    detail = service.refresh_stock(session_factory, provider, user_id, "AAA")
+
+    assert detail["profile"]["industry"] == "New"
+    with session_factory() as session:
+        assert session.get(CompanyProfile, "AAA").industry == "New"
+
+
+def test_detail_without_profile_row_returns_nones(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory)
+    user_id = seed_user(session_factory)
+
+    detail = service.get_stock_detail(session_factory, FakeProvider(), user_id, "AAA")
+
+    assert all(value is None for value in detail["profile"].values())
+    assert {m["key"] for m in detail["main_ratios"]} >= {"pe", "pb", "roe", "roce", "debt_to_equity"}
 
 
 def test_verdict_uses_callers_criteria(session_factory):
