@@ -156,3 +156,25 @@ export interface OhlcResponse {
   as_of: string
   candles: Candle[]
 }
+
+export interface StockListRow {
+  symbol: string
+  name: string
+  sector: string | null
+  market_cap: number | null
+  pe: number | null
+  pb: number | null
+  roe: number | null
+  roce: number | null
+  debt_to_equity: number | null
+  data_date: string | null
+  passes: number
+  enabled: number
+  verdict: 'pass' | 'fail' | 'no_data'
+}
+
+export interface StockListResponse {
+  as_of: string | null
+  total: number
+  rows: StockListRow[]
+}

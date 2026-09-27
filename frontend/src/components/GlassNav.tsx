@@ -9,6 +9,7 @@ import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 
 const navItems = [
   { to: '/', label: 'Fundamental Analysis' },
+  { to: '/stocks', label: 'Stocks' },
   { to: '/documents', label: 'Documents' },
   { to: '/backtest', label: 'Model & Backtest' },
 ]
