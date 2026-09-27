@@ -58,6 +58,11 @@ describe('GlassNav', () => {
     expect(screen.getByRole('link', { name: 'Stocks' })).toHaveAttribute('href', '/stocks')
   })
 
+  it('renders the stock search in the nav capsule', () => {
+    renderNav()
+    expect(screen.getByRole('button', { name: 'Search stocks' })).toBeInTheDocument()
+  })
+
   it('keeps sheen off without a fine pointer (jsdom default)', () => {
     renderNav()
     expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')

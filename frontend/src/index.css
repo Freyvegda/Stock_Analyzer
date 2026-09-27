@@ -395,6 +395,50 @@
     box-shadow: 0 0 18px -6px color-mix(in oklab, var(--primary) 45%, transparent);
   }
 
+  /* Nav search results: the same liquid-glass family as the capsule, but a
+     denser popover surface so rows stay readable over page content. The sheen
+     follows the pointer through --sheen-*; rows sit above it (z-10 wrapper). */
+  .glass-panel {
+    position: relative;
+    border-radius: calc(var(--radius) * 1.4);
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background:
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--popover) 84%, transparent),
+        color-mix(in oklab, var(--background) 76%, transparent)
+      );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 9%, transparent),
+      0 18px 44px -22px rgb(0 0 0 / 0.5);
+    backdrop-filter: blur(14px) saturate(1.35);
+    -webkit-backdrop-filter: blur(14px) saturate(1.35);
+    overflow: hidden;
+  }
+
+  .glass-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(
+      240px circle at var(--sheen-x, 50%) var(--sheen-y, 0%),
+      color-mix(in oklab, var(--primary) 14%, transparent),
+      transparent 70%
+    );
+    opacity: var(--sheen-opacity, 0);
+    transition: opacity var(--duration-base) var(--ease-vault);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Stock detail description: clipped to the verdict half's height; the text
+     fades where it cuts off and the full text lives in the More dialog. */
+  .clip-fade-bottom {
+    mask-image: linear-gradient(to bottom, black calc(100% - 1.75rem), transparent);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1.75rem), transparent);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .glass-nav,
     .glass-nav-link {
@@ -402,6 +446,11 @@
     }
 
     .glass-nav::after {
+      transition: none;
+      opacity: 0;
+    }
+
+    .glass-panel::after {
       transition: none;
       opacity: 0;
     }

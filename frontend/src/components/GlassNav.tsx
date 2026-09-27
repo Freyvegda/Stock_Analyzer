@@ -4,6 +4,7 @@ import { IconButton, Text } from '@chakra-ui/react'
 import { LogOut, TrendingUp } from 'lucide-react'
 import { motion } from 'motion/react'
 import { ThemeToggle } from './ThemeToggle'
+import { NavSearch } from './NavSearch'
 import { useAuth } from '@/auth/AuthContext'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 
@@ -109,6 +110,7 @@ export function GlassNav() {
             </NavLink>
           ))}
           <div className="ml-auto flex items-center gap-2">
+            <NavSearch />
             <Text fontSize="sm" color="fg.muted" className="hidden sm:block">
               {user?.username}
             </Text>
