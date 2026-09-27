@@ -46,6 +46,25 @@ class Fundamental(Base):
     raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CompanyProfile(Base):
+    """Slow-moving company identity from yfinance `.info` — one row per symbol.
+
+    Ratios live in dated ``fundamentals`` rows; this table holds the fields the
+    stock detail page repeats on every view (description, HQ, website, ...).
+    """
+
+    __tablename__ = "company_profiles"
+
+    symbol: Mapped[str] = mapped_column(String, primary_key=True)
+    industry: Mapped[str | None] = mapped_column(String, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+    employees: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hq: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class ScreenRun(Base):
     __tablename__ = "screen_runs"
 
