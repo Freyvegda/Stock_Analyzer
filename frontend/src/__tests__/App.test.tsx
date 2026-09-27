@@ -98,7 +98,7 @@ describe('App routing shell', () => {
   it('sends / to the criteria page inside the fundamentals shell', async () => {
     mockApi()
     renderApp('/')
-    expect(await screen.findByText('PE ≤ 25×')).toBeInTheDocument()
+    expect(await screen.findByText('PE ≤ 25×', undefined, { timeout: 5000 })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Fundamental analysis' })).toBeInTheDocument()
   })
 

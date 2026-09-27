@@ -1,8 +1,26 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FundamentalNav } from '../FundamentalNav'
 import { Provider } from '../ui/provider'
+
+function mockMatchMedia(map: Record<string, boolean>) {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: map[query] ?? false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList,
+  )
+}
+
+afterEach(() => vi.restoreAllMocks())
 
 function renderNav(path = '/fundamentals/top10') {
   return render(
@@ -39,5 +57,16 @@ describe('FundamentalNav', () => {
     const pills = screen.getAllByTestId('fundamental-nav-pill')
     expect(pills).toHaveLength(1)
     expect(active).toContainElement(pills[0])
+  })
+
+  it('animates the glass rail entrance by default', () => {
+    renderNav()
+    expect(screen.getByTestId('fundamental-nav-rail')).toHaveAttribute('data-motion', 'animated')
+  })
+
+  it('renders the rail static under reduced motion', () => {
+    mockMatchMedia({ '(prefers-reduced-motion: reduce)': true })
+    renderNav()
+    expect(screen.getByTestId('fundamental-nav-rail')).toHaveAttribute('data-motion', 'static')
   })
 })

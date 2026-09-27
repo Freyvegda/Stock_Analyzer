@@ -56,7 +56,7 @@ Rules:
   `fg.muted`/`bg.panel`). `vault-rules.test.ts` also bans the legacy amber hexes and tints.
 - Elevation = lighter surface, not shadow. Page is flat; overlays only (`popover` + 1px border
   + shadow). Four-step ladder: background → card → secondary/accent → popover. The liquid-glass
-  navbar is the one sanctioned overlay shadow surface (see below).
+  navbar and the fundamentals side rail are the sanctioned overlay shadow surfaces (see below).
 - Selected/active signature: sakura 12% tint + 1px sakura left border (rows) or the glass pill
   (nav/tabs).
 - Chart colours come from `chartPalette` in `tokens.ts` — no hex literals in chart code.
@@ -121,7 +121,7 @@ and the theme toggle.
 
 - Surface: `.glass-nav` in `index.css` — token-derived `color-mix` gradient over
   `backdrop-filter: blur(14px) saturate(1.35)`, 1px mixed border, inset top highlight and a
-  soft drop shadow. This is the one sanctioned overlay shadow surface.
+  soft drop shadow. This is one of the sanctioned overlay shadow surfaces.
 - Pointer response: **sheen only.** A `::after` radial gradient in 14% `--primary` follows the
   pointer through `--sheen-x`/`--sheen-y` (written straight onto the node; no re-render) and
   fades with `--sheen-opacity`. The capsule never tilts, rotates, scales or translates toward
@@ -133,6 +133,18 @@ and the theme toggle.
 - Entrance: one-shot 320ms fade + 8px rise + blur clear. Not a loop.
 - Gates: sheen off for coarse pointers (`(pointer: fine)` only) and under reduced motion
   (`data-sheen="on|off"` for tests); `aria-label="Primary"` landmark; pills are decorative.
+
+### Fundamentals side rail
+
+`components/FundamentalNav.tsx` renders the fundamentals section rail inside the page content:
+a `.glass-rail` capsule on the same glass recipe as the navbar, no sheen. It reads as
+**floating** (owner request, 2026-09-27) — detached from the page edges and the content column,
+with a larger, softer drop shadow than the capsule; hover brightens the border and inner top
+highlight toward sakura (colour only, never movement). One-shot entrance: 320 ms fade + 12 px
+slide-from-left + blur clear. The active child link carries the same glass pill
+(`layoutId="fundamental-nav-pill"`, static highlight under reduced motion,
+`data-motion="animated|static"` on the rail). No loop animation — the whitelist above is
+unchanged.
 
 ## 3D and the loader
 
