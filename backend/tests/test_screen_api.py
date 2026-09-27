@@ -259,7 +259,21 @@ def test_screen_run_refreshes_every_stale_symbol(client, sign_in, provider, test
 
     assert sorted(p.calls) == ["AAA", "BBB", "CCC"]  # BBB lost the PE gate but is still refreshed
     assert {r["symbol"] for r in body["shortlisted"]} == {"AAA", "CCC"}
-    assert {"symbol": "BBB", "failed": ["pe"]} in body["failed_details"]
+    # Rejections come from the final fresh-or-stored evaluation only: no duplicates.
+    assert body["failed_details"] == [{"symbol": "BBB", "failed": ["pe"]}]
+
+
+def test_stale_reject_passing_fresh_is_not_reported_failed(client, sign_in, provider, test_db):
+    """A symbol rejected on the stored snapshot but passing fresh must not be in
+    failed_details while sitting in the shortlist."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **GOOD}])
+    provider(MapProvider(data={"AAA": GOOD, "BBB": GOOD, "CCC": GOOD}))
+
+    body = client.post("/screen/run").json()
+
+    assert {r["symbol"] for r in body["shortlisted"]} == {"AAA", "BBB", "CCC"}
+    assert body["failed_details"] == []
 
 
 def test_screen_rerun_same_day_makes_no_fundamentals_calls(client, sign_in, provider, test_db):

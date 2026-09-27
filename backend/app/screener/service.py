@@ -121,12 +121,9 @@ def run_screen(
             if symbol in latest
         }
 
-        # Stage 1: evaluate the stored snapshot (no network) so stored-only rows
-        # still contribute their rejection detail.
-        _stored_passers, rejected = screen_rows(list(stored_rows.values()), criteria)
-
-        # Stage 2: refresh every symbol whose snapshot is not from today (plus
-        # symbols with no stored row), so one run fills the shared DB for all users.
+        # Refresh every symbol whose snapshot is not from today (plus symbols with
+        # no stored row), so one run fills the shared DB for all users. Rejections
+        # are computed once, on the best values (fresh where fetched, stored else).
         refresh_symbols = [
             symbol for symbol in symbols if symbol not in latest or latest[symbol].date != today
         ]
@@ -173,14 +170,13 @@ def run_screen(
             fresh_rows[symbol] = {**f, "market_cap": f.get("market_cap"), "data_date": today}
 
         # Fresh values win; a failed refresh falls back to the stored row. Every
-        # symbol with data (today's or stored) is re-evaluated on the best values.
+        # symbol with data (today's or stored) is evaluated once on the best values.
         candidates = [
             fresh_rows.get(symbol) or stored_rows[symbol]
             for symbol in symbols
             if symbol in fresh_rows or symbol in stored_rows
         ]
-        survivors, fresh_rejected = screen_rows(candidates, criteria)
-        rejected.extend(fresh_rejected)
+        survivors, rejected = screen_rows(candidates, criteria)
 
         shortlist = rank_shortlist(survivors, shortlist_size)
         stale = bool(getattr(provider, "stale", False)) or any(
