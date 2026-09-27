@@ -78,7 +78,10 @@ export default function TopTen() {
 
       {rows.length > 0 || !latestLoaded || running ? (
         <BlurFade>
-          <ShortlistTable rows={rows} loading={!latestLoaded} />
+          {/* Same card surface as the stocks table (see Stocks.tsx). */}
+          <div className="rounded-lg border border-border bg-card p-4">
+            <ShortlistTable rows={rows} loading={!latestLoaded} />
+          </div>
         </BlurFade>
       ) : null}
 

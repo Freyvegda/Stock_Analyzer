@@ -33,8 +33,8 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   marked block in `src/index.css` is test-synced (`$env:VAULT_SYNC='1'; npm run tokens:sync`),
   Chakra `system.ts` derives from it (sakura scale + `colorPalette="sakura"`, `bg.panel`), and
   `contrast.test.ts` gates WCAG AA in both modes. `scenePalette` (same file) is the login-only
-  Sakura Garden palette — outside `ThemeTokens`, outside the synced block, scene-only (see
-  DESIGN.md).
+  Sakura Garden palette and `bonfirePalette` the signed-in Bonfire palette — both outside
+  `ThemeTokens`, outside the synced block, scene-only (see DESIGN.md).
 - Typography: Geist UI + **Geist Mono for every number** via `Num`/`Delta`
   (`src/components/ui/Num.tsx`, `Delta.tsx`). Sakura is attention only — never gain/loss polarity.
 - Loader: `SakuraLeafLoader` (`src/components/three/SakuraLeafLoader.tsx`) — brand-only 3D
@@ -45,6 +45,12 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   120 (centred, hint + elapsed beneath, the only animation during a run), login 120,
   criteria dialog 80. The run button swaps to "Running…" + disables; no border crawl around
   the card.
+- Background: `Bonfire` (`src/components/three/Bonfire.tsx`) is the signed-in ambient layer —
+  a bottom-right campfire that emits the app's ember pixels (dense around the fire, a thin
+  tail wandering across the screen); theme-aware (palette + burn profile crossfade on theme
+  change via `bonfirePalette` and `motionFor`), lazy chunk, WebGL-gated, hidden below `md`,
+  frozen under reduced motion, absent on `/login`. It replaced the retired `AmbientField`
+  particle wash.
 - Path alias `@/` -> `src/` (vite.config.ts + tsconfig paths, NO baseUrl — TS6 deprecated)
 
 ## Structure
@@ -70,7 +76,7 @@ frontend/src/
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
+    ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
     ├── FundamentalNav.tsx   # floating glass side rail (Screen Criteria · Top 10 Results · Stocks)

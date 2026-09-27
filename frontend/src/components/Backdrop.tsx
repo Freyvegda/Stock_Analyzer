@@ -1,6 +1,6 @@
 /**
  * Fixed vault texture layer: scanlines + blossom radial glow (dark) / petal grain (light).
- * Purely decorative — sits under `AmbientField` and never intercepts pointer events.
+ * Purely decorative — sits under `Bonfire` and never intercepts pointer events.
  */
 export function Backdrop() {
   return (

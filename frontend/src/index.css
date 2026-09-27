@@ -144,7 +144,7 @@
     @apply border-border outline-ring/50;
     }
   /* The page colour lives on <html> so it paints on the canvas layer, below the
-     `-z-10` decorative layers (Backdrop, AmbientField, SakuraScene). On <body> it
+     `-z-10` decorative layers (Backdrop, Bonfire, SakuraScene). On <body> it
      painted over them and they were invisible. */
   html {
     @apply bg-background font-sans;

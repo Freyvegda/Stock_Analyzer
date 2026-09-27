@@ -80,7 +80,7 @@ Rules:
 - Spacing: 4px grid; table density never changes for style.
 - Backdrop texture: scanlines (1.5% white) + blossom radial glow (dark) / faint petal grain
   (light), fixed, `aria-hidden`, `pointer-events-none`, `-z-10`, DOM-ordered before
-  `AmbientField`; disabled under `prefers-contrast: more`. The page colour is painted by
+  `Bonfire`; disabled under `prefers-contrast: more`. The page colour is painted by
   **`html`, never `body`** (see the `index.css` base layer): a `body` background paints above
   negative-`z-index` layers, which silently hid the backdrop, the particle field and the garden.
 
@@ -106,9 +106,9 @@ Signatures (the whole inventory):
    movement on pointer move (see the navbar section).
 
 **Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
-last-run status dot pulse, Sakura Garden falling petals (login only). Max one loop per viewport
-zone; `/login` swaps the ambient particle field out for the garden. Loops never render inside
-tables, summaries, or chart interiors.
+last-run status dot pulse, Bonfire flame + embers (signed-in app), Sakura Garden falling
+petals (login only). Max one loop per viewport zone; `/login` swaps the bonfire out for the
+garden. Loops never render inside tables, summaries, or chart interiors.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
@@ -177,10 +177,45 @@ unchanged.
 - **Candle Ridge** (retired 2026-09-27): the stock detail hero was removed with its helpers
   and tests; the page is data-first again (description | verdict halves, then the chart).
   The retired implementation lived in `three/CandleRidge.tsx` + `three/ridgeGeometry.ts`.
-- `AmbientField` (decorative background particles) keeps its gates: lazy chunk, WebGL-gated,
-  hidden below `md`, paused when hidden, off under reduced motion. Three.js must never appear
-  in the initial bundle chunk.
+- `Bonfire` (the signed-in background fire and the app's ember source) keeps the gates of the
+  ambient field it replaced: lazy chunk, WebGL-gated, hidden below `md`, paused when hidden,
+  frozen under reduced motion. Three.js must never appear in the initial bundle chunk.
 - Decorative 3D never obscures or competes with data.
+
+## Bonfire
+
+`components/three/Bonfire.tsx` is the signed-in app's decorative layer, replacing the old
+`AmbientField` particle wash: a campfire in the bottom-right corner of the viewport that is
+also the source of every ambient ember. A stone ring and three crossed logs sit under six
+low-poly flame layers — a dim sakura shell, two thin licks leaning off the sides, the amber
+body and the cream heart — all grown as wonky jittered cones with a baked alpha ramp (opaque
+at the logs, thin at the tips) and an RGB gradient written per frame, plus a code-generated
+soft bloom and a flickering point light on the ring. The 280-ember field is seeded
+(`mulberry32`, `BONFIRE_SEED`) and deterministic: every ember is born inside the flame mouth
+(that is the only source), climbs the viewport slowly and drifts through depth as it rises,
+staying bright for most of the climb and dying out overhead. Depth travel is climb-scaled, so
+the fire is always where an ember starts; per-ember pixel size and a far-haze dim sell the 3D.
+Two populations keep the picture: a dense crowd that hugs the fire and a thin tail of
+wanderers that carries sparks across the whole screen. `emberSeeds`, `emberPose`, `motionFor`,
+`EMBER_LIMITS`, `EMBER_PIXEL` and the still-frame time live in `three/emberField.ts`
+(three-free, unit-tested), so the scene component stays a thin renderer and
+`components/three/**` stays hex-free.
+
+- Theme: colours come from `bonfirePalette` (`tokens.ts`, a sibling of `scenePalette`, outside
+  `ThemeTokens`) and the burn profile from `motionFor`. The night fire is slower and brighter,
+  flickers harder and carries an additive bloom; the day fire is finer, calmer and quicker, and
+  its bloom becomes a soft blush veil (normal blending) instead of glow. Palette and profile
+  crossfade over roughly 300ms on theme change, the way the garden crossfades moon→sun; under
+  reduced motion the swap is instant.
+- Gates: identical to the ambient field it replaced — lazy chunk, `hasWebGL()` else nothing,
+  hidden below `md`, paused when the tab is hidden, `aria-hidden`, `pointer-events-none`,
+  `-z-10`. Reduced motion freezes a still frame (`frameloop="demand"`) rather than removing the
+  fire.
+- Budgets: 280 embers (cap 320, one instanced mesh of axis-aligned square pixel quads,
+  `EMBER_PIXEL` ≈ 2–3 screen px before per-ember scale), 9 stones, 3 logs, 6 flame layers, one
+  bloom sprite, one 128px canvas texture — no assets, no new dependency.
+- The fire is never interactive and never carries text; toasts (also bottom-end) render above
+  it.
 
 ## Sakura Garden (login only)
 
@@ -228,8 +263,8 @@ variable, never enters the synced `index.css` block, and reaches three.js as pro
   keeps the same picture without a canvas.
 - Only the auth card sits above the scene, and the card is opaque: no text or data is ever
   rendered over 3D.
-- `AmbientField` does not mount on `/login` — one decorative loop per viewport zone. The
-  Sakura Leaf loader appears only during the `loading` phase, before the garden is drawn.
+- `Bonfire` does not mount on `/login` — one decorative loop per viewport zone. The Sakura Leaf
+  loader appears only during the `loading` phase, before the garden is drawn.
 
 The tree and petal field are the only sakura *motifs*; the rest of the app carries the sakura
 *palette* through the semantic tokens. Polarity stays green/red plus sign everywhere.

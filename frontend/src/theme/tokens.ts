@@ -232,6 +232,66 @@ export function scenePaletteFor(colorMode: string | undefined): ScenePalette {
   return colorMode === 'dark' ? scenePalette.dark : scenePalette.light
 }
 
+/**
+ * Bonfire scene colours (see DESIGN.md → Bonfire).
+ *
+ * Same contract as {@link ScenePalette}: outside {@link ThemeTokens}, never a CSS
+ * variable, passed to three.js as props so `components/three/**` stays hex-free.
+ * The flame runs warm cream at the core and cools through peach to sakura pink at the
+ * tips — real fire, dressed in the vault's own hue rather than neon pink.
+ */
+export interface BonfirePalette {
+  /** Hottest, innermost flame layer. */
+  flameCore: string
+  /** Middle flame layer — the amber body of the fire. */
+  flameMid: string
+  /** Outer flame layer and licks — sakura at the tips. */
+  flameTip: string
+  /** Airborne ember streaks. */
+  ember: string
+  /** Hottest ember streaks, near the flame mouth. */
+  emberHot: string
+  /** Charred logs under the flame. */
+  log: string
+  /** Stone ring around the fire. */
+  stone: string
+  /** Ground bloom / haze tint. */
+  glow: string
+}
+
+export const bonfirePalette: { dark: BonfirePalette; light: BonfirePalette } = {
+  dark: {
+    // Moonlit night: a bright campfire against near-black. The bloom is additive,
+    // embers are amber streaks with a few white-hot ones, the licks stay sakura.
+    flameCore: '#FFF3D6',
+    flameMid: '#FFB877',
+    flameTip: '#FF8FB5',
+    ember: '#FFAF6E',
+    emberHot: '#FFE3A3',
+    log: '#4A3833',
+    stone: '#3A2E36',
+    glow: '#C4708F',
+  },
+  light: {
+    // Petal Paper: deeper fire tones so the flame holds against near-white; the
+    // bloom becomes a soft blush veil (normal blending, low opacity) instead of glow
+    // and the embers read as dark amber flecks, the way sparks look in daylight.
+    flameCore: '#FFD9A8',
+    flameMid: '#F08553',
+    flameTip: '#D9558C',
+    ember: '#B4571F',
+    emberHot: '#D88A2E',
+    log: '#5A443C',
+    stone: '#6B5A64',
+    glow: '#DB4E8A',
+  },
+}
+
+/** Selects the bonfire palette for a resolved colour mode (day until proven night). */
+export function bonfirePaletteFor(colorMode: string | undefined): BonfirePalette {
+  return colorMode === 'dark' ? bonfirePalette.dark : bonfirePalette.light
+}
+
 export const CSS_VAR_BY_KEY: Record<keyof ThemeTokens, string> = {
   background: '--background',
   foreground: '--foreground',

@@ -122,6 +122,12 @@ describe('TopTen', () => {
     expect(await screen.findByTestId('data-as-of')).toHaveTextContent('Data as of 2026-09-26')
   })
 
+  it('renders the shortlist on the same card surface as the stocks table', async () => {
+    renderTopTen({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+    const table = await screen.findByRole('table')
+    expect(table.closest('.bg-card')).not.toBeNull()
+  })
+
   it('treats a 404 (no run yet) as an empty page without errors', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path === '/screen/criteria') return Promise.resolve(criteria)

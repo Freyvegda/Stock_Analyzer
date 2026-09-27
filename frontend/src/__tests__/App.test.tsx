@@ -27,7 +27,7 @@ vi.mock('../api/client', () => ({
   AUTH_UNAUTHORIZED_EVENT: 'auth:unauthorized',
 }))
 
-vi.mock('../components/three/AmbientField', () => ({ default: () => null }))
+vi.mock('../components/three/Bonfire', () => ({ default: () => null }))
 
 const mockedApi = vi.mocked(api)
 

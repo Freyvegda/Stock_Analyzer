@@ -14,7 +14,7 @@ import { RequireAuth } from './components/RequireAuth'
 import { StatusProvider, StatusRail } from './components/StatusRail'
 import { Toaster } from '@/components/ui/toaster'
 
-const AmbientField = lazy(() => import('./components/three/AmbientField'))
+const Bonfire = lazy(() => import('./components/three/Bonfire'))
 
 function AppShell() {
   return (
@@ -51,7 +51,7 @@ export default function App() {
       {/* Login draws its own Sakura Garden scene; one decorative loop per viewport zone. */}
       {onLogin ? null : (
         <Suspense fallback={null}>
-          <AmbientField />
+          <Bonfire />
         </Suspense>
       )}
       <Routes>
