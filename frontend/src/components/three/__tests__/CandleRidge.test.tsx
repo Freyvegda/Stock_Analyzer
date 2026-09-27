@@ -17,7 +17,7 @@ vi.mock('@react-three/fiber', () => ({
   useFrame: () => {},
 }))
 
-import type { Candle } from '../../api/types'
+import type { Candle } from '../../../api/types'
 import {
   barLayout,
   barProgress,

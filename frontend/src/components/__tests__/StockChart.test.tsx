@@ -11,7 +11,7 @@ vi.mock('@/components/ui/color-mode', () => ({
 const lw = vi.hoisted(() => {
   const series = { setData: vi.fn() }
   const chart = {
-    addSeries: vi.fn(() => series),
+    addSeries: vi.fn((..._args: unknown[]) => series),
     applyOptions: vi.fn(),
     remove: vi.fn(),
     timeScale: vi.fn(() => ({ fitContent: vi.fn() })),
@@ -19,8 +19,8 @@ const lw = vi.hoisted(() => {
   return {
     series,
     chart,
-    createChart: vi.fn(() => chart),
-    createSeriesMarkers: vi.fn(),
+    createChart: vi.fn((..._args: unknown[]) => chart),
+    createSeriesMarkers: vi.fn((..._args: unknown[]) => undefined),
     CandlestickSeries: { sentinel: 'candlestick' },
   }
 })

@@ -4,6 +4,7 @@ import Backtest from './pages/Backtest'
 import Documents from './pages/Documents'
 import Fundamentals from './pages/Fundamentals'
 import Login from './pages/Login'
+import StockDetail from './pages/StockDetail'
 import { Backdrop } from './components/Backdrop'
 import { GlassNav } from './components/GlassNav'
 import { RequireAuth } from './components/RequireAuth'
@@ -21,6 +22,7 @@ function AppShell() {
         <main className="p-6">
           <Routes>
             <Route path="/" element={<Fundamentals />} />
+            <Route path="/stock/:symbol" element={<StockDetail />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/backtest" element={<Backtest />} />
           </Routes>
