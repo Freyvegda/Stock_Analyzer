@@ -52,6 +52,16 @@ Point-in-time ratios per stock. Composite PK enables daily re-runs with history.
 | data_status | String | `ok` \| `failed`. NOT NULL, default `ok`. `failed` = fetch failed (ratios NULL, `raw_json` holds the error) |
 | raw_json | Text? | full provider payload, for future ratios without re-fetch; `{"error": ...}` when `data_status=failed` |
 
+**Stock detail write path (Phase 1.6):** the stock page serves the newest `ok` row
+per symbol to every user (shared data); first view of a symbol with no row lazily
+fetches and `merge`s a `(symbol, today)` snapshot, and Refresh does the same on
+demand. A failed fetch writes a `failed` row **only when no `ok` row exists for
+that symbol+day** — a good same-day snapshot is never clobbered. The report/verdict
+on top is computed per request from `user_criteria` and is **never persisted**.
+Daily bars are **never stored**: `/stock/{symbol}/ohlc` fetches 5y of daily bars
+through a process-memory TTL cache (900 s) and slices/aggregates on the way out
+(no `prices` writes in Phase 1.6).
+
 ### screen_runs
 Audit trail of every screen execution, per user (Phase 1.5).
 | Column | Type | Notes |
@@ -116,6 +126,7 @@ Model outputs. Composite PK allows multiple models per stock/day.
 
 - All DB access through `SessionLocal()` sessions (FastAPI dependency or context manager)
 - Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`_latest_ok_fundamentals`); criteria gate that snapshot before any fetch, then only gate survivors are refreshed
+- Stock detail: same newest-`ok` lookup per symbol; no stored row -> lazy fetch + `merge`; candles are cache-only (`app/stock/candles.py`) — the DB is not involved in `/stock/{symbol}/ohlc` writes
 - Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)
 - Dates as ISO strings — sortable, comparable, timezone-free (market data is date-granular)
 - JSON-in-Text columns (`shortlisted_json`, `criteria_json`, `report_json`, `red_flags_json`) for variable-shape payloads; parse at service layer, never in SQL

@@ -123,6 +123,13 @@ D:\CODES\Projects\stock-analyzer\
 - Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
 - Backend: `plan/phase-1.5/{backend,database}.md`; spec `docs/superpowers/specs/2026-09-26-phase-1.5-...md`
 
+### Phase 1.6 — Stock detail page
+- Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from `user_criteria`), catalog fundamentals grid, daily chart
+- Stock data shared across users: stored-first snapshot, lazy first fetch, manual Refresh; report never persisted
+- Candles 6m/1y/2y/5y × 1d/15d/1mo from a process-memory TTL cache; daily bars never written to the DB
+- 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes
+- Spec `docs/superpowers/specs/2026-09-27-phase-1.6-stock-detail-design.md`; plans `plan/phase-1.6-stock-detail/`
+
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk
 - pdfplumber extraction

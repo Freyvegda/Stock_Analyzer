@@ -29,6 +29,7 @@ backend/
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
 │   │   ├── screen.py      # /screen/ratios, criteria CRUD, POST /screen/run, GET /screen/latest
+│   │   ├── stock.py       # GET /stock/{symbol}, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
 │   │   ├── signals.py     # POST /model/train, POST /model/predict, GET /model/signals
 │   │   └── backtest.py    # POST /backtest/run, GET /backtest/{id}
@@ -46,6 +47,10 @@ backend/
 │   │   ├── criteria.py    # pydantic criteria models, defaults, validation (ConfigError)
 │   │   ├── engine.py      # criteria filtering + ranking -> shortlist (pure)
 │   │   └── service.py     # fetch + persist + evaluate + criteria CRUD orchestration (rule 6)
+│   ├── stock/             # stock detail page (Phase 1.6)
+│   │   ├── candles.py     # pure range slicing + 15d/1mo aggregation + in-memory TTL cache
+│   │   ├── report.py      # pure per-user report builder (verdict/score/criteria/groups)
+│   │   └── service.py     # stored-first snapshot, refresh fallback, cached candles
 │   ├── docs/
 │   │   ├── fetcher.py     # PDF download -> data/docs/{symbol}/
 │   │   ├── parser.py      # pdfplumber extraction
@@ -85,6 +90,10 @@ Nifty 500 list -> stocks table
   -> engine.py staged gates on the snapshot -> survivors (~10-150 of 500)
   -> fundamentals(symbol) for survivors only -> fundamentals table (data_status ok|failed)
   -> fresh values re-checked; a failed fetch keeps the stored row -> screen_runs.shortlisted_json (~10 symbols)
+  -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + report
+     computed per caller from user_criteria; POST refresh re-fetches
+  -> /stock/{symbol}/ohlc: 5y daily bars via provider -> memory TTL cache (900 s) -> slice + aggregate
+     (1d/15d/1mo). Daily bars are NEVER written to the DB.
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table
@@ -95,6 +104,7 @@ Nifty 500 list -> stocks table
 ## Error Handling
 
 - Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
+- Stock detail: stored-first (zero network when a snapshot exists); refresh failure serves the stored row with `warning` + `refreshed=false`; a failed fetch never overwrites a same-day ok row; candles fall back to the in-memory cache and are never persisted
 - PDF parse failure: log, `parse_status=failed`, continue; UI shows "n/m docs parsed"
 - Gemini: backoff queue -> keyword fallback, flagged in DB
 - API errors: HTTP 422 for bad input, 502 for upstream data-source failures, 500 with structured `{"detail": ...}`; never raw tracebacks to frontend
@@ -115,6 +125,7 @@ Nifty 500 list -> stocks table
 |---|---|---|
 | 1 | Screener | POST /screen/run shortlists from live yfinance data; ratio unit tests pass vs hand-computed fixtures |
 | 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria`, dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
+| 1.6 | Stock detail page | `/stock/{symbol}` serves shared stored snapshot + per-user report + cached candles (1d/15d/1mo, never persisted); tests green offline |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |
 | 3 | Price model | Signals generated for shortlist; model trains on synthetic data in tests |
 | 4 | Backtest | Walk-forward report vs Nifty 500; offline integration test green |
