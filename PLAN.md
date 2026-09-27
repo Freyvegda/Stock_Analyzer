@@ -130,6 +130,12 @@ D:\CODES\Projects\stock-analyzer\
 - 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes
 - Spec `docs/superpowers/specs/2026-09-27-phase-1.6-stock-detail-design.md`; plans `plan/phase-1.6-stock-detail/`
 
+### Phase 1.6b — Nifty 500 universe search + richer detail
+- `/stocks` browse page: search/filter/sort all ~500 stocks with per-user verdict chips; nav link; any symbol opens `/stock/{symbol}`
+- Screen run refreshes fundamentals for every stale universe symbol (shared DB fills for all users; same-day rerun = 0 calls)
+- New `company_profiles` table + whitelisted `raw_json`; detail page gains description, "what it has", main ratios, "what it's done", other ratios — screen data first
+- Spec `docs/superpowers/specs/2026-09-27-phase-1.6b-universe-search-design.md`; plans `plan/phase-1.6b-universe-search/`
+
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk
 - pdfplumber extraction

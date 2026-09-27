@@ -10,7 +10,7 @@ Rationale: zero setup, zero cost, single-file backup. 500 stocks x 5yr daily pri
 
 **Hard rule: schema stays Postgres-compatible.** No SQLite-only column types, no SQLite-specific SQL. If scale ever demands it, swap = change connection string only. Mongo/NoSQL NOT used — documents live on the filesystem (`data/docs/{symbol}/`), their metadata + AI results in relational tables.
 
-## Tables (10)
+## Tables (11)
 
 Defined in `backend/app/db/models.py`. SQLAlchemy 2.x typed mappings (`Mapped[...]`).
 
@@ -50,7 +50,7 @@ Point-in-time ratios per stock. Composite PK enables daily re-runs with history.
 | date | String PK | ISO `YYYY-MM-DD` |
 | pe, pb, roe, roce, debt_to_equity | Float? | NULL allowed — missing data must not crash the screen; engine skips NULL ratios per rule, flags stock |
 | data_status | String | `ok` \| `failed`. NOT NULL, default `ok`. `failed` = fetch failed (ratios NULL, `raw_json` holds the error) |
-| raw_json | Text? | full provider payload, for future ratios without re-fetch; `{"error": ...}` when `data_status=failed` |
+| raw_json | Text? | whitelisted provider payload (catalog raw fields + digest fact fields — see `app/stock/store.py`), for ratios without re-fetch; `{"error": ...}` when `data_status=failed` |
 
 **Stock detail write path (Phase 1.6):** the stock page serves the newest `ok` row
 per symbol to every user (shared data); first view of a symbol with no row lazily
@@ -61,6 +61,30 @@ on top is computed per request from `user_criteria` and is **never persisted**.
 Daily bars are **never stored**: `/stock/{symbol}/ohlc` fetches 5y of daily bars
 through a process-memory TTL cache (900 s) and slices/aggregates on the way out
 (no `prices` writes in Phase 1.6).
+
+**Universe + profile write path (Phase 1.6b):** the screen run refreshes
+fundamentals for **every** universe symbol whose newest `ok` row is not from today
+(plus symbols with no row) — one run fills the shared DB for all users, and a
+same-day rerun costs zero network calls. `GET /stocks` seeds `stocks` from the
+provider only when the table is empty (identity only — no fundamentals fetch).
+Every successful fundamentals write also upserts `company_profiles` (below) in the
+same transaction.
+
+### company_profiles (Phase 1.6b)
+Slow-moving company identity, one row per symbol — the fields the detail page
+repeats on every view. Ratios stay in dated `fundamentals` rows.
+| Column | Type | Notes |
+|---|---|---|
+| symbol | String PK | |
+| industry | String? | yfinance `industry` |
+| sector | String? | yfinance `sector` (may differ from the CSV `stocks.sector`) |
+| description | Text? | `longBusinessSummary` |
+| website | String? | |
+| employees | Int? | `fullTimeEmployees`, coerced; non-numeric → NULL |
+| hq | Text? | `city, state, country` joined, skipping missing parts |
+| updated_at | String NOT NULL | ISO date of the fetch that wrote it |
+
+Upsert via `merge` on `symbol`; a failed fetch leaves the previous profile intact.
 
 ### screen_runs
 Audit trail of every screen execution, per user (Phase 1.5).
@@ -125,7 +149,8 @@ Model outputs. Composite PK allows multiple models per stock/day.
 ## Access Patterns
 
 - All DB access through `SessionLocal()` sessions (FastAPI dependency or context manager)
-- Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`_latest_ok_fundamentals`); criteria gate that snapshot before any fetch, then only gate survivors are refreshed
+- Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`latest_ok_fundamentals`); the stored snapshot is gated for rejection detail, then every symbol whose snapshot is not from today is refreshed (plus symbols with no row)
+- Universe list: `GET /stocks` reads `stocks` + the newest `ok` row per symbol, seeds `stocks` lazily when empty, and computes each row's verdict from the caller's criteria on read
 - Stock detail: same newest-`ok` lookup per symbol; no stored row -> lazy fetch + `merge`; candles are cache-only (`app/stock/candles.py`) — the DB is not involved in `/stock/{symbol}/ohlc` writes
 - Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)
 - Dates as ISO strings — sortable, comparable, timezone-free (market data is date-granular)
