@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -237,15 +237,38 @@ describe('StockDetail', () => {
     )
   })
 
-  it('renders screen data before description', async () => {
+  it('renders the description and the verdict side by side above the chart', async () => {
     mockLoads()
     renderPage()
     await screen.findByText('Passes your screen')
 
-    const report = screen.getByTestId('stock-report')
-    const description = screen.getByTestId('company-description')
-    expect(report.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(description.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    const halves = screen.getByTestId('detail-halves')
+    expect(halves).toContainElement(screen.getByTestId('company-description'))
+    expect(halves).toContainElement(screen.getByTestId('stock-report'))
+    expect(halves.className).toContain('lg:grid-cols-2')
+
+    const chart = screen.getByTestId('price-chart')
+    expect(halves.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('orders ratios and company facts below the chart', async () => {
+    mockLoads()
+    renderPage()
+    await screen.findByText('Passes your screen')
+
+    const chart = screen.getByTestId('price-chart')
+    const ratios = screen.getByText('Main fundamental ratios')
+    const has = screen.getByText('What it has')
+    const done = screen.getByText("What it's done")
+    const other = screen.getByText('All other ratios')
+
+    const follows = (first: HTMLElement, second: HTMLElement) =>
+      expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    follows(chart, ratios)
+    follows(ratios, has)
+    follows(has, done)
+    follows(done, other)
   })
 
   it('renders the company description and industry', async () => {
@@ -261,7 +284,32 @@ describe('StockDetail', () => {
     expect(description).toHaveTextContent('Mumbai, Maharashtra, India')
   })
 
-  it('skips missing metrics and a null profile', async () => {
+  it('opens the full company profile dialog from the description More control', async () => {
+    const user = userEvent.setup()
+    mockLoads()
+    renderPage()
+    await screen.findByText('Passes your screen')
+
+    expect(screen.getByTestId('company-description-body')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'More' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Tata Consultancy Services')
+    expect(dialog).toHaveTextContent('IT services giant')
+    expect(dialog).toHaveTextContent('Information Technology Services')
+    expect(dialog).toHaveTextContent('600000')
+    expect(within(dialog).getByRole('link', { name: 'Website' })).toHaveAttribute(
+      'href',
+      'https://tcs.test',
+    )
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('shows a description fallback when the profile and metrics are missing', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
       return Promise.resolve({
@@ -283,7 +331,8 @@ describe('StockDetail', () => {
     renderPage()
 
     expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
-    expect(screen.queryByTestId('company-description')).not.toBeInTheDocument()
+    expect(screen.getByTestId('company-description')).toHaveTextContent('No description stored yet')
+    expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
     expect(screen.queryByText('What it has')).not.toBeInTheDocument()
     expect(screen.queryByText('Main fundamental ratios')).not.toBeInTheDocument()
     expect(screen.queryByText("What it's done")).not.toBeInTheDocument()

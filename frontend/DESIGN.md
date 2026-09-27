@@ -106,9 +106,9 @@ Signatures (the whole inventory):
    movement on pointer move (see the navbar section).
 
 **Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
-last-run status dot pulse, Sakura Garden falling petals (login only), Candle Ridge hero
-(stock detail only). Max one loop per viewport zone; `/login` swaps the ambient particle field out for
-the garden. Loops never render inside tables, summaries, or chart interiors.
+last-run status dot pulse, Sakura Garden falling petals (login only). Max one loop per viewport
+zone; `/login` swaps the ambient particle field out for the garden. Loops never render inside
+tables, summaries, or chart interiors.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
@@ -154,14 +154,17 @@ and the theme toggle.
 - Gates: lazy chunk, `hasWebGL()` else the CSS `vault-pulse` ring; hidden below `md`; paused
   when the tab is hidden; `role="status"` + sr-only label; reduced motion → frozen static
   frame (no flight, bank, flutter, sway or streaming).
-- **Candle Ridge** (`components/three/CandleRidge.tsx`) is the stock detail hero: the
-  stock's own closes rise into a low-poly ridge — bars assemble in a staggered 320 ms
-  entrance, then a slow yaw drift. Brightness stays on the brand ladder (taller/delta-up
-  bars brighten) and never encodes gain/loss polarity. It is decorative and data-driven:
-  it lives in a dedicated strip, never under text or data. Gates match the kit: lazy
-  chunk, WebGL probe (no canvas → empty strip), desktop-only, paused when the tab is
-  hidden, frozen assembled pose under reduced motion. Pure helpers live in
-  `three/ridgeGeometry.ts` (three-free, unit-tested).
+- **Nav search** (`components/NavSearch.tsx`) is the one 3D overlay surface beyond the
+  capsule: `.glass-panel` in `index.css` reuses the capsule's token-derived glass recipe with
+  a denser popover mix for readability, enters with a perspective tilt
+  (`rotateX(8→0)`, fade, 200 ms), staggers its rows 16 ms and carries the same pointer sheen.
+  The search input expands in place (200 ms width + fade). Inside the capsule the search is a
+  passive item: no tilt, no movement. Gates: sheen only for fine pointers
+  (`data-sheen="on|off"`), everything static under reduced motion (`data-motion`), rows sit
+  above the sheen, and the panel closes on Escape/outside click.
+- **Candle Ridge** (retired 2026-09-27): the stock detail hero was removed with its helpers
+  and tests; the page is data-first again (description | verdict halves, then the chart).
+  The retired implementation lived in `three/CandleRidge.tsx` + `three/ridgeGeometry.ts`.
 - `AmbientField` (decorative background particles) keeps its gates: lazy chunk, WebGL-gated,
   hidden below `md`, paused when hidden, off under reduced motion. Three.js must never appear
   in the initial bundle chunk.

@@ -2,15 +2,16 @@
  * Stock detail page (`/stock/:symbol`).
  *
  * Shared stock data (stored snapshot, lazy first fetch, manual Refresh) plus a
- * per-user report computed against the caller's saved criteria. The chart is
- * served live (memory-cached server-side) with 6M/1Y/2Y/5Y ranges and
- * Daily/15D/Monthly intervals. The Candle Ridge hero is a lazy 3D chunk fed by
- * the loaded closes.
+ * per-user report computed against the caller's saved criteria. Layout: the two
+ * halves — company description | verdict — open the page, then the live price
+ * chart (memory-cached server-side, 6M/1Y/2Y/5Y × Daily/15D/Monthly), then the
+ * ratios and company facts.
  */
 
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Badge, Button, Flex, Text } from '@chakra-ui/react'
+import { Badge, Button, CloseButton, Dialog, Flex, Portal, Text } from '@chakra-ui/react'
+import { Maximize2 } from 'lucide-react'
 import { ApiError, api } from '../api/client'
 import type {
   Candle,
@@ -29,8 +30,6 @@ import { StockChart } from '../components/StockChart'
 import { StockReportCard } from '../components/StockReportCard'
 import { toaster } from '../components/ui/toaster'
 
-const CandleRidge = lazy(() => import('../components/three/CandleRidge'))
-
 const RANGES: { key: ChartRange; label: string }[] = [
   { key: '6m', label: '6M' },
   { key: '1y', label: '1Y' },
@@ -48,52 +47,127 @@ function fmt(value: number): string {
   return value.toFixed(1)
 }
 
-function hasProfile(profile: CompanyProfile): boolean {
-  return Object.values(profile).some((value) => value !== null)
+function ProfileFacts({ profile }: { profile: CompanyProfile }) {
+  return (
+    <Flex gap={3} wrap="wrap" align="center">
+      {profile.industry !== null ? <Badge variant="subtle">{profile.industry}</Badge> : null}
+      {profile.sector !== null ? <Badge variant="outline">{profile.sector}</Badge> : null}
+      {profile.website !== null ? (
+        <a
+          href={profile.website}
+          target="_blank"
+          rel="noreferrer"
+          className="text-sm underline-offset-4 hover:underline"
+        >
+          Website
+        </a>
+      ) : null}
+      {profile.employees !== null ? (
+        <Text fontSize="xs" color="fg.muted">
+          Employees <Num>{profile.employees}</Num>
+        </Text>
+      ) : null}
+      {profile.hq !== null ? (
+        <Text fontSize="xs" color="fg.muted">
+          {profile.hq}
+        </Text>
+      ) : null}
+    </Flex>
+  )
 }
 
-function DescriptionCard({ profile }: { profile: CompanyProfile }) {
-  if (!hasProfile(profile)) return null
+/**
+ * One half of the detail halves: the business description, clipped to whatever
+ * height the verdict half sets (grid stretch). "More" opens the full profile
+ * in a dialog — the clipped text is only ever a preview.
+ */
+function DescriptionCard({
+  profile,
+  symbol,
+  name,
+}: {
+  profile: CompanyProfile
+  symbol: string
+  name: string
+}) {
+  const [open, setOpen] = useState(false)
+  const hasText = profile.description !== null
+
   return (
-    <BlurFade>
-      <section
-        data-testid="company-description"
-        className="rounded-lg border border-border bg-card p-4"
-      >
-        <Text fontSize="sm" fontWeight="medium">
-          What the company does
-        </Text>
-        {profile.description !== null ? (
-          <Text mt={2} fontSize="sm" color="fg.muted" className="whitespace-pre-line">
-            {profile.description}
+    <>
+      <BlurFade className="h-full">
+        <section
+          data-testid="company-description"
+          className="flex h-full flex-col rounded-lg border border-border bg-card p-4"
+        >
+          <Text fontSize="sm" fontWeight="medium">
+            What the company does
           </Text>
-        ) : null}
-        <Flex mt={3} gap={3} wrap="wrap" align="center">
-          {profile.industry !== null ? <Badge variant="subtle">{profile.industry}</Badge> : null}
-          {profile.sector !== null ? <Badge variant="outline">{profile.sector}</Badge> : null}
-          {profile.website !== null ? (
-            <a
-              href={profile.website}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm underline-offset-4 hover:underline"
-            >
-              Website
-            </a>
-          ) : null}
-          {profile.employees !== null ? (
-            <Text fontSize="xs" color="fg.muted">
-              Employees <Num>{profile.employees}</Num>
+          {hasText ? (
+            <div className="relative mt-2 min-h-0 flex-1">
+              <div
+                data-testid="company-description-body"
+                className="clip-fade-bottom max-h-72 overflow-hidden lg:absolute lg:inset-0 lg:max-h-none"
+              >
+                <Text fontSize="sm" color="fg.muted" className="whitespace-pre-line">
+                  {profile.description}
+                </Text>
+              </div>
+            </div>
+          ) : (
+            <Text mt={2} fontSize="sm" color="fg.muted">
+              No description stored yet — hit Refresh to fetch
             </Text>
-          ) : null}
-          {profile.hq !== null ? (
-            <Text fontSize="xs" color="fg.muted">
-              {profile.hq}
-            </Text>
-          ) : null}
-        </Flex>
-      </section>
-    </BlurFade>
+          )}
+          <Flex mt={3} gap={3} wrap="wrap" align="center">
+            <ProfileFacts profile={profile} />
+            {hasText ? (
+              <Button
+                ml="auto"
+                size="xs"
+                variant="ghost"
+                colorPalette="sakura"
+                onClick={() => setOpen(true)}
+              >
+                <Maximize2 size={14} strokeWidth={1.75} aria-hidden="true" />
+                More
+              </Button>
+            ) : null}
+          </Flex>
+        </section>
+      </BlurFade>
+
+      <Dialog.Root
+        open={open}
+        onOpenChange={(details) => setOpen(details.open)}
+        motionPreset="scale"
+        size="lg"
+      >
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>
+                <Dialog.Title>
+                  {symbol} — {name}
+                </Dialog.Title>
+                <Dialog.CloseTrigger asChild>
+                  <CloseButton size="sm" />
+                </Dialog.CloseTrigger>
+              </Dialog.Header>
+              <Dialog.Body maxH="70vh" overflowY="auto">
+                <Text fontSize="sm" color="fg.muted" className="whitespace-pre-line">
+                  {profile.description}
+                </Text>
+                <Flex mt={4}>
+                  <ProfileFacts profile={profile} />
+                </Flex>
+              </Dialog.Body>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
+    </>
   )
 }
 
@@ -346,26 +420,15 @@ export default function StockDetail() {
         ) : null}
       </BlurFade>
 
-      {candles.length > 1 ? (
-        <div className="relative hidden h-[140px] overflow-hidden rounded-lg border border-border bg-card md:block">
-          <Suspense fallback={null}>
-            <CandleRidge candles={candles} className="absolute inset-0" />
-          </Suspense>
-        </div>
-      ) : null}
+      <div data-testid="detail-halves" className="grid items-stretch gap-4 lg:grid-cols-2">
+        <DescriptionCard profile={detail.profile} symbol={detail.symbol} name={detail.name} />
+        <BlurFade className="h-full">
+          <StockReportCard report={detail.report} />
+        </BlurFade>
+      </div>
 
       <BlurFade>
-        <StockReportCard report={detail.report} />
-      </BlurFade>
-
-      <DescriptionCard profile={detail.profile} />
-      <FactTiles title="What it has" facts={detail.has} />
-      <FactTiles title="Main fundamental ratios" facts={detail.main_ratios} />
-      <FactTiles title="What it's done" facts={detail.done} />
-      <OtherGroups groups={detail.other_groups} />
-
-      <BlurFade>
-        <section className="rounded-lg border border-border bg-card p-4">
+        <section data-testid="price-chart" className="rounded-lg border border-border bg-card p-4">
           <Flex align="center" justify="space-between" gap={3} wrap="wrap">
             <Text fontSize="sm" fontWeight="medium">
               Price chart
@@ -426,6 +489,11 @@ export default function StockDetail() {
           </div>
         </section>
       </BlurFade>
+
+      <FactTiles title="Main fundamental ratios" facts={detail.main_ratios} />
+      <FactTiles title="What it has" facts={detail.has} />
+      <FactTiles title="What it's done" facts={detail.done} />
+      <OtherGroups groups={detail.other_groups} />
     </div>
   )
 }

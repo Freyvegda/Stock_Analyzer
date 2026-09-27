@@ -7,6 +7,10 @@
 > **Spec:** `docs/superpowers/specs/2026-09-27-phase-1.6b-universe-search-design.md`.
 > Backend contract: `plan/phase-1.6b-universe-search/backend.md`.
 > Design contract: `frontend/DESIGN.md`.
+>
+> **Post-1.6b revision (2026-09-27, Phase 1.6c):** the detail order below is superseded — the
+> page now opens with description | verdict halves, then the chart, then main ratios → has →
+> done → other ratios (see `plan/phase-1.6-stock-detail/frontend.md` revision note).
 
 **Goal:** `/stocks` — searchable, filterable, sortable table of the whole Nifty 500
 with per-user verdict chips; `StockDetail` gains description, "what it has", main
@@ -240,5 +244,5 @@ git commit -m "docs: frontend context for Phase 1.6b stocks browse and detail se
   API verdict; `no_data` rows never render as failures.
 - Detail page order: screen data → description → has → main ratios → done → other
   ratios → chart; missing data never produces empty cards or crashes.
-- Existing Phase 1.6 tests (`StockChart`, `CandleRidge`, `ShortlistTable`,
+- Existing Phase 1.6 tests (`StockChart`, `ShortlistTable`,
   `StockReportCard`, vault/contrast/tokens) stay green.

@@ -7,6 +7,13 @@
 > **Spec:** `docs/superpowers/specs/2026-09-27-phase-1.6-stock-detail-design.md`.
 > Backend contract: `plan/phase-1.6-stock-detail/backend.md`.
 > Design contract: `frontend/DESIGN.md`.
+>
+> **Post-1.6 revision (2026-09-27, Phase 1.6c):** the Candle Ridge hero was retired —
+> tasks F3/F4 below are historical (component, helpers and tests deleted). `StockDetail`
+> now opens with description | verdict equal-height halves (description clipped to the
+> verdict's height, "More" opens the full profile dialog), then the chart, then main
+> ratios → "What it has" → "What it's done" → "All other ratios". The navbar gained
+> `NavSearch` (Ctrl/Cmd+K). See `PLAN.md` §5 Phase 1.6c.
 
 **Goal:** clicking a shortlisted symbol opens `/stock/:symbol` — a header with the
 run context and a Refresh button, a data-driven Candle Ridge hero, the per-user

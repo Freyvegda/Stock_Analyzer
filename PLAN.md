@@ -127,7 +127,7 @@ D:\CODES\Projects\stock-analyzer\
 - Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from `user_criteria`), catalog fundamentals grid, daily chart
 - Stock data shared across users: stored-first snapshot, lazy first fetch, manual Refresh; report never persisted
 - Candles 6m/1y/2y/5y × 1d/15d/1mo from a process-memory TTL cache; daily bars never written to the DB
-- 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes
+- 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes — retired in Phase 1.6c
 - Spec `docs/superpowers/specs/2026-09-27-phase-1.6-stock-detail-design.md`; plans `plan/phase-1.6-stock-detail/`
 
 ### Phase 1.6b — Nifty 500 universe search + richer detail
@@ -135,6 +135,11 @@ D:\CODES\Projects\stock-analyzer\
 - Screen run refreshes fundamentals for every stale universe symbol (shared DB fills for all users; same-day rerun = 0 calls)
 - New `company_profiles` table + whitelisted `raw_json`; detail page gains description, "what it has", main ratios, "what it's done", other ratios — screen data first
 - Spec `docs/superpowers/specs/2026-09-27-phase-1.6b-universe-search-design.md`; plans `plan/phase-1.6b-universe-search/`
+
+### Phase 1.6c — Nav stock search + detail layout revision
+- Navbar stock search (`components/NavSearch.tsx`): Ctrl/Cmd+K glass combobox, lazy `GET /stocks`, client-side filter, top 8 with per-user verdict chips; keyboard-complete; opens `/stock/{symbol}`
+- Stock detail layout: description | verdict equal-height halves (description clipped, "More" opens the full profile dialog) → price chart → main ratios → "What it has" (market cap first) → "What it's done" → all other ratios
+- Candle Ridge 3D hero retired: component, pure helpers and tests removed; `DESIGN.md` loop whitelist and 3D sections updated
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

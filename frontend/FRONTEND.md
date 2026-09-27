@@ -6,9 +6,11 @@
 
 React + TypeScript dashboard for the analysis pipeline. Three nav sections mirroring the pipeline:
 1. **Fundamental Analysis** (`/`) — run screen button, per-user criteria panel fed by `GET /screen/criteria` (Top 10 is server-fixed), Edit Criteria dialog, shortlist table with all ratios, sortable/filterable; each symbol links to its stock detail page (`/stock/:symbol`)
-2. **Stock detail** (`/stock/:symbol`) — per-user report card (verdict/score/criteria checks), catalog fundamentals grid, candlestick chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), Refresh button, Candle Ridge 3D hero
+2. **Stock detail** (`/stock/:symbol`) — two equal-height halves (company description, clipped with "More" opening the full profile dialog | per-user verdict with score and criteria checks), then the price chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), then main fundamental ratios, "What it has" (market cap first), "What it's done" and all other ratios; Refresh button in the header
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
+
+The navbar also carries a **stock search** (`components/NavSearch.tsx`): Ctrl/Cmd+K or the icon opens a glass input, lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
 
 Dense, tabular, dark-themed. This is a tool, not a marketing site.
 
@@ -63,14 +65,15 @@ frontend/src/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
 │   ├── Fundamentals.tsx
 │   ├── Stocks.tsx      # /stocks — Nifty 500 search/filter/sort table with per-user verdict chips
-│   ├── StockDetail.tsx # /stock/:symbol — screen data, profile, has/main/done/other ratios, chart controls, ridge hero
+│   ├── StockDetail.tsx # /stock/:symbol — description|verdict halves, chart controls, main/has/done/other sections
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene + CandleRidge — lazy, WebGL-gated
+    ├── three/          # AmbientField + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
-    ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt)
+    ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
+    ├── NavSearch.tsx   # navbar stock search: Ctrl/Cmd+K glass combobox over GET /stocks, verdict chips
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
     ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
@@ -88,7 +91,7 @@ frontend/src/
 - Auth endpoints: `GET /auth/state`, `POST /auth/setup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. Login and setup 401s are handled inline and are exempt from the global `auth:unauthorized` event.
 - Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/criteria`, `PUT /screen/criteria` (body `{criteria, thesis}`; `shortlist_size` is server-owned). The old YAML-config endpoints are retired — do not reintroduce them.
 - Stock endpoints: `GET /stock/{symbol}` (shared snapshot + per-user report + profile + digest sections `main_ratios`/`has`/`done`/`other_groups`), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
-- Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side.
+- Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side; the navbar `NavSearch` lazily reuses the same endpoint on first open (one fetch per shell mount) and filters client-side too.
 - Backend endpoints (see BACKEND.md): `/auth/*`, `/screen/*`, `/docs/*`, `/model/*`, `/backtest/*`, `/health`.
 - All pipeline stages triggered by button clicks (manual pipeline — no polling/scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
 - Handle `{"status":"not_implemented","phase":N}` placeholders gracefully until phases land.
@@ -117,8 +120,9 @@ frontend/src/
 |---|---|
 | 1 | Fundamentals page live: run button, criteria panel, shortlist table (symbol, name, PE, PB, ROE, ROCE, D/E, market cap), fail-count display |
 | 1.5 | Auth gate (setup/login/logout, session persists), per-user criteria panel + editor dialog (`/screen/criteria`, `/screen/ratios`), fixed Top-10 badge, loader run visual (stair-tower; superseded by the 3D Market Ring in theme v2, itself replaced by the Sakura Leaf) |
-| 1.6 | Stock detail page: shortlist symbol links to `/stock/:symbol` — per-user report card, catalog metric groups, `StockChart` with range/interval switchers, Candle Ridge hero; refresh fallback keeps stored data |
-| 1.6b | `/stocks` browse page (search + sector/verdict filters, sortable, verdict chips) with nav link; stock detail gains description, "What it has", "Main fundamental ratios", "What it's done", "All other ratios" — screen data first |
+| 1.6 | Stock detail page: shortlist symbol links to `/stock/:symbol` — per-user report card, catalog metric groups, `StockChart` with range/interval switchers; refresh fallback keeps stored data (Candle Ridge hero superseded in 1.6c) |
+| 1.6b | `/stocks` browse page (search + sector/verdict filters, sortable, verdict chips) with nav link; stock detail gains description, "What it has", "Main fundamental ratios", "What it's done", "All other ratios" |
+| 1.6c | Nav stock search (`NavSearch`, Ctrl/Cmd+K glass panel, verdict chips, keyboard-complete) + detail layout revision: description \| verdict halves (equal height, clipped description with More dialog) → chart → main ratios → has (market cap first) → done → other; Candle Ridge hero retired |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |

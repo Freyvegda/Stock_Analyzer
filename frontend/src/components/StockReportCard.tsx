@@ -19,7 +19,7 @@ export function StockReportCard({ report }: { report: StockReport }) {
   const pass = report.verdict === 'pass'
 
   return (
-    <section data-testid="stock-report" className="rounded-lg border border-border bg-card p-4">
+    <section data-testid="stock-report" className="h-full rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center gap-3">
         <span
           className={cn(
