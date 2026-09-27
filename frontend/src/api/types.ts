@@ -67,3 +67,92 @@ export interface LatestScreen {
   run_date: string
   shortlisted: ShortlistRow[]
 }
+
+export type ChartRange = '6m' | '1y' | '2y' | '5y'
+export type ChartInterval = '1d' | '15d' | '1mo'
+
+export interface StockSnapshot {
+  date: string
+  pe: number | null
+  pb: number | null
+  roe: number | null
+  roce: number | null
+  debt_to_equity: number | null
+  data_status: string
+}
+
+export interface ReportCriterion {
+  key: string
+  label: string
+  unit: string
+  direction: RatioDirection
+  threshold: number
+  value: number | null
+  passed: boolean
+  delta: number | null
+}
+
+export interface Metric {
+  key: string
+  label: string
+  unit: string
+  value: number
+}
+
+export interface MetricGroup {
+  category: string
+  metrics: Metric[]
+}
+
+export interface StockReport {
+  verdict: 'pass' | 'fail'
+  score: number
+  passed: number
+  enabled: number
+  criteria: ReportCriterion[]
+  notes: string[]
+  groups: MetricGroup[]
+}
+
+export interface RunContext {
+  run_id: number
+  run_date: string
+  rank: number | null
+  score: number | null
+}
+
+export interface StockDetail {
+  symbol: string
+  name: string
+  sector: string | null
+  market_cap: number | null
+  snapshot: StockSnapshot
+  report: StockReport
+  data_date: string
+  stale: boolean
+  run: RunContext | null
+  refreshed: boolean | null
+  warning: string | null
+}
+
+export interface Candle {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface ChartMarker {
+  time: string
+  kind: 'buy' | 'sell'
+}
+
+export interface OhlcResponse {
+  symbol: string
+  range: ChartRange
+  interval: ChartInterval
+  as_of: string
+  candles: Candle[]
+}

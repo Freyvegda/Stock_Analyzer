@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Num } from '@/components/ui/Num'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -109,7 +110,14 @@ export function ShortlistTable({
                 <TableCell className="text-right">
                   <Num>{r.rank}</Num>
                 </TableCell>
-                <TableCell className="font-semibold">{r.symbol}</TableCell>
+                <TableCell>
+                  <Link
+                    to={`/stock/${r.symbol}`}
+                    className="font-semibold underline-offset-4 hover:underline"
+                  >
+                    {r.symbol}
+                  </Link>
+                </TableCell>
                 <TableCell>{r.name ?? '—'}</TableCell>
                 <TableCell>{r.sector ?? '—'}</TableCell>
                 <TableCell className="text-right">
