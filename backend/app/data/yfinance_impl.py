@@ -136,7 +136,30 @@ class YFinanceProvider(DataProvider):
         }
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        raise NotImplementedError("Phase 3")
+        """Daily OHLCV history, ascending, NaN-close rows dropped.
+
+        Raises upstream errors (the API layer maps them to 502); an empty
+        history returns ``[]`` (no data for the ticker).
+        """
+        frame = yf.Ticker(f"{symbol}.NS").history(
+            period=f"{years}y", interval="1d", auto_adjust=False
+        )
+        rows: list[dict] = []
+        for index, row in frame.iterrows():
+            close = row["Close"]
+            if pd.isna(close):
+                continue
+            rows.append(
+                {
+                    "time": index.date().isoformat(),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
+                    "close": float(close),
+                    "volume": float(row["Volume"]),
+                }
+            )
+        return rows
 
     def filings(self, symbol: str) -> list[dict]:
         raise NotImplementedError("Phase 2")

@@ -245,9 +245,74 @@ def test_fundamentals_negative_equity_gives_no_roe(monkeypatch):
     assert f["roe"] is None  # loss-making + negative equity must not look profitable
 
 
-def test_ohlc_and_filings_are_not_implemented():
+def fake_history_ticker(frame, calls=None):
+    class FakeTicker:
+        def __init__(self, ticker: str):
+            self.ticker = ticker
+
+        def history(self, **kwargs):
+            if calls is not None:
+                calls.append(kwargs)
+            return frame
+
+    return FakeTicker
+
+
+def test_ohlc_maps_history_rows(monkeypatch):
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "Open": [1.0, 2.0],
+            "High": [1.5, 2.5],
+            "Low": [0.5, 1.5],
+            "Close": [1.2, 2.2],
+            "Volume": [100, 200],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+    )
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_history_ticker(frame))
+
+    rows = YFinanceProvider().ohlc("AAA")
+
+    assert rows == [
+        {"time": "2026-01-02", "open": 1.0, "high": 1.5, "low": 0.5, "close": 1.2, "volume": 100.0},
+        {"time": "2026-01-05", "open": 2.0, "high": 2.5, "low": 1.5, "close": 2.2, "volume": 200.0},
+    ]
+
+
+def test_ohlc_drops_nan_close_and_empty_frame(monkeypatch):
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "Open": [1.0, 2.0],
+            "High": [1.5, 2.5],
+            "Low": [0.5, 1.5],
+            "Close": [float("nan"), 2.2],
+            "Volume": [100, 200],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+    )
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_history_ticker(frame))
+    assert [row["time"] for row in YFinanceProvider().ohlc("AAA")] == ["2026-01-05"]
+
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_history_ticker(pd.DataFrame()))
+    assert YFinanceProvider().ohlc("AAA") == []
+
+
+def test_ohlc_requests_daily_history_for_period(monkeypatch):
+    import pandas as pd
+
+    calls: list[dict] = []
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", fake_history_ticker(pd.DataFrame(), calls))
+
+    YFinanceProvider().ohlc("RELIANCE.NS", years=2)
+
+    assert calls == [{"period": "2y", "interval": "1d", "auto_adjust": False}]
+
+
+def test_filings_is_not_implemented():
     provider = YFinanceProvider()
-    with pytest.raises(NotImplementedError):
-        provider.ohlc("AAA")
     with pytest.raises(NotImplementedError):
         provider.filings("AAA")
