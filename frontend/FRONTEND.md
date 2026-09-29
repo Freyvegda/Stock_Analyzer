@@ -86,8 +86,9 @@ frontend/src/
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
     ├── CriteriaPanel.tsx    # active-screen badges (bookmark ribbons) + Edit Criteria
-    ├── CriteriaEditor.tsx   # dialog-free inline editor: category sub-accordions, criterion bookmarks, 3D ribbon rail
-    ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (new/rename/close inline, dirty dot)
+    ├── CriteriaEditor.tsx   # dialog-free inline editor: category sub-accordions, criterion flashcards, 3D ribbon rail
+    ├── CriterionCard.tsx    # one criterion as a glass flashcard (ribbon, switch, value chip, remove)
+    ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (draft tab, rename-in-place, dirty dot)
     ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes
     ├── StocksTable.tsx  # universe table: sortable columns, verdict chips, links
     └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})

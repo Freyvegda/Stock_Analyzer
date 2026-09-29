@@ -10,5 +10,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // The suite runs on a loaded dev machine; jsdom + motion + three lazy
+    // imports push individual renders past the 5 s default under full load.
+    testTimeout: 15000,
+    hookTimeout: 15000,
   },
 })

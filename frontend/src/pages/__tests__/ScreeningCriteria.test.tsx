@@ -27,6 +27,11 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
+// The real loader pulls the three.js chunk; its presence is all these tests assert.
+vi.mock('../../components/three/SakuraLeafLoader', () => ({
+  default: () => <div data-testid="sakura-leaf-loader" />,
+}))
+
 const mockedApi = vi.mocked(api)
 
 const catalog: RatioSpec[] = [

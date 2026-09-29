@@ -62,7 +62,7 @@ describe('ScreenTabs', () => {
     quality.focus()
     await userEvent.keyboard('{Enter}')
     expect(onSelect).toHaveBeenCalledWith(setB)
-    onSelect.mockClear()
+    vi.clearAllMocks()
     await userEvent.keyboard(' ')
     expect(onSelect).toHaveBeenCalledWith(setB)
   })

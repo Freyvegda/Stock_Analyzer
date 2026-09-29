@@ -27,6 +27,10 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
+vi.mock('../../components/three/SakuraLeafLoader', () => ({
+  default: () => <div data-testid="sakura-leaf-loader" />,
+}))
+
 const mockedApi = vi.mocked(api)
 
 const setA: ScreeningSet = {

@@ -137,8 +137,20 @@ and the theme toggle.
   family — glass tab shapes; the active tab takes a 12% sakura tint, 35% border and a soft
   under-glow and merges into the connected panel below (no bottom border; the panel drops its
   top rounding). The strip scrolls horizontally with an edge mask; tabs are focus-visible
-  ringed; an unsaved draft marks the active tab with a sakura dot (colour only). No new
-  colours, no loops.
+  ringed; an unsaved draft marks the active tab with a sakura dot plus an sr-only
+  "(unsaved changes)" description. Naming happens inside the strip: `+` spawns a dashed draft
+  tab whose textbox is temporary (strict tablist semantics trade-off, accepted), the pencil
+  flips the active tab into rename-in-place. No new colours, no loops.
+- Criterion flashcards: `.glass-card` continues the same recipe (55% card → 40% background
+  gradient, inset top highlight, soft shadow); hover/focus-within brighten toward sakura;
+  bookmarked cards carry a 2px sakura left edge; disabled cards dim with a dashed border; the
+  editor's add tile is the dashed variant.
+- Editor motion: the add-criterion dropdown enters with the nav-search recipe
+  (`.combobox-pop`: rotateX 8→0 + fade 200 ms, 16 ms option stagger), accordion content
+  animates height + fade 200 ms (`--height` keyframes), flashcards stagger 12 ms (cap 8). All
+  of it is static under reduced motion.
+- Focus-ring exception (2026-09-29): `.glass-tab` uses `outline-offset: -2px` so the ring sits
+  inside the glass silhouette; every other surface keeps the 2px offset.
 - Nav stock search: `.glass-field` in `index.css` extends the same recipe — translucent
   `color-mix` gradient over `backdrop-filter: blur(10px) saturate(1.2)`, 1px mixed border,
   inset top highlight; `:hover`/`:focus-within` brighten the border toward sakura (colour

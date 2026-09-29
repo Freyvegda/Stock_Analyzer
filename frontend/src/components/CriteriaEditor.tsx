@@ -22,20 +22,19 @@ import {
 } from 'react'
 import {
   Accordion,
+  Box,
   Button,
   Combobox,
   createListCollection,
   Field,
   Flex,
-  IconButton,
-  Input,
   Stack,
-  Switch,
   Text,
   Textarea,
 } from '@chakra-ui/react'
-import { Bookmark, X } from 'lucide-react'
 import { ApiError } from '@/api/client'
+import { CriterionCard } from '@/components/CriterionCard'
+import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import type { Criterion, RatioSpec, ScreeningSet } from '@/api/types'
 
 const RibbonRail = lazy(() => import('@/components/three/RibbonRail'))
@@ -130,7 +129,7 @@ function AddCriterion({
         </Combobox.IndicatorGroup>
       </Combobox.Control>
       <Combobox.Positioner>
-        <Combobox.Content>
+        <Combobox.Content className="combobox-pop">
           <Combobox.Empty>No ratios left</Combobox.Empty>
           {visible.map((ratio) => {
             const item = { label: ratio.label, value: ratio.key }
@@ -155,6 +154,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
     const [formError, setFormError] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [bookmarkedOnly, setBookmarkedOnly] = useState(false)
+    const reduced = usePrefersReducedMotion()
 
     // Reset the draft whenever the source set changes (activation, save echo,
     // creation). Object identity is the signal; the page replaces the object
@@ -367,84 +367,36 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                           </Accordion.ItemTrigger>
                           <Accordion.ItemContent pb={2}>
                             <Accordion.ItemBody>
-                              <Stack gap={2}>
+                              <Box className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                 {orderedEntries.map(({ row, index }) => {
                                   const spec = catalog.get(row.key)
                                   const label = spec?.label ?? row.key
                                   return (
-                                    <div key={row.key} data-criterion={row.key}>
-                                      <Flex align="center" gap={3} opacity={row.enabled ? 1 : 0.6}>
-                                        <IconButton
-                                          size="xs"
-                                          variant="ghost"
-                                          aria-label={
-                                            row.bookmarked
-                                              ? `Remove bookmark ${label}`
-                                              : `Bookmark ${label}`
-                                          }
-                                          onClick={() => toggleBookmark(row.key)}
-                                        >
-                                          <Bookmark
-                                            size={14}
-                                            strokeWidth={1.75}
-                                            aria-hidden="true"
-                                            fill={row.bookmarked ? 'currentColor' : 'none'}
-                                            className={row.bookmarked ? 'text-primary' : undefined}
-                                          />
-                                        </IconButton>
-                                        <Switch.Root
-                                          checked={row.enabled}
-                                          onCheckedChange={(details) =>
-                                            toggleRow(row.key, details.checked)
-                                          }
-                                        >
-                                          <Switch.HiddenInput aria-label={label} />
-                                          <Switch.Control>
-                                            <Switch.Thumb />
-                                          </Switch.Control>
-                                        </Switch.Root>
-                                        <Text fontSize="sm" flex="1">
-                                          {label}
-                                          {spec !== undefined ? ` (${spec.unit})` : ''}
-                                        </Text>
-                                        {spec !== undefined ? (
-                                          <Text fontSize="sm" color="fg.muted">
-                                            {spec.direction === 'min' ? '≥' : '≤'}
-                                          </Text>
-                                        ) : null}
-                                        <Input
-                                          size="sm"
-                                          maxW="32"
-                                          inputMode="decimal"
-                                          aria-label={`${label} value`}
-                                          value={row.value}
-                                          onChange={(e) => setRowValue(row.key, e.target.value)}
-                                        />
-                                        <IconButton
-                                          size="xs"
-                                          variant="ghost"
-                                          aria-label={`Remove ${label}`}
-                                          onClick={() => removeRow(row.key)}
-                                        >
-                                          <X size={14} strokeWidth={1.75} aria-hidden="true" />
-                                        </IconButton>
-                                      </Flex>
-                                      {rowErrors[index] !== undefined ? (
-                                        <Text fontSize="xs" color="fg.error" mt={1}>
-                                          {rowErrors[index]}
-                                        </Text>
-                                      ) : null}
-                                    </div>
+                                    <CriterionCard
+                                      key={row.key}
+                                      row={row}
+                                      spec={spec}
+                                      label={label}
+                                      error={rowErrors[index]}
+                                      index={index}
+                                      reduced={reduced}
+                                      onToggleEnabled={(enabled) => toggleRow(row.key, enabled)}
+                                      onChangeValue={(value) => setRowValue(row.key, value)}
+                                      onToggleBookmark={() => toggleBookmark(row.key)}
+                                      onRemove={() => removeRow(row.key)}
+                                    />
                                   )
                                 })}
                                 {options.length > 0 || category === OTHER_CATEGORY ? (
-                                  <AddCriterion
-                                    category={category}
-                                    options={options}
-                                    onAdd={addRatio}
-                                  />
+                                  <Box className="glass-card glass-card-add" p={3}>
+                                    <AddCriterion
+                                      category={category}
+                                      options={options}
+                                      onAdd={addRatio}
+                                    />
+                                  </Box>
                                 ) : null}
-                              </Stack>
+                              </Box>
                             </Accordion.ItemBody>
                           </Accordion.ItemContent>
                         </Accordion.Item>

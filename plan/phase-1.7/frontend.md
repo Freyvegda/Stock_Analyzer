@@ -486,13 +486,14 @@ git commit -m "docs: frontend context for Phase 1.7 saved screens and navbar sea
 
 **Interfaces:**
 - `ScreenTabs({ sets, active, dirty, busy, onSelect, onCreate, onRename, onDelete })` —
-  role=`tablist` "Screening screens"; one `role="tab"` per set (`aria-selected`); active tab
-  glass + sakura glow and merges into the panel below (`rounded-b-none`, `-mb-px`); active
-  tab carries `data-dirty` + a sakura dot when the editor draft is dirty; `Close <name>` ×
-  opens an inline confirm row under the strip (`Delete <name>?` + Delete/Cancel); pencil
-  `Rename <name>` opens an inline input row (`Save name`); `New screen` grows into an inline
-  field (`Screen name` + Create); ←/→ move tab focus (roving tabindex), Enter/Space selects;
-  horizontal scroll with edge fade (`.tab-strip`).
+  role=`tablist` "Screening screens"; one native `<button role="tab">` per set
+  (`aria-selected`, `aria-controls="screen-tabpanel"`); pencil/× controls are hoisted OUT of
+  the tab into a hover/focus cluster; active tab glass + sakura glow, merges into the
+  connected panel below (border-bottom none; panel drops top rounding); dirty drafts get
+  `data-dirty` + a sakura dot + an sr-only "(unsaved changes)" description; naming happens
+  in the strip (`+` spawns a dashed draft tab with a focused textbox — Enter creates, Esc
+  cancels; pencil flips the active tab into rename-in-place — Enter saves, Esc reverts);
+  delete keeps an under-strip confirm group; ←/→/Home/End move tab focus (roving tabindex).
 - `CriteriaPanel` gains `connected?: boolean` (drops top rounding/border to sit under the
   strip) and a `n enabled · n bookmarked` summary; error state gains a `Retry` button wired
   to a new context action `reloadSets`.
@@ -513,6 +514,29 @@ npm run build
 ```bash
 git commit -m "feat: Chrome-style glass screen tabs; criteria page polish"
 ```
+
+### Task F9: Flashcard editor + motion + in-tab naming (owner round 2, 2026-09-29)
+
+**Files:** `CriterionCard.tsx` (new), `CriteriaEditor.tsx`, `index.css`, `DESIGN.md`,
+`ScreenTabs.tsx` + tests, `ScreeningCriteria.tsx` + tests.
+
+**Delivered:**
+- Criteria rows became glass flashcards in a responsive category grid (`CriterionCard`):
+  ribbon corner, switch, direction glyph, mono value chip, remove; bookmarked cards get the
+  sakura edge; disabled cards dim/dashed; dashed add-criterion tile hosts the combobox.
+- Motion: `.combobox-pop` dropdown (rotateX 8→0 + fade 200 ms, 16 ms option stagger),
+  accordion height/fade keyframes (`--height`), 12 ms card stagger (cap 8); all reduced-motion
+  static; no loops.
+- In-tab naming: `+` spawns a dashed draft tab with a focused textbox (Enter creates, Esc or
+  click-away cancels); pencil flips the active tab into rename-in-place (Enter saves, Esc
+  reverts); delete keeps the under-strip confirm group; focus returns to the active tab / `+`.
+- F8 review fixes folded in: native-button tabs (Enter/Space activation), controls hoisted out
+  of `role=tab`, `role=tabpanel` wiring, sr-only dirty description, dirty rename/create guard
+  (draft saved first), reduced-motion CSS for `.glass-tab`, 14 px icons, `-webkit-mask-image`,
+  busy-click guard, tabIndex fallback, `connected={sets.length > 0}`, focus + keyboard tests,
+  vitest timeouts raised for loaded machines, run tests mock the lazy loader chunk.
+
+**Verification:** `npm run test` → 327 passed / 43 files; `npm run build` clean.
 
 ## Acceptance
 

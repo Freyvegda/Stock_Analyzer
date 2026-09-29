@@ -218,6 +218,36 @@ describe('CriteriaEditor', () => {
     expect(screen.queryByRole('button', { name: /profitability/i })).not.toBeInTheDocument()
   })
 
+  it('renders criteria as flashcards inside a category grid', async () => {
+    renderEditor()
+    const cards = await screen.findAllByTestId('criterion-card')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].closest('.grid')).not.toBeNull()
+    expect(cards[0].className).toContain('glass-card')
+  })
+
+  it('marks bookmarked cards with the sakura edge attribute', async () => {
+    renderEditor({
+      set: {
+        ...savedSet,
+        criteria: [
+          { key: 'pe', enabled: true, value: 25, bookmarked: true },
+          { key: 'roe', enabled: true, value: 15 },
+        ],
+      },
+    })
+    const cards = await screen.findAllByTestId('criterion-card')
+    expect(cards[0]).toHaveAttribute('data-bookmarked', 'true')
+    expect(cards[1]).not.toHaveAttribute('data-bookmarked')
+  })
+
+  it('animates the add-criterion dropdown with the combobox-pop class', async () => {
+    renderEditor()
+    const input = await screen.findByLabelText('Add Valuation criterion')
+    await userEvent.click(input)
+    expect(document.querySelector('.combobox-pop')).not.toBeNull()
+  })
+
   it('mounts the 3D ribbon rail only while the editor is open and a bookmark exists', async () => {
     const { view } = renderEditor()
     await screen.findByRole('checkbox', { name: 'PE' })

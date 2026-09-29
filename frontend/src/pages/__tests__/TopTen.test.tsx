@@ -27,6 +27,11 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
+// The real loader pulls the three.js chunk; these tests only need the run state.
+vi.mock('../../components/three/SakuraLeafLoader', () => ({
+  default: () => <div data-testid="sakura-leaf-loader" />,
+}))
+
 const mockedApi = vi.mocked(api)
 
 const setA: ScreeningSet = {

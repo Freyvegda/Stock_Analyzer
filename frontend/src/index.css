@@ -542,6 +542,118 @@
     border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
   }
 
+  /* Criterion flashcards: the editor's data surface — same glass family, quieter
+     than the capsule; bookmarked cards get a sakura edge, disabled ones dim. */
+  .glass-card {
+    border-radius: var(--radius);
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--card) 55%, transparent),
+      color-mix(in oklab, var(--background) 40%, transparent)
+    );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent),
+      0 10px 24px -22px rgb(0 0 0 / 0.4);
+    transition:
+      border-color var(--duration-base) var(--ease-vault),
+      box-shadow var(--duration-base) var(--ease-vault);
+  }
+
+  .glass-card:hover,
+  .glass-card:focus-within {
+    border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--primary) 18%, transparent),
+      0 12px 26px -20px color-mix(in oklab, var(--primary) 35%, transparent);
+  }
+
+  .glass-card[data-bookmarked='true'] {
+    border-left: 2px solid color-mix(in oklab, var(--primary) 70%, transparent);
+  }
+
+  .glass-card[data-disabled='true'] {
+    opacity: 0.6;
+    border-style: dashed;
+  }
+
+  .glass-card-add {
+    border-style: dashed;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Motion: the add-criterion dropdown enters like the nav search panel
+     (perspective + option stagger); accordions animate height + fade. */
+  .combobox-pop {
+    transform-origin: top;
+    animation: combobox-pop 200ms var(--ease-vault);
+  }
+
+  .combobox-pop [role='option'] {
+    animation: option-in 120ms var(--ease-vault) both;
+  }
+
+  .combobox-pop [role='option']:nth-child(2) { animation-delay: 16ms; }
+  .combobox-pop [role='option']:nth-child(3) { animation-delay: 32ms; }
+  .combobox-pop [role='option']:nth-child(4) { animation-delay: 48ms; }
+  .combobox-pop [role='option']:nth-child(5) { animation-delay: 64ms; }
+  .combobox-pop [role='option']:nth-child(6) { animation-delay: 80ms; }
+  .combobox-pop [role='option']:nth-child(7) { animation-delay: 96ms; }
+  .combobox-pop [role='option']:nth-child(8) { animation-delay: 112ms; }
+
+  [data-scope='accordion'][data-part='item-content'] {
+    overflow: hidden;
+  }
+
+  [data-scope='accordion'][data-part='item-content'][data-state='open'] {
+    animation: accordion-down 200ms var(--ease-vault);
+  }
+
+  [data-scope='accordion'][data-part='item-content'][data-state='closed'] {
+    animation: accordion-up 200ms var(--ease-vault);
+  }
+
+  @keyframes combobox-pop {
+    from {
+      opacity: 0;
+      transform: rotateX(8deg) translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: rotateX(0) translateY(0);
+    }
+  }
+
+  @keyframes option-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--height);
+    }
+    to {
+      height: 0;
+    }
+  }
+
   .glass-tab:hover {
     color: var(--foreground);
     border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
@@ -644,8 +756,15 @@
     .glass-nav,
     .glass-nav-link,
     .glass-tab,
+    .glass-card,
     .tab-controls {
       transition: none;
+    }
+
+    .combobox-pop,
+    .combobox-pop [role='option'],
+    [data-scope='accordion'][data-part='item-content'] {
+      animation: none;
     }
 
     .glass-rail {

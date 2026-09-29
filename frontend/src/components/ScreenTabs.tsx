@@ -161,13 +161,13 @@ export function ScreenTabs({
                   <div className="glass-tab" data-active={isActive ? 'true' : 'false'}>
                     <Input
                       autoFocus
-                      variant="unstyled"
+                      variant="flushed"
                       aria-label={`Rename ${set.name}`}
                       value={renameName}
                       onChange={(e) => setRenameName(e.target.value)}
                       onKeyDown={onRenameKeyDown}
                       onBlur={cancelRename}
-                      className="h-5 w-32 min-w-0 bg-transparent p-0 text-sm"
+                      className="h-5 w-32 min-w-0 border-0 bg-transparent p-0 text-sm"
                     />
                   </div>
                 ) : (
@@ -268,14 +268,14 @@ export function ScreenTabs({
               <div className="glass-tab glass-tab-draft" data-active="false">
                 <Input
                   autoFocus
-                  variant="unstyled"
+                  variant="flushed"
                   aria-label="New screen name"
                   placeholder="Screen name"
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
                   onKeyDown={onDraftKeyDown}
                   onBlur={cancelDraft}
-                  className="h-5 w-32 min-w-0 bg-transparent p-0 text-sm"
+                  className="h-5 w-32 min-w-0 border-0 bg-transparent p-0 text-sm"
                 />
               </div>
             </Box>
