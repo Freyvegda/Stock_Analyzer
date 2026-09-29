@@ -1,7 +1,7 @@
 """Per-user screening criteria: pydantic models, defaults, JSON serialization.
 
-Criteria live in ``user_criteria.criteria_json`` (list of
-``{"key", "enabled", "value"}``). Valid keys are owned by ``catalog.py``.
+Criteria live in ``screening_sets.criteria_json`` (one named screen per
+row; the active one is used). Valid keys are owned by ``catalog.py``.
 ``ConfigError`` is the shared 422 vehicle (registered as an exception handler
 in ``app.main``).
 """
@@ -40,6 +40,7 @@ class CriterionItem(BaseModel):
     key: str
     enabled: bool
     value: float = Field(allow_inf_nan=False)
+    bookmarked: bool = False
 
     @field_validator("key")
     @classmethod
@@ -49,23 +50,72 @@ class CriterionItem(BaseModel):
         return value
 
 
-class CriteriaUpdate(BaseModel):
-    """Body of ``PUT /screen/criteria``. ``extra="forbid"`` rejects
+#: Longest accepted screening-set name (Phase 1.7).
+SET_NAME_MAX = 60
+
+
+def validate_criteria_list(items: list[CriterionItem]) -> list[dict[str, Any]]:
+    """Shared criteria invariants: no duplicate keys, at least one enabled."""
+    keys = [item.key for item in items]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise ValueError(f"duplicate criteria keys {duplicates}")
+    if not any(item.enabled for item in items):
+        raise ValueError("at least one criterion must be enabled")
+    return [item.model_dump() for item in items]
+
+
+class ScreeningSetCreate(BaseModel):
+    """Body of ``POST /screen/sets``. ``extra="forbid"`` rejects
     ``shortlist_size`` (server-owned) and any other unexpected field."""
 
     model_config = ConfigDict(extra="forbid")
 
-    criteria: list[CriterionItem] = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=SET_NAME_MAX)
+    criteria: list[CriterionItem] | None = Field(default=None, min_length=1, max_length=50)
     thesis: str | None = Field(default=None, max_length=500)
 
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("name must not be blank")
+        return cleaned
+
     @model_validator(mode="after")
-    def _consistent(self) -> "CriteriaUpdate":
-        keys = [item.key for item in self.criteria]
-        duplicates = sorted({key for key in keys if keys.count(key) > 1})
-        if duplicates:
-            raise ValueError(f"duplicate criteria keys {duplicates}")
-        if not any(item.enabled for item in self.criteria):
-            raise ValueError("at least one criterion must be enabled")
+    def _check_criteria(self) -> "ScreeningSetCreate":
+        if self.criteria is not None:
+            validate_criteria_list(self.criteria)
+        return self
+
+
+class ScreeningSetUpdate(BaseModel):
+    """Body of ``PUT /screen/sets/{id}`` — at least one field must be provided;
+    an explicitly provided ``thesis: null`` clears the thesis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=SET_NAME_MAX)
+    criteria: list[CriterionItem] | None = Field(default=None, min_length=1, max_length=50)
+    thesis: str | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("name must not be blank")
+        return cleaned
+
+    @model_validator(mode="after")
+    def _check(self) -> "ScreeningSetUpdate":
+        if not self.model_fields_set & {"name", "criteria", "thesis"}:
+            raise ValueError("at least one of name, criteria, thesis is required")
+        if self.criteria is not None:
+            validate_criteria_list(self.criteria)
         return self
 
 
@@ -75,12 +125,14 @@ def criteria_to_json(criteria: list[dict[str, Any]]) -> str:
 
 def criteria_from_json(text: str) -> list[dict[str, Any]]:
     """Parse stored criteria; corrupt or invariant-breaking payloads fall back
-    to defaults. Full ``CriteriaUpdate`` validation means an empty list,
-    all-disabled set, duplicate keys, or >50 items can never silently change
+    to defaults. Full validation means an empty list, all-disabled set,
+    duplicate keys, unknown keys, or >50 items can never silently change
     what a run means."""
     try:
         data = json.loads(text)
-        model = CriteriaUpdate.model_validate({"criteria": data})
+        if not isinstance(data, list) or not 1 <= len(data) <= 50:
+            raise ValueError("criteria must be a non-empty list")
+        items = [CriterionItem.model_validate(item) for item in data]
+        return validate_criteria_list(items)
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
         return default_criteria()
-    return [item.model_dump() for item in model.criteria]

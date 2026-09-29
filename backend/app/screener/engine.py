@@ -1,8 +1,8 @@
 """Ratio engine: filter fundamentals by per-user criteria, rank, cut to shortlist.
 
 Pure functions — no DB, no network. Fully unit-testable. Criteria come from
-``user_criteria.criteria_json`` (validated by ``criteria.py``); the catalog is
-the source of truth for direction/scale.
+the active ``screening_sets.criteria_json`` (validated by ``criteria.py``); the
+catalog is the source of truth for direction/scale.
 """
 
 import math

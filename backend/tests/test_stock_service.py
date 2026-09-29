@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
-from app.db.models import CompanyProfile, Fundamental, ScreenRun, Stock, User, UserCriteria
+from app.db.models import CompanyProfile, Fundamental, ScreeningSet, ScreenRun, Stock, User
 from app.stock import service, store
 from app.stock.candles import CandleCache
 
@@ -105,11 +105,13 @@ def seed_user(session_factory, username: str = "alice", criteria: list[dict] | N
         session.flush()
         if criteria is not None:
             session.add(
-                UserCriteria(
+                ScreeningSet(
                     user_id=user.id,
+                    name="Default",
                     criteria_json=json.dumps(criteria),
                     thesis=None,
                     shortlist_size=10,
+                    is_active=True,
                     updated_at="now",
                 )
             )

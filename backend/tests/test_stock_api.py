@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.api import stock as stock_api
-from app.db.models import Fundamental, Price, Stock, UserCriteria
+from app.db.models import Fundamental, Price, ScreeningSet, Stock
 from app.stock.candles import CandleCache
 
 STORED_DATE = "2026-09-20"
@@ -70,12 +70,14 @@ def seed_stored(test_db, symbol: str = "AAA", data: dict | None = None) -> None:
 
 def seed_criteria(test_db, user_id: int, criteria: list[dict]) -> None:
     with test_db() as session:
-        session.merge(
-            UserCriteria(
+        session.add(
+            ScreeningSet(
                 user_id=user_id,
+                name="Default",
                 criteria_json=json.dumps(criteria),
                 thesis=None,
                 shortlist_size=10,
+                is_active=True,
                 updated_at="now",
             )
         )

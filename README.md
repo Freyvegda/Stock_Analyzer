@@ -4,7 +4,7 @@ Personal Indian-market (Nifty 500) analysis tool. See `PLAN.md` for the full pla
 
 Pipeline: fundamental screen (per-user DB criteria) → AI document analysis (concalls, results, audits) → XGBoost price signals → walk-forward backtest vs Nifty.
 
-First visit creates the single account (login-gated app); criteria are edited in the UI or via `GET/PUT /screen/criteria`.
+First visit creates the single account (login-gated app); screening criteria are saved as named screens in the UI (per-user `screening_sets`, `/screen/sets`).
 
 ## Stack
 
@@ -34,4 +34,4 @@ cd frontend; npm run test
 
 ## Config
 
-Screening criteria live in the database, per user (`user_criteria`) — edit them in the UI (Edit Criteria) or via `GET/PUT /screen/criteria`. The former `backend/config/screening.yaml` was retired in Phase 1.5.
+Screening criteria live in the database as named per-user screens (`screening_sets`; exactly one active) — edit them in the UI (Screen Criteria page) or via `/screen/sets`. The former `backend/config/screening.yaml` was retired in Phase 1.5; the single-criteria `user_criteria` row was retired in Phase 1.7.

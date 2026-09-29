@@ -1,4 +1,5 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FundamentalsLayout from '../fundamentals/FundamentalsLayout'
@@ -8,10 +9,10 @@ import { AuthProvider } from '../../auth/AuthContext'
 import { RequireAuth } from '../../components/RequireAuth'
 import { Provider } from '../../components/ui/provider'
 import { StatusProvider, StatusRail } from '../../components/StatusRail'
-import type { RatioSpec, UserCriteria } from '../../api/types'
+import type { RatioSpec, ScreeningSet } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   ApiError: class ApiError extends Error {
     status: number
     detail: string
@@ -26,12 +27,30 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
+vi.mock('../../components/three/SakuraLeafLoader', () => ({
+  default: () => <div data-testid="sakura-leaf-loader" />,
+}))
+
 const mockedApi = vi.mocked(api)
 
-const criteria: UserCriteria = {
+const setA: ScreeningSet = {
+  id: 1,
+  name: 'Default',
   criteria: [{ key: 'pe', enabled: true, value: 25 }],
   thesis: null,
   shortlist_size: 10,
+  is_active: true,
+  updated_at: 'now',
+}
+
+const setB: ScreeningSet = {
+  id: 2,
+  name: 'Quality',
+  criteria: [{ key: 'pe', enabled: true, value: 15 }],
+  thesis: null,
+  shortlist_size: 10,
+  is_active: false,
+  updated_at: 'now',
 }
 
 const catalog: RatioSpec[] = [
@@ -53,7 +72,7 @@ const run = { run_id: 1, run_date: '2026-09-26', shortlisted: [row] }
 function mockLoads() {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve({ id: 1, username: 'solo' })
-    if (path === '/screen/criteria') return Promise.resolve(criteria)
+    if (path === '/screen/sets') return Promise.resolve([setA, setB])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(run)
     return Promise.reject(new Error(`unexpected GET ${path}`))
@@ -110,5 +129,30 @@ describe('FundamentalsLayout', () => {
     expect(await screen.findByRole('heading', { name: 'Screening Criteria' })).toBeInTheDocument()
     act(() => window.dispatchEvent(new Event('auth:unauthorized')))
     expect(await screen.findByText('login page')).toBeInTheDocument()
+  })
+
+  it('activates a screen and refetches the latest run', async () => {
+    mockLoads()
+    mockedApi.post.mockResolvedValue({ ...setB, is_active: true })
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/criteria']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="criteria" element={<ScreeningCriteria />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    await screen.findByText('PE ≤ 25×')
+    await userEvent.click(screen.getByRole('tab', { name: 'Quality' }))
+    await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/screen/sets/2/activate', {}))
+    await waitFor(() =>
+      expect(mockedApi.get.mock.calls.filter(([path]) => path === '/screen/latest').length).toBe(2),
+    )
+    expect(await screen.findByText('PE ≤ 15×')).toBeInTheDocument()
   })
 })

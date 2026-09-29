@@ -22,12 +22,23 @@ export interface Criterion {
   key: string
   enabled: boolean
   value: number
+  bookmarked?: boolean
 }
 
-export interface UserCriteria {
+export interface ScreeningSet {
+  id: number
+  name: string
   criteria: Criterion[]
   thesis: string | null
   shortlist_size: number
+  is_active: boolean
+  updated_at: string
+}
+
+export type ScreeningSetChanges = {
+  name?: string
+  criteria?: Criterion[]
+  thesis?: string | null
 }
 
 export interface ShortlistRow {

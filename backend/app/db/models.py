@@ -1,4 +1,4 @@
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -13,13 +13,24 @@ class User(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class UserCriteria(Base):
-    __tablename__ = "user_criteria"
+class ScreeningSet(Base):
+    """A named screening criteria set — one row per screen a user owns.
 
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    Exactly one row per user is active (``is_active``); service code enforces the
+    invariant (Phase 1.7). ``criteria_json`` is the same ``[{key, enabled, value}]``
+    payload the engine consumes; ``shortlist_size`` stays server-owned.
+    """
+
+    __tablename__ = "screening_sets"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_screening_sets_user_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     criteria_json: Mapped[str] = mapped_column(Text, nullable=False)
     thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
     shortlist_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
@@ -71,6 +82,9 @@ class ScreenRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_date: Mapped[str] = mapped_column(String)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("screening_sets.id"), nullable=True, index=True
+    )
     criteria_json: Mapped[str] = mapped_column(Text, nullable=False)
     shortlisted_json: Mapped[str] = mapped_column(Text, nullable=False)
 

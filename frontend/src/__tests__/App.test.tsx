@@ -11,10 +11,10 @@ import App from '../App'
 import { api } from '../api/client'
 import { AuthProvider } from '../auth/AuthContext'
 import { Provider } from '../components/ui/provider'
-import type { RatioSpec, StockListResponse, UserCriteria } from '../api/types'
+import type { RatioSpec, ScreeningSet, StockListResponse } from '../api/types'
 
 vi.mock('../api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   ApiError: class ApiError extends Error {
     status: number
     detail: string
@@ -31,13 +31,17 @@ vi.mock('../components/three/Bonfire', () => ({ default: () => null }))
 
 const mockedApi = vi.mocked(api)
 
-const criteria: UserCriteria = {
+const screeningSet: ScreeningSet = {
+  id: 1,
+  name: 'Default',
   criteria: [
     { key: 'pe', enabled: true, value: 25 },
     { key: 'roe', enabled: true, value: 15 },
   ],
   thesis: null,
   shortlist_size: 10,
+  is_active: true,
+  updated_at: 'now',
 }
 
 const catalog: RatioSpec[] = [
@@ -70,7 +74,7 @@ const stockList: StockListResponse = {
 function mockApi() {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve({ id: 1, username: 'solo' })
-    if (path === '/screen/criteria') return Promise.resolve(criteria)
+    if (path === '/screen/sets') return Promise.resolve([screeningSet])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') {
       return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
