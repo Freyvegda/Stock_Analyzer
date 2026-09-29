@@ -87,3 +87,32 @@ The suite is flaky under parallel load: unrelated `waitFor`s in
 intermittently time out when the whole suite runs, and pass in isolation. It
 predates this work but was made worse by the added tests; the geometry tests are
 now memoised, which cut the worst of it.
+
+## Revision 3 — defects found by looking at the rendered page
+
+Every item here was invisible to the test suite and obvious on screen. Recorded
+because they are the class of bug the pure-module tests cannot catch.
+
+- [x] Storeys were all stacked at y=0 (the tier group's position was dropped in a
+      rewrite), so the tower rendered as a single overlapping heap.
+- [x] The torii path ran to z=6.2 against a camera at z=6.4 — a gate at the lens.
+- [x] The near ridge sat at z=-6 with an 8-unit peak: a black wall across the
+      frame. Ranges are now pushed back, and their *apparent* size (peak ÷
+      distance) decreases with distance, which is the actual depth cue.
+- [x] The horizon band was a plane at the near ridge's own depth. Coplanar
+      surfaces z-fight; it drew as vertical striping across the lower frame. The
+      gradient is now baked into the sky dome as vertex colours.
+- [x] The ridge strips ended inside the frustum (hard vertical edge). Their reach
+      is derived from the camera's field of view and a maximum aspect.
+- [x] The open roof lifted a whole storey height, clearing the wall and floating
+      into the storey above. It now lifts a fraction of that, and leans.
+- [x] The water plane's near edge cut across the foreground.
+
+### Still outstanding
+
+- The reveal, the lantern sway and the atmosphere have not been watched at speed;
+  they read correctly frame by frame but their *feel* is unverified.
+- Light mode was checked once, at one scroll position.
+- The storey rail's clearance from the copy column is pinned by reasoning and a
+  max-width, not by a placement test (unlike `treePlacement` for the login scene).
+
