@@ -136,7 +136,7 @@ and the theme toggle.
 - Nav stock search: `.glass-field` in `index.css` extends the same recipe — translucent
   `color-mix` gradient over `backdrop-filter: blur(10px) saturate(1.2)`, 1px mixed border,
   inset top highlight; `:hover`/`:focus-within` brighten the border toward sakura (colour
-  only). Always rendered at `md` and up (`w-72`), collapsing to the icon trigger below `md`;
+  only). Always visible at every width (own row on narrow screens; no icon trigger), and
   Ctrl/Cmd+K focuses it. The results panel (`.glass-panel`) keeps the perspective entrance
   and pointer sheen described above.
 

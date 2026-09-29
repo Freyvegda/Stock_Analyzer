@@ -69,7 +69,7 @@ describe('GlassNav', () => {
 
   it('renders the stock search in the nav capsule', () => {
     renderNav()
-    expect(screen.getByRole('button', { name: 'Search stocks' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Search stocks' })).toBeInTheDocument()
   })
 
   it('keeps sheen off without a fine pointer (jsdom default)', () => {

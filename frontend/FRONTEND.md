@@ -10,7 +10,7 @@ React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
 
-The navbar also carries a **stock search** (`components/NavSearch.tsx`): Ctrl/Cmd+K or the icon opens a glass input, lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
+The navbar also carries a **stock search** (`components/NavSearch.tsx`): an always-visible glass bar (no icon trigger; Ctrl/Cmd+K focuses it), lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
 
 Dense, tabular, dark-themed. This is a tool, not a marketing site.
 

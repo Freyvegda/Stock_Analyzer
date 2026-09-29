@@ -1,7 +1,7 @@
 /**
  * Nav stock search — permanent glass field inside the navbar capsule.
  *
- * The input is always rendered on desktop (icon trigger below md); focusing it
+ * The input is always rendered in the navbar (all widths); focusing it
  * lazy-loads `GET /stocks` once per mount, filters the caller's universe
  * client-side and shows each match with the caller's screen verdict. Ctrl/Cmd+K
  * focuses from anywhere, arrows move the active row, Enter or a click opens
@@ -13,8 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, IconButton, Text } from '@chakra-ui/react'
-import { Search } from 'lucide-react'
+import { Button, Text } from '@chakra-ui/react'
 import { motion } from 'motion/react'
 import { api } from '../api/client'
 import type { StockListResponse, StockListRow } from '../api/types'
@@ -164,39 +163,11 @@ export function NavSearch() {
           : 'No stocks match'
 
   return (
-    <div ref={wrapper} data-testid="nav-search" className="relative flex items-center gap-2">
-      <IconButton
-        className="md:hidden"
-        aria-label="Search stocks"
-        aria-keyshortcuts="Control+K"
-        title="Search stocks (Ctrl+K)"
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          if (open) {
-            closeSearch()
-          } else {
-            setOpen(true)
-            input.current?.focus()
-          }
-        }}
-      >
-        <Search size={16} strokeWidth={1.75} aria-hidden="true" />
-      </IconButton>
-
+    <div ref={wrapper} data-testid="nav-search" className="relative flex items-center">
       <div
         data-testid="nav-search-field"
-        className={cn(
-          'glass-field relative items-center md:flex md:w-72',
-          open ? 'flex w-full' : 'hidden',
-        )}
+        className="glass-field relative flex w-full items-center md:w-72"
       >
-        <Search
-          size={14}
-          strokeWidth={1.75}
-          aria-hidden="true"
-          className="ml-2 shrink-0 text-muted-foreground"
-        />
         <input
           ref={input}
           type="search"
