@@ -1,4 +1,5 @@
 import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from '@chakra-ui/react'
+import { Bookmark } from 'lucide-react'
 import type { RatioSpec, ScreeningSet } from '@/api/types'
 
 /** '%' and '×' attach directly; other units get a space (e.g. "1000 ₹ cr"). */
@@ -45,7 +46,22 @@ export function CriteriaPanel({
         <Wrap gap={2}>
           {enabled.map((criterion) => (
             <WrapItem key={criterion.key}>
-              <Badge variant="subtle" colorPalette="sakura" className="font-mono tabular-nums">
+              <Badge
+                variant="subtle"
+                colorPalette="sakura"
+                display="inline-flex"
+                alignItems="center"
+                gap="1"
+                className="font-mono tabular-nums"
+              >
+                {criterion.bookmarked ? (
+                  <Bookmark
+                    size={12}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    fill="currentColor"
+                  />
+                ) : null}
                 {badgeText(catalog.get(criterion.key), criterion.key, criterion.value)}
               </Badge>
             </WrapItem>

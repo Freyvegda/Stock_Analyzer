@@ -16,7 +16,7 @@ const screeningSet: ScreeningSet = {
   id: 1,
   name: 'Default',
   criteria: [
-    { key: 'pe', enabled: true, value: 25 },
+    { key: 'pe', enabled: true, value: 25, bookmarked: true },
     { key: 'roe', enabled: true, value: 15 },
     { key: 'market_cap', enabled: true, value: 1000 },
     { key: 'currentRatio', enabled: false, value: 1.5 },
@@ -56,6 +56,12 @@ describe('CriteriaPanel', () => {
   it('renders chips in mono numerals', () => {
     renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
     expect(screen.getByText('PE ≤ 25×').className).toContain('font-mono')
+  })
+
+  it('marks bookmarked criteria with a ribbon marker', () => {
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
+    expect(screen.getByText('PE ≤ 25×').querySelector('svg')).not.toBeNull()
+    expect(screen.getByText('ROE ≥ 15%').querySelector('svg')).toBeNull()
   })
 
   it('shows loading and error states instead of stale badges', () => {

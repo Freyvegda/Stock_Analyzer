@@ -22,6 +22,7 @@ export interface Criterion {
   key: string
   enabled: boolean
   value: number
+  bookmarked?: boolean
 }
 
 export interface ScreeningSet {

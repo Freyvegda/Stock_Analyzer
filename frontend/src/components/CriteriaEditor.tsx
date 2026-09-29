@@ -32,7 +32,7 @@ import {
   Text,
   Textarea,
 } from '@chakra-ui/react'
-import { X } from 'lucide-react'
+import { Bookmark, X } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import type { Criterion, RatioSpec, ScreeningSet } from '@/api/types'
 
@@ -42,6 +42,7 @@ interface DraftRow {
   key: string
   enabled: boolean
   value: string
+  bookmarked: boolean
 }
 
 export interface CriteriaEditorHandle {
@@ -68,12 +69,18 @@ function draftFromSet(set: ScreeningSet | null): DraftRow[] {
     key: criterion.key,
     enabled: criterion.enabled,
     value: String(criterion.value),
+    bookmarked: criterion.bookmarked ?? false,
   }))
 }
 
 function snapshot(rows: DraftRow[], thesis: string): string {
   return JSON.stringify({
-    rows: rows.map((row) => ({ key: row.key, enabled: row.enabled, value: row.value.trim() })),
+    rows: rows.map((row) => ({
+      key: row.key,
+      enabled: row.enabled,
+      value: row.value.trim(),
+      bookmarked: row.bookmarked,
+    })),
     thesis: thesis.trim(),
   })
 }
@@ -143,6 +150,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
     const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
     const [formError, setFormError] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
+    const [bookmarkedOnly, setBookmarkedOnly] = useState(false)
 
     // Reset the draft whenever the source set changes (activation, save echo,
     // creation). Object identity is the signal; the page replaces the object
@@ -198,6 +206,12 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
       setRows((prev) => prev.map((row) => (row.key === key ? { ...row, enabled } : row)))
     }
 
+    function toggleBookmark(key: string) {
+      setRows((prev) =>
+        prev.map((row) => (row.key === key ? { ...row, bookmarked: !row.bookmarked } : row)),
+      )
+    }
+
     function setRowValue(key: string, value: string) {
       setRows((prev) => prev.map((row) => (row.key === key ? { ...row, value } : row)))
     }
@@ -208,7 +222,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
 
     function addRatio(key: string) {
       if (rows.some((row) => row.key === key)) return
-      setRows((prev) => [...prev, { key, enabled: true, value: '' }])
+      setRows((prev) => [...prev, { key, enabled: true, value: '', bookmarked: false }])
     }
 
     const save = useCallback(async (): Promise<boolean> => {
@@ -221,7 +235,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
           errors[index] = 'Enter a valid number'
           return
         }
-        parsed.push({ key: row.key, enabled: row.enabled, value })
+        parsed.push({ key: row.key, enabled: row.enabled, value, bookmarked: row.bookmarked })
       })
       setRowErrors(errors)
       if (Object.keys(errors).length > 0) {
@@ -252,6 +266,12 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
 
     useImperativeHandle(ref, () => ({ save }), [save])
 
+    const visibleCategories = bookmarkedOnly
+      ? categories.filter((category) =>
+          rows.some((row) => row.bookmarked && categoryOf(row.key) === category),
+        )
+      : categories
+
     return (
       <Accordion.Root
         multiple
@@ -274,15 +294,34 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                 </Text>
               ) : (
                 <Stack gap={4}>
+                  <Flex justify="flex-end">
+                    <Button
+                      size="xs"
+                      variant={bookmarkedOnly ? 'subtle' : 'outline'}
+                      colorPalette={bookmarkedOnly ? 'sakura' : undefined}
+                      aria-pressed={bookmarkedOnly}
+                      onClick={() => setBookmarkedOnly((value) => !value)}
+                    >
+                      Bookmarked only
+                    </Button>
+                  </Flex>
+                  {bookmarkedOnly && visibleCategories.length === 0 ? (
+                    <Text fontSize="sm" color="fg.muted">
+                      No bookmarked criteria yet.
+                    </Text>
+                  ) : (
                   <Accordion.Root
                     multiple
                     value={expanded}
                     onValueChange={(details) => setExpanded(details.value)}
                   >
-                    {categories.map((category) => {
+                    {visibleCategories.map((category) => {
                       const entries = rows
                         .map((row, index) => ({ row, index }))
                         .filter(({ row }) => categoryOf(row.key) === category)
+                      const orderedEntries = entries
+                        .filter(({ row }) => !bookmarkedOnly || row.bookmarked)
+                        .sort((a, b) => Number(b.row.bookmarked) - Number(a.row.bookmarked))
                       const enabledCount = entries.filter(({ row }) => row.enabled).length
                       const options = ratios.filter(
                         (ratio) =>
@@ -303,12 +342,30 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                           <Accordion.ItemContent pb={2}>
                             <Accordion.ItemBody>
                               <Stack gap={2}>
-                                {entries.map(({ row, index }) => {
+                                {orderedEntries.map(({ row, index }) => {
                                   const spec = catalog.get(row.key)
                                   const label = spec?.label ?? row.key
                                   return (
                                     <div key={row.key}>
                                       <Flex align="center" gap={3} opacity={row.enabled ? 1 : 0.6}>
+                                        <IconButton
+                                          size="xs"
+                                          variant="ghost"
+                                          aria-label={
+                                            row.bookmarked
+                                              ? `Remove bookmark ${label}`
+                                              : `Bookmark ${label}`
+                                          }
+                                          onClick={() => toggleBookmark(row.key)}
+                                        >
+                                          <Bookmark
+                                            size={14}
+                                            strokeWidth={1.75}
+                                            aria-hidden="true"
+                                            fill={row.bookmarked ? 'currentColor' : 'none'}
+                                            className={row.bookmarked ? 'text-primary' : undefined}
+                                          />
+                                        </IconButton>
                                         <Switch.Root
                                           checked={row.enabled}
                                           onCheckedChange={(details) =>
@@ -368,6 +425,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                       )
                     })}
                   </Accordion.Root>
+                  )}
 
                   <Field.Root>
                     <Field.Label>Thesis</Field.Label>

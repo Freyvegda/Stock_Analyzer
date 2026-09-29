@@ -69,8 +69,8 @@ describe('CriteriaEditor', () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
         [
-          { key: 'pe', enabled: true, value: 18 },
-          { key: 'roe', enabled: false, value: 15 },
+          { key: 'pe', enabled: true, value: 18, bookmarked: false },
+          { key: 'roe', enabled: false, value: 15, bookmarked: false },
         ],
         null,
       ),
@@ -91,8 +91,8 @@ describe('CriteriaEditor', () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
         expect.arrayContaining([
-          { key: 'pe', enabled: true, value: 25 },
-          { key: 'currentRatio', enabled: true, value: 1.2 },
+          { key: 'pe', enabled: true, value: 25, bookmarked: false },
+          { key: 'currentRatio', enabled: true, value: 1.2, bookmarked: false },
         ]),
         null,
       ),
@@ -131,8 +131,63 @@ describe('CriteriaEditor', () => {
     await userEvent.type(input, '4')
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith([{ key: 'mystery', enabled: true, value: 4 }], null),
+      expect(onSave).toHaveBeenCalledWith(
+        [{ key: 'mystery', enabled: true, value: 4, bookmarked: false }],
+        null,
+      ),
     )
+  })
+
+  it('pins a bookmarked criterion to the top of its category', async () => {
+    renderEditor({
+      set: {
+        ...savedSet,
+        criteria: [
+          { key: 'pe', enabled: true, value: 25 },
+          { key: 'pb', enabled: true, value: 3 },
+          { key: 'roe', enabled: true, value: 15 },
+        ],
+      },
+    })
+    await screen.findByRole('checkbox', { name: 'PB' })
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark PB' }))
+    const boxes = screen.getAllByRole('checkbox')
+    expect(boxes[0]).toHaveAccessibleName('PB')
+  })
+
+  it('saves the bookmarked flag in the payload', async () => {
+    const { onSave } = renderEditor()
+    await screen.findByRole('checkbox', { name: 'PE' })
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark PE' }))
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        [
+          { key: 'pe', enabled: true, value: 25, bookmarked: true },
+          { key: 'roe', enabled: true, value: 15, bookmarked: false },
+        ],
+        null,
+      ),
+    )
+  })
+
+  it('filters to bookmarked criteria only', async () => {
+    renderEditor({
+      set: {
+        ...savedSet,
+        criteria: [
+          { key: 'pe', enabled: true, value: 25 },
+          { key: 'pb', enabled: true, value: 3 },
+          { key: 'roe', enabled: true, value: 15 },
+        ],
+      },
+    })
+    await screen.findByRole('checkbox', { name: 'PB' })
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark PB' }))
+    await userEvent.click(screen.getByRole('button', { name: /bookmarked only/i }))
+    expect(screen.getByRole('checkbox', { name: 'PB' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'PE' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /profitability/i })).not.toBeInTheDocument()
   })
 
   it('reports dirty state changes', async () => {
