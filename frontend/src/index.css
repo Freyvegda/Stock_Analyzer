@@ -432,6 +432,36 @@
     z-index: 0;
   }
 
+  /* Nav search field: the input surface of the navbar search — same liquid-glass
+     family, thinner shadow so it reads as an inset well inside the capsule.
+     Focus-within brightens the border toward sakura (colour only). */
+  .glass-field {
+    border-radius: calc(var(--radius) * 1.2);
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background:
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--card) 55%, transparent),
+        color-mix(in oklab, var(--background) 40%, transparent)
+      );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 10%, transparent),
+      0 10px 30px -22px rgb(0 0 0 / 0.4);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    transition:
+      border-color var(--duration-base) var(--ease-vault),
+      box-shadow var(--duration-base) var(--ease-vault);
+  }
+
+  .glass-field:hover,
+  .glass-field:focus-within {
+    border-color: color-mix(in oklab, var(--primary) 35%, var(--border));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--primary) 20%, transparent),
+      0 10px 30px -18px rgb(0 0 0 / 0.45);
+  }
+
   /* Fundamentals side rail: the same liquid-glass family as the capsule, no
      sheen. A larger, softer drop shadow and page-gutter detachment make the
      capsule read as floating beside the content. Hover brightens colour only. */

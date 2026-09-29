@@ -8,7 +8,7 @@ import { Provider } from '../ui/provider'
 import type { StockListResponse, StockListRow } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   ApiError: class ApiError extends Error {
     status: number
     detail: string
@@ -112,7 +112,7 @@ function mockMatchMedia(map: Record<string, boolean>) {
 
 async function openSearch() {
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Search stocks' }))
+  await user.click(screen.getByRole('combobox'))
   return user
 }
 
@@ -120,14 +120,21 @@ beforeEach(() => vi.resetAllMocks())
 afterEach(() => vi.restoreAllMocks())
 
 describe('NavSearch', () => {
-  it('opens the combobox and fetches the universe once', async () => {
+  it('renders the glass input permanently without fetching', () => {
+    mockedApi.get.mockResolvedValue(universe)
+    renderSearch()
+    expect(screen.getByRole('combobox')).toBeInTheDocument()
+    expect(screen.getByTestId('nav-search-field')).toHaveClass('glass-field')
+    expect(screen.queryByTestId('nav-search-panel')).not.toBeInTheDocument()
+    expect(mockedApi.get).not.toHaveBeenCalled()
+  })
+
+  it('opens the panel and fetches the universe once on first focus', async () => {
     mockedApi.get.mockResolvedValue(universe)
     renderSearch()
 
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     await openSearch()
 
-    expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.getByText('Type a symbol or company name')).toBeInTheDocument()
     expect(screen.getByTestId('nav-search-panel')).toHaveAttribute('data-motion', 'animated')
     expect(mockedApi.get).toHaveBeenCalledTimes(1)
@@ -190,7 +197,7 @@ describe('NavSearch', () => {
     await user.click(await screen.findByRole('option', { name: /Alpha Ltd/ }))
 
     expect(await screen.findByText('Stock page AAA')).toBeInTheDocument()
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('nav-search-panel')).not.toBeInTheDocument()
   })
 
   it('moves the active option with arrow keys and opens it with enter', async () => {
@@ -220,10 +227,10 @@ describe('NavSearch', () => {
     await screen.findByRole('option', { name: /AAA/ })
 
     await user.keyboard('{Escape}')
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('nav-search-panel')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Search stocks' }))
-    expect(screen.getByRole('combobox')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByTestId('nav-search-panel')).toBeInTheDocument()
     expect(mockedApi.get).toHaveBeenCalledTimes(1)
   })
 
@@ -252,13 +259,14 @@ describe('NavSearch', () => {
     expect(await screen.findByRole('option', { name: /Alpha Ltd/ })).toBeInTheDocument()
   })
 
-  it('opens with ctrl+k from anywhere', async () => {
+  it('focuses the input from ctrl+k anywhere', async () => {
     mockedApi.get.mockResolvedValue(universe)
     renderSearch()
 
     fireEvent.keyDown(document, { key: 'k', ctrlKey: true })
 
-    expect(await screen.findByRole('combobox')).toBeInTheDocument()
+    expect(await screen.findByTestId('nav-search-panel')).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveFocus()
     expect(mockedApi.get).toHaveBeenCalledWith('/stocks')
   })
 

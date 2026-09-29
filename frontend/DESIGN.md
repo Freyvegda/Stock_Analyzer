@@ -133,6 +133,12 @@ and the theme toggle.
 - Entrance: one-shot 320ms fade + 8px rise + blur clear. Not a loop.
 - Gates: sheen off for coarse pointers (`(pointer: fine)` only) and under reduced motion
   (`data-sheen="on|off"` for tests); `aria-label="Primary"` landmark; pills are decorative.
+- Nav stock search: `.glass-field` in `index.css` extends the same recipe — translucent
+  `color-mix` gradient over `backdrop-filter: blur(10px) saturate(1.2)`, 1px mixed border,
+  inset top highlight; `:hover`/`:focus-within` brighten the border toward sakura (colour
+  only). Always rendered at `md` and up (`w-72`), collapsing to the icon trigger below `md`;
+  Ctrl/Cmd+K focuses it. The results panel (`.glass-panel`) keeps the perspective entrance
+  and pointer sheen described above.
 
 ### Fundamentals side rail
 

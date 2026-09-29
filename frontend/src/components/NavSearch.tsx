@@ -1,12 +1,13 @@
 /**
- * Nav stock search — glass combobox inside the navbar capsule.
+ * Nav stock search — permanent glass field inside the navbar capsule.
  *
- * Lazy-loads `GET /stocks` on first open (one fetch per mount), filters the
- * caller's own universe client-side and shows each match with the caller's
- * screen verdict. Ctrl/Cmd+K opens, arrows move the active row, Enter or a
- * click opens `/stock/{symbol}`. The panel is the only 3D surface: it enters
- * with a perspective tilt, rows stagger 16 ms and a pointer sheen follows the
- * cursor — all off for coarse pointers and reduced motion (DESIGN.md).
+ * The input is always rendered on desktop (icon trigger below md); focusing it
+ * lazy-loads `GET /stocks` once per mount, filters the caller's universe
+ * client-side and shows each match with the caller's screen verdict. Ctrl/Cmd+K
+ * focuses from anywhere, arrows move the active row, Enter or a click opens
+ * `/stock/{symbol}`. The results panel stays the only 3D surface: perspective
+ * tilt entrance, 16 ms row stagger and a pointer sheen — all off for coarse
+ * pointers and reduced motion (DESIGN.md).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -70,12 +71,8 @@ export function NavSearch() {
     }
   }
 
-  function openSearch() {
-    setOpen(true)
-  }
-
-  // Load the universe on first open, however the search was opened (button,
-  // Ctrl/Cmd+K). A failed load stays failed until Retry is pressed.
+  // Load the universe on first open, however the search was opened (focus,
+  // button, Ctrl/Cmd+K). A failed load stays failed until Retry is pressed.
   useEffect(() => {
     if (!open || rows !== null || loading || error) return
     void load()
@@ -99,17 +96,13 @@ export function NavSearch() {
       .slice(0, RESULT_LIMIT)
   }, [rows, query])
 
-  // Focus the input when the search opens.
-  useEffect(() => {
-    if (open) input.current?.focus()
-  }, [open])
-
-  // Ctrl/Cmd+K opens from anywhere.
+  // Ctrl/Cmd+K focuses the field from anywhere.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         setOpen(true)
+        input.current?.focus()
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -171,47 +164,65 @@ export function NavSearch() {
           : 'No stocks match'
 
   return (
-    <div ref={wrapper} data-testid="nav-search" className="relative flex items-center">
+    <div ref={wrapper} data-testid="nav-search" className="relative flex items-center gap-2">
       <IconButton
+        className="md:hidden"
         aria-label="Search stocks"
         aria-keyshortcuts="Control+K"
         title="Search stocks (Ctrl+K)"
         variant="ghost"
         size="sm"
-        onClick={() => (open ? closeSearch() : openSearch())}
+        onClick={() => {
+          if (open) {
+            closeSearch()
+          } else {
+            setOpen(true)
+            input.current?.focus()
+          }
+        }}
       >
         <Search size={16} strokeWidth={1.75} aria-hidden="true" />
       </IconButton>
 
-      {open ? (
-        <motion.div
-          initial={reduced ? false : { opacity: 0, width: 0 }}
-          animate={reduced ? undefined : { opacity: 1, width: '12rem' }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="overflow-hidden"
-        >
-          <input
-            ref={input}
-            type="search"
-            role="combobox"
-            aria-label="Search stocks"
-            aria-expanded="true"
-            aria-controls="nav-search-listbox"
-            aria-activedescendant={
-              active >= 0 && matches[active] !== undefined ? optionId(matches[active].symbol) : undefined
-            }
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setActive(-1)
-            }}
-            onKeyDown={onInputKeyDown}
-            placeholder="Search stocks…"
-            autoComplete="off"
-            className="h-8 w-full rounded-md border border-border bg-background/40 px-2 text-sm outline-none transition-colors focus-visible:border-ring"
-          />
-        </motion.div>
-      ) : null}
+      <div
+        data-testid="nav-search-field"
+        className={cn(
+          'glass-field relative items-center md:flex md:w-72',
+          open ? 'flex w-full' : 'hidden',
+        )}
+      >
+        <Search
+          size={14}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="ml-2 shrink-0 text-muted-foreground"
+        />
+        <input
+          ref={input}
+          type="search"
+          role="combobox"
+          aria-label="Search stocks"
+          aria-expanded={open}
+          aria-controls="nav-search-listbox"
+          aria-activedescendant={
+            active >= 0 && matches[active] !== undefined ? optionId(matches[active].symbol) : undefined
+          }
+          value={query}
+          onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value)
+            setActive(-1)
+          }}
+          onKeyDown={onInputKeyDown}
+          placeholder="Search stocks…"
+          autoComplete="off"
+          className="h-9 w-full min-w-0 bg-transparent px-2 text-sm outline-none"
+        />
+        <kbd className="mr-2 hidden shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground md:block">
+          ⌘K
+        </kbd>
+      </div>
 
       {open ? (
         <motion.div
