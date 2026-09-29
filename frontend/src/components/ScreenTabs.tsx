@@ -53,14 +53,22 @@ export function ScreenTabs({
   const [working, setWorking] = useState(false)
   const tabRefs = useRef(new Map<number, HTMLButtonElement>())
   const plusRef = useRef<HTMLButtonElement>(null)
+  const workingRef = useRef(false)
+  // Latest props for post-action focus: create/delete change `sets`/`active`
+  // after the handler captured them.
+  const latest = useRef({ active, sets })
+  useEffect(() => {
+    latest.current = { active, sets }
+  })
 
   const disabled = busy || working
 
   function focusActiveTab() {
     window.requestAnimationFrame(() => {
+      const { active: currentActive, sets: currentSets } = latest.current
       const target =
-        (active !== null ? tabRefs.current.get(active.id) : undefined) ??
-        (sets[0] !== undefined ? tabRefs.current.get(sets[0].id) : undefined)
+        (currentActive !== null ? tabRefs.current.get(currentActive.id) : undefined) ??
+        (currentSets[0] !== undefined ? tabRefs.current.get(currentSets[0].id) : undefined)
       if (target !== undefined) {
         target.focus()
       } else {
@@ -76,6 +84,8 @@ export function ScreenTabs({
   }, [sets, renaming])
 
   async function run(action: () => Promise<void>, after?: () => void) {
+    if (workingRef.current) return
+    workingRef.current = true
     setError(null)
     setWorking(true)
     try {
@@ -88,6 +98,7 @@ export function ScreenTabs({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed')
     } finally {
+      workingRef.current = false
       setWorking(false)
     }
   }
@@ -166,7 +177,9 @@ export function ScreenTabs({
                       value={renameName}
                       onChange={(e) => setRenameName(e.target.value)}
                       onKeyDown={onRenameKeyDown}
-                      onBlur={cancelRename}
+                      onBlur={() => {
+                        if (!workingRef.current) cancelRename()
+                      }}
                       className="h-5 w-32 min-w-0 border-0 bg-transparent p-0 text-sm"
                     />
                   </div>
@@ -274,7 +287,9 @@ export function ScreenTabs({
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
                   onKeyDown={onDraftKeyDown}
-                  onBlur={cancelDraft}
+                  onBlur={() => {
+                    if (!workingRef.current) cancelDraft()
+                  }}
                   className="h-5 w-32 min-w-0 border-0 bg-transparent p-0 text-sm"
                 />
               </div>

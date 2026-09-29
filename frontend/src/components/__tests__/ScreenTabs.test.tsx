@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ScreenTabs } from '../ScreenTabs'
 import { Provider } from '../ui/provider'
@@ -159,5 +160,46 @@ describe('ScreenTabs', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'New screen name' }), 'Dup{Enter}')
     expect(await screen.findByRole('alert')).toHaveTextContent('name taken')
     expect(screen.getByRole('textbox', { name: 'New screen name' })).toBeInTheDocument()
+  })
+
+  it('focuses the newly active tab after creating a screen', async () => {
+    function Controlled() {
+      const [sets, setSets] = useState([setA, setB])
+      const [active, setActive] = useState<ScreeningSet>(setA)
+      return (
+        <Provider>
+          <ScreenTabs
+            sets={sets}
+            active={active}
+            onSelect={setActive}
+            onCreate={async (name) => {
+              const created: ScreeningSet = { ...setB, id: 3, name, is_active: true }
+              setSets((prev) => [...prev, created])
+              setActive(created)
+            }}
+            onRename={vi.fn(() => Promise.resolve())}
+            onDelete={vi.fn(() => Promise.resolve())}
+          />
+        </Provider>
+      )
+    }
+    render(<Controlled />)
+    await userEvent.click(screen.getByRole('button', { name: /new screen/i }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'New screen name' }), 'Momentum{Enter}')
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Momentum' })).toHaveFocus())
+  })
+
+  it('ignores repeated enter while a create is in flight', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const onCreate = vi.fn(() => gate)
+    renderTabs({ onCreate })
+    await userEvent.click(screen.getByRole('button', { name: /new screen/i }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'New screen name' }), 'Momentum')
+    await userEvent.keyboard('{Enter}{Enter}{Enter}')
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    release()
   })
 })

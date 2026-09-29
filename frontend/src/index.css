@@ -504,12 +504,14 @@
     align-items: center;
     gap: 0.05rem;
     opacity: 0;
+    pointer-events: none;
     transition: opacity var(--duration-fast) var(--ease-vault);
   }
 
   .tab-wrap:hover .tab-controls,
   .tab-wrap:focus-within .tab-controls {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .glass-tab {
