@@ -10,8 +10,7 @@ from threading import Lock
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.security import hash_password, verify_password
-from app.db.models import User, UserCriteria
-from app.screener.criteria import criteria_to_json, default_criteria
+from app.db.models import User
 
 
 class UserExistsError(Exception):
@@ -63,19 +62,3 @@ def get_user(session_factory, user_id: int) -> dict | None:
     if user is None:
         return None
     return {"id": user.id, "username": user.username}
-
-
-def seed_default_criteria(session, user_id: int) -> UserCriteria:
-    """Create the Phase-1 defaults row on first read; idempotent."""
-    row = session.get(UserCriteria, user_id)
-    if row is None:
-        row = UserCriteria(
-            user_id=user_id,
-            criteria_json=criteria_to_json(default_criteria()),
-            thesis=None,
-            shortlist_size=10,
-            updated_at=_now(),
-        )
-        session.add(row)
-        session.flush()
-    return row

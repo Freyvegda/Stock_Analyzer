@@ -23,15 +23,22 @@ Single account in practice; multi-user-ready schema.
 | password_hash | String NOT NULL | `scrypt$n$r$p$salt$hash` (stdlib hashlib.scrypt) |
 | created_at | String NOT NULL | ISO date-time |
 
-### user_criteria (Phase 1.5)
-One row per user — the retired `screening.yaml`, per user.
+### screening_sets (Phase 1.7)
+Named screening criteria per user — the retired `user_criteria`, multiplied. Exactly one row
+per user is active; service code enforces the invariant.
 | Column | Type | Notes |
 |---|---|---|
-| user_id | Int PK, FK → users.id | one row per user |
+| id | Int PK autoincr | |
+| user_id | Int NOT NULL, indexed, FK → users.id | |
+| name | String NOT NULL | 1–60 chars, trimmed; unique per user (`uq_screening_sets_user_name`; case-insensitive enforced in service) |
 | criteria_json | Text NOT NULL | JSON array `[{key, enabled, value}]`; keys owned by `screener/catalog.py` |
-| thesis | Text? | free-text note, ≤ 500 chars |
+| thesis | Text? | free-text note per screen, ≤ 500 chars |
 | shortlist_size | Int NOT NULL default 10 | server-set; engine clamps to `min(value, 10)` |
+| is_active | Boolean NOT NULL default false | exactly one active per user (service-enforced) |
 | updated_at | String NOT NULL | ISO date-time |
+
+First read with no sets seeds `"Default"` (Phase-1 defaults, active). Runs execute the
+active set; `/stocks` verdicts and the stock report read its criteria.
 
 ### stocks
 Universe of Nifty-listed companies.
@@ -87,14 +94,18 @@ repeats on every view. Ratios stay in dated `fundamentals` rows.
 Upsert via `merge` on `symbol`; a failed fetch leaves the previous profile intact.
 
 ### screen_runs
-Audit trail of every screen execution, per user (Phase 1.5).
+Audit trail of every screen execution, per user, attributed to the screen it ran (Phase 1.7).
 | Column | Type | Notes |
 |---|---|---|
 | id | Int PK autoincr | |
 | run_date | String | ISO date |
-| user_id | Int NOT NULL, indexed, FK → users.id | run owner; read pattern `WHERE user_id = ? ORDER BY id DESC LIMIT 1` |
+| user_id | Int NOT NULL, indexed, FK → users.id | run owner |
+| set_id | Int?, indexed, FK → screening_sets.id | screen executed; NULLed when that screen is deleted (runs are kept) |
 | criteria_json | Text | verbatim criteria used — results reproducible |
 | shortlisted_json | Text | JSON array of {symbol, ratios, rank} |
+
+Read pattern: `WHERE user_id = ? AND set_id = ? ORDER BY id DESC LIMIT 1` (the active
+screen's latest run).
 
 ### documents
 Filing metadata; files on disk.

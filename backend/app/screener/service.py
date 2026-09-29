@@ -18,10 +18,14 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
-from app.auth.service import seed_default_criteria
 from app.data.provider import DataProvider
-from app.db.models import Fundamental, ScreenRun, Stock, UserCriteria
-from app.screener.criteria import criteria_from_json, criteria_to_json
+from app.db.models import Fundamental, ScreeningSet, ScreenRun, Stock
+from app.screener.criteria import (
+    ConfigError,
+    criteria_from_json,
+    criteria_to_json,
+    default_criteria,
+)
 from app.screener.engine import rank_shortlist, screen_rows
 from app.stock.store import trim_raw, upsert_profile
 
@@ -29,6 +33,18 @@ logger = logging.getLogger(__name__)
 
 # yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
 WORKERS = 8
+
+
+class SetNotFoundError(Exception):
+    """Raised when a screening set does not exist for the caller (404)."""
+
+
+class LastSetError(Exception):
+    """Raised when deleting the caller's last screening set (400)."""
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, dict | None, str | None]]:
@@ -205,32 +221,172 @@ def run_screen(
     }
 
 
+def _projection(row: ScreeningSet) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "criteria": criteria_from_json(row.criteria_json),
+        "thesis": row.thesis,
+        "shortlist_size": row.shortlist_size,
+        "is_active": bool(row.is_active),
+        "updated_at": row.updated_at,
+    }
+
+
+def _user_sets(session, user_id: int) -> list[ScreeningSet]:
+    return (
+        session.query(ScreeningSet)
+        .filter(ScreeningSet.user_id == user_id)
+        .order_by(ScreeningSet.updated_at.desc(), ScreeningSet.id.desc())
+        .all()
+    )
+
+
+def _seed_active_set(session, user_id: int) -> ScreeningSet:
+    """Return the caller's active set, seeding ``"Default"`` on first use and
+    repairing users whose sets exist but none is active."""
+    rows = _user_sets(session, user_id)
+    if not rows:
+        row = ScreeningSet(
+            user_id=user_id,
+            name="Default",
+            criteria_json=criteria_to_json(default_criteria()),
+            thesis=None,
+            shortlist_size=10,
+            is_active=True,
+            updated_at=_now(),
+        )
+        session.add(row)
+        session.flush()
+        return row
+    active = next((row for row in rows if row.is_active), None)
+    if active is None:
+        rows[0].is_active = True
+        session.flush()
+        active = rows[0]
+    return active
+
+
+def _require_set(session, user_id: int, set_id: int) -> ScreeningSet:
+    row = session.get(ScreeningSet, set_id)
+    if row is None or row.user_id != user_id:
+        raise SetNotFoundError(f"screening set {set_id} not found")
+    return row
+
+
+def _reject_duplicate_name(session, user_id: int, name: str, exclude_id: int | None = None) -> None:
+    needle = name.strip().lower()
+    for row in _user_sets(session, user_id):
+        if row.id != exclude_id and row.name.strip().lower() == needle:
+            raise ConfigError(f"a screen named {name!r} already exists")
+
+
+def list_sets(session_factory, user_id: int) -> list[dict]:
+    """All of the caller's screening sets, creation order; seeds defaults."""
+    with session_factory() as session:
+        _seed_active_set(session, user_id)
+        session.commit()
+        rows = (
+            session.query(ScreeningSet)
+            .filter(ScreeningSet.user_id == user_id)
+            .order_by(ScreeningSet.id.asc())
+            .all()
+        )
+        return [_projection(row) for row in rows]
+
+
+def get_active_set(session_factory, user_id: int) -> dict:
+    """The caller's active screening set; seeds ``"Default"`` when absent."""
+    with session_factory() as session:
+        row = _seed_active_set(session, user_id)
+        session.commit()
+        return _projection(row)
+
+
 def get_criteria(session_factory, user_id: int) -> dict:
-    """Caller's criteria; seeds Phase-1 defaults on first read. Corrupt JSON
-    (tampered DB) falls back to defaults rather than 500-ing."""
-    with session_factory() as session:
-        row = seed_default_criteria(session, user_id)
-        session.commit()
-        return {
-            "criteria": criteria_from_json(row.criteria_json),
-            "thesis": row.thesis,
-            "shortlist_size": row.shortlist_size,
-        }
+    """Active-set projection; kept for the stock report/universe consumers."""
+    return get_active_set(session_factory, user_id)
 
 
-def save_criteria(session_factory, user_id: int, criteria: list[dict], thesis: str | None) -> dict:
-    """Persist the caller's criteria. ``shortlist_size`` stays server-owned."""
+def create_set(
+    session_factory,
+    user_id: int,
+    name: str,
+    criteria: list[dict] | None,
+    thesis: str | None,
+) -> dict:
+    """Create a screen; copies the active set's criteria when none are given and
+    becomes the active screen."""
+    name = name.strip()
     with session_factory() as session:
-        row = seed_default_criteria(session, user_id)
-        row.criteria_json = criteria_to_json(criteria)
-        row.thesis = thesis
-        row.updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        active = _seed_active_set(session, user_id)
+        _reject_duplicate_name(session, user_id, name)
+        items = criteria if criteria is not None else criteria_from_json(active.criteria_json)
+        session.query(ScreeningSet).filter(ScreeningSet.user_id == user_id).update(
+            {ScreeningSet.is_active: False}
+        )
+        row = ScreeningSet(
+            user_id=user_id,
+            name=name,
+            criteria_json=criteria_to_json(items),
+            thesis=thesis,
+            shortlist_size=10,
+            is_active=True,
+            updated_at=_now(),
+        )
+        session.add(row)
         session.commit()
-        return {
-            "criteria": criteria_from_json(row.criteria_json),
-            "thesis": row.thesis,
-            "shortlist_size": row.shortlist_size,
-        }
+        session.refresh(row)
+        return _projection(row)
+
+
+def update_set(session_factory, user_id: int, set_id: int, changes: dict) -> dict:
+    """Patch ``name`` / ``criteria`` / ``thesis`` (keys present in ``changes``)."""
+    with session_factory() as session:
+        row = _require_set(session, user_id, set_id)
+        if "name" in changes and changes["name"] is not None:
+            name = str(changes["name"]).strip()
+            _reject_duplicate_name(session, user_id, name, exclude_id=set_id)
+            row.name = name
+        if "criteria" in changes and changes["criteria"] is not None:
+            row.criteria_json = criteria_to_json(changes["criteria"])
+        if "thesis" in changes:
+            row.thesis = changes["thesis"]
+        row.updated_at = _now()
+        session.commit()
+        return _projection(row)
+
+
+def delete_set(session_factory, user_id: int, set_id: int) -> None:
+    """Delete a screen; the last one is protected; runs keep their audit rows."""
+    with session_factory() as session:
+        rows = _user_sets(session, user_id)
+        row = _require_set(session, user_id, set_id)
+        if len(rows) <= 1:
+            raise LastSetError("the last screening set cannot be deleted")
+        was_active = bool(row.is_active)
+        session.delete(row)
+        session.query(ScreenRun).filter(
+            ScreenRun.user_id == user_id, ScreenRun.set_id == set_id
+        ).update({ScreenRun.set_id: None})
+        session.flush()
+        if was_active:
+            remaining = _user_sets(session, user_id)
+            remaining[0].is_active = True
+        session.commit()
+
+
+def activate_set(session_factory, user_id: int, set_id: int) -> dict:
+    """Make one set active, deactivating the caller's other sets."""
+    with session_factory() as session:
+        _seed_active_set(session, user_id)
+        row = _require_set(session, user_id, set_id)
+        session.query(ScreeningSet).filter(ScreeningSet.user_id == user_id).update(
+            {ScreeningSet.is_active: False}
+        )
+        row.is_active = True
+        session.commit()
+        return _projection(row)
 
 
 def latest_screen(session_factory, user_id: int) -> dict | None:
