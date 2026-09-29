@@ -76,7 +76,7 @@ frontend/src/
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene — lazy, WebGL-gated
+    ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene + RibbonRail — lazy, WebGL-gated
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
     ├── FundamentalNav.tsx   # floating glass side rail (Screen Criteria · Top 10 Results · Stocks)
@@ -85,8 +85,8 @@ frontend/src/
     ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
-    ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
-    ├── CriteriaDialog.tsx   # criteria editor subwindow
+    ├── CriteriaPanel.tsx    # active-screen badges (bookmark ribbons) + Edit Criteria
+    ├── CriteriaEditor.tsx   # dialog-free inline editor: category sub-accordions, criterion bookmarks, 3D ribbon rail
     ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes
     ├── StocksTable.tsx  # universe table: sortable columns, verdict chips, links
     └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})

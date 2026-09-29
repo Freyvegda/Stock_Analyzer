@@ -11,6 +11,8 @@
 
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -35,6 +37,8 @@ import {
 import { Bookmark, X } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import type { Criterion, RatioSpec, ScreeningSet } from '@/api/types'
+
+const RibbonRail = lazy(() => import('@/components/three/RibbonRail'))
 
 const OTHER_CATEGORY = 'Other'
 
@@ -225,6 +229,23 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
       setRows((prev) => [...prev, { key, enabled: true, value: '', bookmarked: false }])
     }
 
+    const bookmarkedItems = useMemo(
+      () =>
+        rows
+          .filter((row) => row.bookmarked)
+          .map((row) => ({ key: row.key, label: catalog.get(row.key)?.label ?? row.key })),
+      [rows, catalog],
+    )
+
+    function handleRibbonSelect(key: string) {
+      const category = categoryOf(key)
+      setBookmarkedOnly(false)
+      setExpanded((prev) => (prev.includes(category) ? prev : [...prev, category]))
+      window.requestAnimationFrame(() => {
+        document.querySelector(`[data-criterion="${key}"]`)?.scrollIntoView?.({ block: 'center' })
+      })
+    }
+
     const save = useCallback(async (): Promise<boolean> => {
       if (set === null || !dirty) return true
       const errors: Record<number, string> = {}
@@ -294,6 +315,11 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                 </Text>
               ) : (
                 <Stack gap={4}>
+                  {bookmarkedItems.length > 0 ? (
+                    <Suspense fallback={null}>
+                      <RibbonRail items={bookmarkedItems} onSelect={handleRibbonSelect} />
+                    </Suspense>
+                  ) : null}
                   <Flex justify="flex-end">
                     <Button
                       size="xs"
@@ -346,7 +372,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                                   const spec = catalog.get(row.key)
                                   const label = spec?.label ?? row.key
                                   return (
-                                    <div key={row.key}>
+                                    <div key={row.key} data-criterion={row.key}>
                                       <Flex align="center" gap={3} opacity={row.enabled ? 1 : 0.6}>
                                         <IconButton
                                           size="xs"

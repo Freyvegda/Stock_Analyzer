@@ -186,6 +186,14 @@ unchanged.
 - **Candle Ridge** (retired 2026-09-27): the stock detail hero was removed with its helpers
   and tests; the page is data-first again (description | verdict halves, then the chart).
   The retired implementation lived in `three/CandleRidge.tsx` + `three/ridgeGeometry.ts`.
+- **Ribbon Rail** (`components/three/RibbonRail.tsx`, 2026-09-29): bookmarked criteria as
+  low-poly sakura ribbons on one shared glass rail at the top of the inline criteria editor.
+  Each bookmark is a ribbon (label carried by the sr-only button list; the canvas mirrors it);
+  bookmarking drops a ribbon onto the rail and unbookmarking lets the rest reflow to close the
+  gap — one-shot easing per change, never a loop, so the whitelist above is unchanged.
+  Clicking a ribbon opens its category and scrolls the row into view. Gates: lazy chunk,
+  WebGL probe once per mount, desktop-only, static under reduced motion
+  (`data-motion="animated|static"`).
 - `Bonfire` (the signed-in background fire and the app's ember source) keeps the gates of the
   ambient field it replaced: lazy chunk, WebGL-gated, hidden below `md`, paused when hidden,
   frozen under reduced motion. Three.js must never appear in the initial bundle chunk.
