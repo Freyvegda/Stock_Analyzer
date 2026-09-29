@@ -1,5 +1,5 @@
 import app.auth.security as security
-from app.auth.security import hash_password, session_secret, verify_password
+from app.auth.security import auth_secret, hash_password, verify_password
 
 
 def test_hash_verify_round_trip():
@@ -20,12 +20,12 @@ def test_malformed_hash_returns_false():
     assert not verify_password("x", "not-a-hash")
 
 
-def test_session_secret_created_once_and_stable(tmp_path, monkeypatch):
-    monkeypatch.setattr(security, "SECRET_PATH", str(tmp_path / ".session_secret"))
-    first = session_secret()
+def test_auth_secret_created_once_and_stable(tmp_path, monkeypatch):
+    monkeypatch.setattr(security, "SECRET_PATH", str(tmp_path / ".auth_secret"))
+    first = auth_secret()
     assert first and len(first) >= 32
-    assert session_secret() == first
-    assert (tmp_path / ".session_secret").read_text(encoding="utf-8") == first
+    assert auth_secret() == first
+    assert (tmp_path / ".auth_secret").read_text(encoding="utf-8") == first
 
 
 import json

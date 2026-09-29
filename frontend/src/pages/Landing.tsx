@@ -1,8 +1,7 @@
-import { motion, useMotionValueEvent, useScroll, useSpring, useTransform } from 'motion/react'
-import { Suspense, lazy, useRef, useState } from 'react'
+import { motion, useMotionValueEvent, useScroll, useTransform } from 'motion/react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { Backdrop } from '@/components/Backdrop'
 import { useAuth } from '@/auth/AuthContext'
 import { TOWER_TIERS } from '@/content/tower'
 import { SCROLL_SPAN, stageProgress } from '@/components/three/pagodaScene'
@@ -18,6 +17,14 @@ import { cn } from '@/lib/utils'
  * the 3D scene samples it inside its frame loop, and the DOM subscribes to it
  * for the active stage index. Because neither owns the state, the tower and the
  * cards cannot disagree about which storey is open.
+ *
+ * Every stage is exactly one viewport tall, and each tier section is wrapped in
+ * a same-height `<div>`. That wrapper matters: a `sticky` element is bounded by
+ * its *parent*, and the parent here is `<main>` — the whole page. Without the
+ * wrapper the first tier pins at the top and never releases, so every later
+ * section stacks on top of it. The wrapper gives each storey its own containing
+ * block and exactly one stage of scroll, which is also what keeps the 3D scroll
+ * maths honest.
  */
 const Pagoda = lazy(() => import('@/components/three/Pagoda'))
 
@@ -31,32 +38,36 @@ export function Landing() {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const { scrollYProgress } = useScroll({ target: scrollRef, offset: ['start start', 'end end'] })
-  const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30, mass: 0.4 })
 
-  // The 3D needs a real number every frame; this is that number.
+  // The 3D needs a real number every frame; this is that number. Both consumers
+  // read the *same* unsprung value, so the tower can never lag the cards.
   const raw = useTransform(scrollYProgress, (v) => v)
 
   // The DOM only cares which stage is on screen, and that changes 7 times, not
-  // once per frame. Deriving the index from the same value is what keeps the
-  // two consumers honest.
+  // once per frame.
   const [activeStage, setActiveStage] = useState(0)
-  useMotionValueEvent(progress, 'change', (v) => {
+  useMotionValueEvent(raw, 'change', (v) => {
     const s = Math.min(SCROLL_SPAN, Math.floor(stageProgress(v)))
     setActiveStage((prev) => (prev === s ? prev : s))
   })
 
   const openTier = activeStage - 2
-  const heroOpacity = useTransform(raw, [0, 0.12, 0.22], [1, 1, 0])
+  const heroOpacity = useTransform(raw, [0, 0.1, 0.2], [1, 1, 0])
   const ctaOpacity = useTransform(raw, [0.86, 0.96], [0, 1])
   const ctaY = useTransform(raw, [0.86, 1], [24, 0])
 
+  // `hasWebGL` creates a canvas and gets a context. In the render body that is
+  // one leaked context per re-render — and this page re-renders on every stage
+  // change — until the browser drops the oldest and the canvas goes black.
+  const [webgl, setWebgl] = useState<boolean | null>(null)
+  useEffect(() => setWebgl(hasWebGL()), [])
+
   // Below `md` (and without WebGL, and under reduced motion) the story is told
   // by the DOM alone. Same content, no 3D chunk requested.
-  const showTower = isDesktop && !reduced && hasWebGL()
+  const showTower = isDesktop && !reduced && webgl === true
 
   return (
     <div ref={scrollRef} data-testid="landing" className="relative">
-      <Backdrop />
       {showTower ? (
         <Suspense fallback={null}>
           <Pagoda progress={raw} />
@@ -83,11 +94,11 @@ export function Landing() {
       </header>
 
       <main>
-        {/* Hero — a small tower at the foot of the screen. */}
-        <section className={cn(STAGE_H, 'relative flex flex-col items-center justify-end pb-16')}>
+        {/* Hero — copy on top, the small tower at the foot of the screen. */}
+        <section className={cn(STAGE_H, 'relative flex flex-col justify-between px-6 pt-24 pb-8')}>
           <motion.div
             style={reduced ? undefined : { opacity: heroOpacity }}
-            className="mx-auto max-w-2xl px-6 text-center"
+            className="mx-auto max-w-2xl text-center"
           >
             <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
               Read a company the way you would read its filings.
@@ -97,70 +108,75 @@ export function Landing() {
               your own criteria.
             </p>
           </motion.div>
-          <div className="mt-auto h-24 w-full" aria-hidden="true" />
+          <div className="h-40" aria-hidden="true" />
         </section>
 
         {/* Overview — the whole tower, all four storeys named. */}
-        <section className={cn(STAGE_H, 'flex items-center justify-center px-6')}>
-          <ol className="w-full max-w-2xl space-y-3">
-            {TOWER_TIERS.map((tier, i) => (
+        <section className={cn(STAGE_H, 'flex items-center px-6')}>
+          <ol className="mx-auto w-full max-w-2xl space-y-3">
+            {TOWER_TIERS.map((t, i) => (
               <li
-                key={tier.id}
+                key={t.id}
                 className={cn(
                   'flex items-baseline justify-between gap-4 border-l pl-4 transition-colors',
-                  activeStage >= 2 + i ? 'border-primary text-foreground' : 'border-border text-muted-foreground',
+                  activeStage >= 2 + i
+                    ? 'border-primary text-foreground'
+                    : 'border-border text-muted-foreground',
                 )}
               >
-                <span className="font-medium">{tier.heading}</span>
+                <span className="font-medium">{t.heading}</span>
                 <span className="text-xs text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
               </li>
             ))}
           </ol>
         </section>
 
-        {/* One section per storey. Pinned by CSS; the 3D reads the same value. */}
+        {/* One stage per storey. The wrapper is the containing block for the
+            sticky section inside it. */}
         {TOWER_TIERS.map((tier, i) => {
           const open = openTier === i
           return (
-            <section
-              key={tier.id}
-              data-testid={`tier-${tier.id}`}
-              data-open={open ? 'true' : 'false'}
-              className={cn(STAGE_H, 'sticky top-0 flex items-center px-6')}
-            >
-              <div
-                className={cn(
-                  'ml-auto w-full max-w-xl transition-all duration-200',
-                  showTower ? 'md:max-w-[46%]' : 'max-w-2xl mx-auto',
-                )}
+            <div key={tier.id} className={STAGE_H}>
+              <section
+                data-testid={'tier-' + tier.id}
+                data-open={open ? 'true' : 'false'}
+                className={cn(STAGE_H, 'sticky top-0 flex items-center px-6')}
               >
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                    {tier.heading}
-                  </h2>
-                  {tier.badge ? (
-                    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      {tier.badge}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-2 text-muted-foreground">{tier.tagline}</p>
-                <div className="mt-6 grid gap-3 sm:grid-cols-3 md:grid-cols-1">
-                  {tier.cards.map((card) => (
-                    <article key={card.title} className="glass-panel rounded-[--radius-lg] p-4">
-                      <h3 className="text-sm font-medium">{card.title}</h3>
-                      <p className="mt-1 text-sm text-muted-foreground">{card.body}</p>
-                    </article>
-                  ))}
-                </div>
-                <Link
-                  to={user ? tier.route : '/login'}
-                  className="mt-6 inline-block text-sm text-primary underline underline-offset-4"
+                <div
+                  className={cn(
+                    'ml-auto w-full max-w-xl transition-opacity duration-200',
+                    showTower ? 'md:max-w-[46%]' : 'mx-auto max-w-2xl',
+                    open ? 'opacity-100' : 'opacity-70',
+                  )}
                 >
-                  {user ? `Open ${tier.heading.toLowerCase()}` : 'Sign in to use it'}
-                </Link>
-              </div>
-            </section>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+                      {tier.heading}
+                    </h2>
+                    {tier.badge ? (
+                      <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                        {tier.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{tier.tagline}</p>
+                  <div className="mt-6 grid gap-3 sm:grid-cols-3 md:grid-cols-1">
+                    {tier.cards.map((card) => (
+                      <article key={card.title} className="glass-panel rounded-[--radius-lg] p-4">
+                        <h3 className="text-sm font-medium">{card.title}</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">{card.body}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <Link
+                    to={user ? tier.route : '/login'}
+                    className="mt-6 inline-block text-sm text-primary underline underline-offset-4"
+                  >
+                    {user ? 'Open it' : 'Sign in to use it'}
+                  </Link>
+                </div>
+              </section>
+            </div>
           )
         })}
 

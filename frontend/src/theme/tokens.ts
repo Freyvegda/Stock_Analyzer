@@ -299,6 +299,20 @@ export interface PagodaPalette {
   roof: string
   /** Eave trim, column and the finial. */
   trim: string
+  /** Stone base. */
+  plinth: string
+  /** The lantern's own emissive colour — the tower's light source at night. */
+  lantern: string
+  /** Veranda deck and railing. */
+  deck: string
+  /** The underside of an eave — the roof tile in shadow. */
+  soffit: string
+  /** Ambient term. Cool at night, near-white by day. */
+  ambient: string
+  /** Frontal warm fill. */
+  fill: string
+  /** The sun, by day. */
+  sun: string
 }
 
 /**
@@ -312,14 +326,34 @@ export interface PagodaPalette {
  */
 export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
   dark: {
-    body: '#2A1F27',
-    roof: '#6E3350',
+    // Moonlit: plum-ink plaster under a deep sakura roof, with warm lanterns
+    // doing the lighting. The trim is the brand hue because it is what the
+    // lanterns catch.
+    body: '#4C3A46',
+    roof: '#8E4470',
     trim: '#FFA9C6',
+    plinth: '#241A21',
+    lantern: '#FFB877',
+    deck: '#4A3641',
+    soffit: '#2A1C25',
+    ambient: '#5C6B93',
+    fill: '#FFA9C6',
+    sun: '#FFD9A8',
   },
   light: {
-    body: '#F0DDE5',
+    // Petal Paper, in daylight: the same building, sunlit. Plaster reads warm
+    // white, the tile keeps its sakura, and the sun is a touch above white so
+    // the eaves throw a legible shadow.
+    body: '#F5E7EC',
     roof: '#B0336A',
     trim: '#8C2753',
+    plinth: '#E2CBD5',
+    lantern: '#FFCE9A',
+    deck: '#EAD6DE',
+    soffit: '#C9A3B3',
+    ambient: '#FFF4F8',
+    fill: '#FFE7EF',
+    sun: '#FFF3E2',
   },
 }
 

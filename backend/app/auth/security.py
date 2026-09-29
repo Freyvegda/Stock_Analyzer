@@ -1,9 +1,9 @@
 """Auth primitives: scrypt password hashing, access-token signing, the auth secret.
 
-Budget ₹0 still holds for *usage* (no paid API keys); PyJWT is the one
+Budget 0 still holds for *usage* (no paid API keys); PyJWT is the one
 external auth dependency, added in Phase 1.8 to avoid hand-rolling HS256
 encoding, algorithm pinning and expiry checks. Password hashing stays stdlib
-(hashlib.scrypt) — there was no reason to move it.
+(hashlib.scrypt)  there was no reason to move it.
 
 Access tokens are HS256 JWTs signed with the persisted secret. Refresh tokens
 are *not* JWTs: they are opaque random strings stored hashed in `auth_sessions`,
@@ -104,11 +104,11 @@ def sign_access_token(user: dict, ttl_seconds: int = ACCESS_TTL_SECONDS) -> str:
 def decode_access_token(token: str) -> dict:
     """Return the token's claims, or raise `InvalidToken`.
 
-    Callers must not leak *why* it failed — a detail string is enough to
+    Callers must not leak *why* it failed  a detail string is enough to
     distinguish an expired token from a forged one.
     """
     try:
-        return jwt.decode(
+        claims = jwt.decode(
             token,
             auth_secret(),
             algorithms=[JWT_ALGORITHM],  # pinned: rejects alg:none and HS*/RS* swaps
@@ -119,3 +119,8 @@ def decode_access_token(token: str) -> dict:
         )
     except jwt.PyJWTError as exc:
         raise InvalidToken("Invalid or expired access token") from exc
+    # `require` only proves the claim is present, not that it says what we mean.
+    # A refresh token minted with typ="refresh" must never pass as an access token.
+    if claims.get("typ") != "access":
+        raise InvalidToken("Invalid or expired access token")
+    return claims

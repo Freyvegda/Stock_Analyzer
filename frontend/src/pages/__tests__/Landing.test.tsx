@@ -84,10 +84,10 @@ describe('Landing calls to action', () => {
     env.user = { id: 1, username: 'solo' }
     renderLanding()
     const [tier] = TOWER_TIERS
-    const link = screen.getByRole('link', {
-      name: new RegExp(`open ${tier.heading.toLowerCase()}`, 'i'),
-    })
-    expect(link.getAttribute('href')).toBe(tier.route)
+    // Every tier carries the same short CTA, so find them all and take the
+    // first: tiers render in array order, so index 0 is `tier.route`'s tier.
+    const links = screen.getAllByRole('link', { name: /^open it$/i })
+    expect(links[0].getAttribute('href')).toBe(tier.route)
   })
 
   it('offers the app directly to a signed-in user', () => {

@@ -57,16 +57,20 @@ def _bundle(user: dict) -> dict:
     }
 
 
-def _expired_cookie_response() -> Response:
-    """A throwaway response carrying a Set-Cookie that clears the refresh cookie.
+def _clear_refresh_cookie_header() -> dict[str, str]:
+    """A `Set-Cookie` header that expires the refresh cookie.
 
-    Needed on error paths: `set_cookie` on the injected `response` is lost when the
-    handler raises, because FastAPI builds a fresh response for the exception. The
-    error responses attach this one so a dead cookie is cleared either way.
+    Error paths need this: `set_cookie` on the injected `response` is discarded when
+    the handler raises, because FastAPI builds a fresh response for the exception.
+    FastAPI reads only `HTTPException.headers` when it renders an error, so the
+    header is attached there  `exc.response` is not a thing FastAPI looks at.
     """
-    response = Response()
-    response.delete_cookie(service.REFRESH_COOKIE, path="/")
-    return response
+    return {
+        "Set-Cookie": (
+            f"{service.REFRESH_COOKIE}=; Max-Age=0; Path=/; "
+            "HttpOnly; SameSite=strict"
+        )
+    }
 
 
 @router.get("/state")
@@ -74,7 +78,7 @@ def auth_state(request: Request) -> dict:
     """Public. Tells the login card whether to offer setup or login, and who is signed in.
 
     Resolving the user is best-effort: a missing or broken token is simply "not
-    signed in". This endpoint must never 401 — the login page calls it before it
+    signed in". This endpoint must never 401  the login page calls it before it
     has any credentials.
     """
     init_db()
@@ -104,7 +108,7 @@ def setup(payload: Credentials, response: Response) -> dict:
         # Raise through a real response so the raise-time cookie deletion below
         # survives: FastAPI's HTTPException discards the injected `response`.
         err = HTTPException(status_code=409, detail="Account already exists")
-        err.response = _expired_cookie_response()
+        err.headers = _clear_refresh_cookie_header()
         raise err from exc
     with SessionLocal() as session:
         service.sweep_sessions(session)  # a fresh account inherits nothing
@@ -139,7 +143,7 @@ def refresh(request: Request, response: Response) -> dict:
         # Clear the cookie on failure so a dead client stops retrying, and so a
         # rotation that killed the old token cannot be replayed from the jar.
         err = HTTPException(status_code=401, detail="Not authenticated")
-        err.response = _expired_cookie_response()
+        err.headers = _clear_refresh_cookie_header()
         raise err
     _set_refresh_cookie(response, replacement)
     return _bundle(user)
