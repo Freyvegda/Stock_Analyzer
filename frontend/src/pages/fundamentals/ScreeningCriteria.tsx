@@ -6,11 +6,11 @@
  */
 
 import { Suspense, lazy, useRef, useState } from 'react'
-import { Button, Flex, Text } from '@chakra-ui/react'
+import { Button, Box, Flex, Text } from '@chakra-ui/react'
 import { useOutletContext } from 'react-router-dom'
 import { CriteriaEditor, type CriteriaEditorHandle } from '@/components/CriteriaEditor'
 import { CriteriaPanel } from '@/components/CriteriaPanel'
-import { ScreenTabs } from '@/components/ScreenTabs'
+import { ScreenTabs, TABPANEL_ID, tabId } from '@/components/ScreenTabs'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { NumberTicker } from '@/components/ui/NumberTicker'
 import { Num } from '@/components/ui/Num'
@@ -110,6 +110,17 @@ export default function ScreeningCriteria() {
     await updateSet(activeSet.id, { criteria, thesis })
   }
 
+  /** Rename/create replace the active set object; a dirty draft must be saved
+   * (or fixed) first so edits never vanish silently. */
+  async function ensureDraftSaved() {
+    if (!dirty) return
+    const ok = await saveDraft()
+    if (!ok) {
+      setEditorOpen(true)
+      throw new Error('Fix the highlighted rows before switching actions')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Text as="h1" fontSize="xl" fontWeight="semibold">
@@ -123,9 +134,11 @@ export default function ScreeningCriteria() {
         busy={switching}
         onSelect={requestSwitch}
         onCreate={async (name) => {
+          await ensureDraftSaved()
           await createSet(name)
         }}
         onRename={async (set, name) => {
+          await ensureDraftSaved()
           await updateSet(set.id, { name })
         }}
         onDelete={async (set) => {
@@ -173,14 +186,20 @@ export default function ScreeningCriteria() {
         </Text>
       ) : null}
 
-      <CriteriaPanel
-        set={activeSet}
-        ratios={ratios}
-        onEdit={() => setEditorOpen(true)}
-        connected
-        onRetry={() => void reloadSets()}
-        error={setsError}
-      />
+      <Box
+        role="tabpanel"
+        id={TABPANEL_ID}
+        aria-labelledby={activeSet !== null ? tabId(activeSet.id) : undefined}
+      >
+        <CriteriaPanel
+          set={activeSet}
+          ratios={ratios}
+          onEdit={() => setEditorOpen(true)}
+          connected={sets.length > 0}
+          onRetry={() => void reloadSets()}
+          error={setsError}
+        />
+      </Box>
 
       <CriteriaEditor
         ref={editorRef}

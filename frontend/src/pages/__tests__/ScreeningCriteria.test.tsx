@@ -329,7 +329,7 @@ describe('ScreeningCriteria', () => {
     )
   })
 
-  it('creates a new screen from the inline picker', async () => {
+  it('creates a new screen from the inline draft tab', async () => {
     const setC: ScreeningSet = { ...setB, id: 3, name: 'Momentum', is_active: true }
     let setsRequests = 0
     mockedApi.get.mockImplementation((path: string) => {
@@ -349,9 +349,57 @@ describe('ScreeningCriteria', () => {
     renderFundamentals()
     await screen.findByRole('tab', { name: 'Quality' })
     await userEvent.click(screen.getByRole('button', { name: /new screen/i }))
-    await userEvent.type(screen.getByLabelText(/screen name/i), 'Momentum')
-    await userEvent.click(screen.getByRole('button', { name: /^create$/i }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'New screen name' }), 'Momentum{Enter}')
     await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/screen/sets', { name: 'Momentum' }))
     expect(await screen.findByRole('tab', { name: 'Momentum' })).toBeInTheDocument()
+  })
+
+  it('retries loading screens from the panel error', async () => {
+    let setsCalls = 0
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') {
+        setsCalls += 1
+        return setsCalls === 1
+          ? Promise.reject(new Error('sets exploded'))
+          : Promise.resolve([setA, setB])
+      }
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderFundamentals()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/sets exploded/)
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(await screen.findByRole('tab', { name: 'Default' })).toBeInTheDocument()
+  })
+
+  it('saves the draft before renaming a dirty screen', async () => {
+    mockLoads()
+    mockedApi.put.mockResolvedValue({
+      ...setA,
+      criteria: [
+        { key: 'pe', enabled: true, value: 18, bookmarked: false },
+        { key: 'roe', enabled: true, value: 15, bookmarked: false },
+      ],
+    })
+    renderFundamentals()
+    await screen.findByText('PE ≤ 25×')
+    await userEvent.click(screen.getByRole('button', { name: /edit criteria/i }))
+    const peInput = await screen.findByLabelText('PE value')
+    await userEvent.clear(peInput)
+    await userEvent.type(peInput, '18')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Rename Default' }))
+    const input = screen.getByRole('textbox', { name: 'Rename Default' })
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Core{Enter}')
+
+    await waitFor(() =>
+      expect(mockedApi.put).toHaveBeenCalledWith(
+        '/screen/sets/1',
+        expect.objectContaining({ criteria: expect.any(Array) }),
+      ),
+    )
+    await waitFor(() => expect(mockedApi.put).toHaveBeenCalledWith('/screen/sets/1', { name: 'Core' }))
   })
 })

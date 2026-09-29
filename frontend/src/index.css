@@ -471,6 +471,13 @@
     overflow-x: auto;
     scrollbar-width: thin;
     padding: 0 0.25rem;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 12px,
+      black calc(100% - 12px),
+      transparent
+    );
     mask-image: linear-gradient(
       to right,
       transparent,
@@ -478,6 +485,31 @@
       black calc(100% - 12px),
       transparent
     );
+  }
+
+  /* Hover/focus controls live OUTSIDE the role=tab element (a11y); the wrapper
+     reveals them, so they never intercept the tab's own activation. */
+  .tab-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+  }
+
+  .tab-controls {
+    position: absolute;
+    right: 0.15rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.05rem;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-vault);
+  }
+
+  .tab-wrap:hover .tab-controls,
+  .tab-wrap:focus-within .tab-controls {
+    opacity: 1;
   }
 
   .glass-tab {
@@ -500,9 +532,14 @@
     line-height: 1.25rem;
     cursor: pointer;
     transition:
-      background-color var(--duration-fast) var(--ease-vault),
       color var(--duration-fast) var(--ease-vault),
-      border-color var(--duration-fast) var(--ease-vault);
+      border-color var(--duration-fast) var(--ease-vault),
+      box-shadow var(--duration-fast) var(--ease-vault);
+  }
+
+  .glass-tab-draft {
+    border-style: dashed;
+    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
   }
 
   .glass-tab:hover {
@@ -605,7 +642,9 @@
 
   @media (prefers-reduced-motion: reduce) {
     .glass-nav,
-    .glass-nav-link {
+    .glass-nav-link,
+    .glass-tab,
+    .tab-controls {
       transition: none;
     }
 
