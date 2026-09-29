@@ -112,6 +112,23 @@ def test_screening_set_update_validates_criteria_and_name():
         )
 
 
+def test_criterion_bookmark_defaults_false():
+    from app.screener.criteria import CriterionItem
+
+    assert CriterionItem(key="pe", enabled=True, value=25).bookmarked is False
+
+
+def test_criteria_json_round_trips_bookmark():
+    items = criteria_from_json('[{"key": "pe", "enabled": true, "value": 25, "bookmarked": true}]')
+    assert items == [{"key": "pe", "enabled": True, "value": 25.0, "bookmarked": True}]
+    assert criteria_from_json(criteria_to_json(items)) == items
+
+
+def test_criteria_json_without_bookmark_defaults_false():
+    items = criteria_from_json('[{"key": "pe", "enabled": true, "value": 25}]')
+    assert items == [{"key": "pe", "enabled": True, "value": 25.0, "bookmarked": False}]
+
+
 def test_json_round_trip():
     items = [
         c.model_dump()

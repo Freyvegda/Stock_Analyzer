@@ -30,7 +30,7 @@ def test_create_screen_round_trip(client, sign_in):
     created = create_screen(client, "Quality", thesis="hi", criteria=[{"key": "pe", "enabled": True, "value": 15}])
     assert created["name"] == "Quality"
     assert created["is_active"] is True
-    assert created["criteria"] == [{"key": "pe", "enabled": True, "value": 15.0}]
+    assert created["criteria"] == [{"key": "pe", "enabled": True, "value": 15.0, "bookmarked": False}]
     body = client.get("/screen/sets").json()
     assert {s["name"]: s["is_active"] for s in body} == {"Default": False, "Quality": True}
 

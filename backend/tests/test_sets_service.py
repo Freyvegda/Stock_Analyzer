@@ -15,6 +15,11 @@ def make_user(test_db, username="alice"):
     return create_user(test_db, username, "password123")
 
 
+def with_flags(criteria):
+    """Stored criteria always echo an explicit bookmarked flag."""
+    return [{**item, "bookmarked": False} for item in criteria]
+
+
 def seed_and_get(test_db, user_id):
     service.list_sets(test_db, user_id)  # first read seeds "Default"
     return service.list_sets(test_db, user_id)
@@ -26,7 +31,7 @@ def test_first_read_seeds_default_active_set(test_db):
     assert [s["name"] for s in sets] == ["Default"]
     only = sets[0]
     assert only["is_active"] is True
-    assert only["criteria"] == default_criteria()
+    assert only["criteria"] == with_flags(default_criteria())
     assert only["shortlist_size"] == 10
     assert only["thesis"] is None
 
@@ -37,7 +42,7 @@ def test_create_set_copies_active_criteria_and_becomes_active(test_db):
     created = service.create_set(test_db, user["id"], "Quality", None, "high roe")
     assert created["name"] == "Quality"
     assert created["is_active"] is True
-    assert created["criteria"] == default_criteria()
+    assert created["criteria"] == with_flags(default_criteria())
     assert created["thesis"] == "high roe"
     sets = service.list_sets(test_db, user["id"])
     assert {s["name"]: s["is_active"] for s in sets} == {"Default": False, "Quality": True}
@@ -47,7 +52,7 @@ def test_create_set_with_explicit_criteria(test_db):
     user = make_user(test_db)
     criteria = [{"key": "pe", "enabled": True, "value": 15.0}]
     created = service.create_set(test_db, user["id"], "Cheap", criteria, None)
-    assert created["criteria"] == criteria
+    assert created["criteria"] == with_flags(criteria)
 
 
 def test_activate_switches_single_active(test_db):
@@ -70,7 +75,7 @@ def test_update_set_changes_fields_and_clears_thesis(test_db):
         test_db, user["id"], created["id"], {"criteria": criteria, "thesis": None}
     )
     assert updated["name"] == "Quality"
-    assert updated["criteria"] == criteria
+    assert updated["criteria"] == with_flags(criteria)
     assert updated["thesis"] is None
 
 

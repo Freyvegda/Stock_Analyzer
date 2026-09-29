@@ -40,6 +40,7 @@ class CriterionItem(BaseModel):
     key: str
     enabled: bool
     value: float = Field(allow_inf_nan=False)
+    bookmarked: bool = False
 
     @field_validator("key")
     @classmethod

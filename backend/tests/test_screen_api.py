@@ -117,7 +117,9 @@ def test_run_uses_caller_criteria_and_stores_snapshot(client, sign_in, provider,
     with test_db() as session:
         run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
         assert run.user_id == user["id"]
-        assert json.loads(run.criteria_json) == default_criteria()
+        assert json.loads(run.criteria_json) == [
+            {**criterion, "bookmarked": False} for criterion in default_criteria()
+        ]
 
 
 def test_latest_is_per_user(client, sign_in, provider, test_db):
