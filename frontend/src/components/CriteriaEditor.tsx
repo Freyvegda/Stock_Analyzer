@@ -2,11 +2,14 @@
  * Inline criteria editor — the dialog-free replacement for CriteriaDialog.
  *
  * Outer accordion (`open` controlled by the page's Edit Criteria button) holds
- * one sub-accordion per catalog category; every category starts expanded so the
- * complete table shows at once. Rows toggle/edit thresholds per ratio, each
- * category has its own "add" combobox, and the per-screen thesis sits at the
- * bottom. Save validates in place; the page drives Run through the imperative
- * `save()` handle so a dirty draft is persisted before a run.
+ * the rotary category dial, the bookmarked-criteria ribbon rail and the draft's
+ * own controls. The dial shows one category at a time: its wedge ring turns the
+ * chosen category under the bottom notch and that category's criterion cards
+ * (plus its "add" combobox) render beside it. The enabled-ratio summary lives in
+ * the CriteriaPanel above, which stays the cross-category view. Rows toggle/edit
+ * thresholds per ratio and the per-screen thesis sits at the bottom. Save
+ * validates in place; the page drives Run through the imperative `save()` handle
+ * so a dirty draft is persisted before a run.
  */
 
 import {
@@ -17,7 +20,6 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
-  useRef,
   useState,
 } from 'react'
 import {
@@ -33,6 +35,7 @@ import {
   Textarea,
 } from '@chakra-ui/react'
 import { ApiError } from '@/api/client'
+import { CategoryDial } from '@/components/CategoryDial'
 import { CriterionCard } from '@/components/CriterionCard'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import type { Criterion, RatioSpec, ScreeningSet } from '@/api/types'
@@ -154,6 +157,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
     const [formError, setFormError] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
     const [bookmarkedOnly, setBookmarkedOnly] = useState(false)
+    const [pick, setPick] = useState<string | null>(null)
     const reduced = usePrefersReducedMotion()
 
     // Reset the draft whenever the source set changes (activation, save echo,
@@ -194,17 +198,53 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
       return order
     }, [ratios, rows, catalog])
 
-    // Every category starts expanded; a category that appears later (unknown
-    // stored keys → "Other") auto-expands too. Manual collapses stick: known
-    // category names are only added once.
-    const knownCategories = useRef<Set<string>>(new Set())
-    const [expanded, setExpanded] = useState<string[]>([])
-    useEffect(() => {
-      const fresh = categories.filter((category) => !knownCategories.current.has(category))
-      if (fresh.length === 0) return
-      for (const category of fresh) knownCategories.current.add(category)
-      setExpanded((prev) => [...prev, ...fresh])
-    }, [categories])
+    // A category with no draft rows still gets a wedge (that is where its "add"
+    // combobox lives); the hub tally reads 0/N.
+    const stats = useMemo(() => {
+      const counts = new Map<string, { enabled: number; total: number }>(
+        categories.map((category) => [category, { enabled: 0, total: 0 }]),
+      )
+      for (const row of rows) {
+        const category = categoryOf(row.key)
+        const count = counts.get(category) ?? { enabled: 0, total: 0 }
+        count.total += 1
+        if (row.enabled) count.enabled += 1
+        counts.set(category, count)
+      }
+      return counts
+    }, [categories, rows, categoryOf])
+
+    // The dial only carries selectable categories: with the bookmark filter on,
+    // categories that hold no bookmark drop out of the ring.
+    const dialCategories = useMemo(
+      () =>
+        bookmarkedOnly
+          ? categories.filter((category) =>
+              rows.some((row) => row.bookmarked && categoryOf(row.key) === category),
+            )
+          : categories,
+      [bookmarkedOnly, categories, rows, categoryOf],
+    )
+
+    // Derived, not stored: the pick survives renders, but a category that left
+    // the ring (or a draft that arrived without rows) falls back to the first
+    // category holding something.
+    const fallback = useMemo(() => {
+      const withRows = dialCategories.find((category) => (stats.get(category)?.total ?? 0) > 0)
+      return withRows ?? dialCategories[0] ?? null
+    }, [dialCategories, stats])
+    const selected =
+      pick !== null && dialCategories.includes(pick) ? pick : fallback
+
+    const segments = useMemo(
+      () =>
+        dialCategories.map((category) => ({
+          category,
+          enabled: stats.get(category)?.enabled ?? 0,
+          total: stats.get(category)?.total ?? 0,
+        })),
+      [dialCategories, stats],
+    )
 
     function toggleRow(key: string, enabled: boolean) {
       setRows((prev) => prev.map((row) => (row.key === key ? { ...row, enabled } : row)))
@@ -238,9 +278,8 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
     )
 
     function handleRibbonSelect(key: string) {
-      const category = categoryOf(key)
       setBookmarkedOnly(false)
-      setExpanded((prev) => (prev.includes(category) ? prev : [...prev, category]))
+      setPick(categoryOf(key))
       window.requestAnimationFrame(() => {
         document.querySelector(`[data-criterion="${key}"]`)?.scrollIntoView?.({ block: 'center' })
       })
@@ -287,11 +326,26 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
 
     useImperativeHandle(ref, () => ({ save }), [save])
 
-    const visibleCategories = bookmarkedOnly
-      ? categories.filter((category) =>
-          rows.some((row) => row.bookmarked && categoryOf(row.key) === category),
-        )
-      : categories
+    const entries = useMemo(
+      () =>
+        rows
+          .map((row, index) => ({ row, index }))
+          .filter(({ row }) => categoryOf(row.key) === selected)
+          .filter(({ row }) => !bookmarkedOnly || row.bookmarked)
+          .sort((a, b) => Number(b.row.bookmarked) - Number(a.row.bookmarked)),
+      [rows, categoryOf, selected, bookmarkedOnly],
+    )
+
+    const options = useMemo(
+      () =>
+        selected === null
+          ? []
+          : ratios.filter(
+              (ratio) =>
+                ratio.category === selected && !rows.some((row) => row.key === ratio.key),
+            ),
+      [ratios, selected, rows],
+    )
 
     return (
       <Accordion.Root
@@ -300,14 +354,17 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
         value={open ? ['editor'] : []}
         onValueChange={(details) => onOpenChange(details.value.includes('editor'))}
       >
-        <Accordion.Item value="editor" borderWidth="1px" borderColor="border" rounded="lg" bg="bg.panel">
-          <Accordion.ItemTrigger px={4} py={3}>
+        <Accordion.Item
+          value="editor"
+          className="rounded-b-lg border border-t-0 border-border bg-card"
+        >
+          <Accordion.ItemTrigger className="px-4 py-4">
             <Text flex="1" fontSize="sm" fontWeight="semibold">
               Criteria{set !== null ? ` · ${set.name}` : ''}
             </Text>
             <Accordion.ItemIndicator />
           </Accordion.ItemTrigger>
-          <Accordion.ItemContent px={4} pb={4}>
+          <Accordion.ItemContent className="px-4 pt-1 pb-5">
             <Accordion.ItemBody>
               {set === null ? (
                 <Text fontSize="sm" color="fg.muted">
@@ -331,78 +388,54 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                       Bookmarked only
                     </Button>
                   </Flex>
-                  {bookmarkedOnly && visibleCategories.length === 0 ? (
+
+                  {selected === null ? (
                     <Text fontSize="sm" color="fg.muted">
                       No bookmarked criteria yet.
                     </Text>
                   ) : (
-                  <Accordion.Root
-                    multiple
-                    value={expanded}
-                    onValueChange={(details) => setExpanded(details.value)}
-                  >
-                    {visibleCategories.map((category) => {
-                      const entries = rows
-                        .map((row, index) => ({ row, index }))
-                        .filter(({ row }) => categoryOf(row.key) === category)
-                      const orderedEntries = entries
-                        .filter(({ row }) => !bookmarkedOnly || row.bookmarked)
-                        .sort((a, b) => Number(b.row.bookmarked) - Number(a.row.bookmarked))
-                      const enabledCount = entries.filter(({ row }) => row.enabled).length
-                      const options = ratios.filter(
-                        (ratio) =>
-                          ratio.category === category &&
-                          !rows.some((row) => row.key === ratio.key),
-                      )
-                      return (
-                        <Accordion.Item key={category} value={category}>
-                          <Accordion.ItemTrigger py={2}>
-                            <Text flex="1" fontSize="sm">
-                              {category}
-                            </Text>
-                            <Text fontSize="xs" color="fg.muted" mr={2}>
-                              {enabledCount}/{entries.length}
-                            </Text>
-                            <Accordion.ItemIndicator />
-                          </Accordion.ItemTrigger>
-                          <Accordion.ItemContent pb={2}>
-                            <Accordion.ItemBody>
-                              <Box className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                {orderedEntries.map(({ row, index }) => {
-                                  const spec = catalog.get(row.key)
-                                  const label = spec?.label ?? row.key
-                                  return (
-                                    <CriterionCard
-                                      key={row.key}
-                                      row={row}
-                                      spec={spec}
-                                      label={label}
-                                      error={rowErrors[index]}
-                                      index={index}
-                                      reduced={reduced}
-                                      onToggleEnabled={(enabled) => toggleRow(row.key, enabled)}
-                                      onChangeValue={(value) => setRowValue(row.key, value)}
-                                      onToggleBookmark={() => toggleBookmark(row.key)}
-                                      onRemove={() => removeRow(row.key)}
-                                    />
-                                  )
-                                })}
-                                {options.length > 0 || category === OTHER_CATEGORY ? (
-                                  <Box className="glass-card glass-card-add" p={3}>
-                                    <AddCriterion
-                                      category={category}
-                                      options={options}
-                                      onAdd={addRatio}
-                                    />
-                                  </Box>
-                                ) : null}
-                              </Box>
-                            </Accordion.ItemBody>
-                          </Accordion.ItemContent>
-                        </Accordion.Item>
-                      )
-                    })}
-                  </Accordion.Root>
+                    <Flex gap={5} align="flex-start" direction={{ base: 'column', lg: 'row' }}>
+                      <Box flexShrink={0} w={{ base: '100%', lg: '15rem' }} pt={1}>
+                        <CategoryDial
+                          segments={segments}
+                          value={selected}
+                          onValueChange={setPick}
+                          reduced={reduced}
+                        />
+                      </Box>
+                      <Box flex="1" minW={0}>
+                        <Box className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          {entries.map(({ row, index }) => {
+                            const spec = catalog.get(row.key)
+                            const label = spec?.label ?? row.key
+                            return (
+                              <CriterionCard
+                                key={row.key}
+                                row={row}
+                                spec={spec}
+                                label={label}
+                                error={rowErrors[index]}
+                                index={index}
+                                reduced={reduced}
+                                onToggleEnabled={(enabled) => toggleRow(row.key, enabled)}
+                                onChangeValue={(value) => setRowValue(row.key, value)}
+                                onToggleBookmark={() => toggleBookmark(row.key)}
+                                onRemove={() => removeRow(row.key)}
+                              />
+                            )
+                          })}
+                          {options.length > 0 || selected === OTHER_CATEGORY ? (
+                            <Box className="glass-card glass-card-add" p={3}>
+                              <AddCriterion
+                                category={selected}
+                                options={options}
+                                onAdd={addRatio}
+                              />
+                            </Box>
+                          ) : null}
+                        </Box>
+                      </Box>
+                    </Flex>
                   )}
 
                   <Field.Root>

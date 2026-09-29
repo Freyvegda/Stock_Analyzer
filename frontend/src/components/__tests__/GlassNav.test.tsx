@@ -72,6 +72,25 @@ describe('GlassNav', () => {
     expect(screen.getByRole('combobox', { name: 'Search stocks' })).toBeInTheDocument()
   })
 
+  it('keeps the links, the search and the account cluster on one row', () => {
+    renderNav()
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
+    expect(nav).toHaveClass('lg:flex-nowrap')
+    expect(nav).not.toHaveClass('md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]')
+
+    const [links, account] = Array.from(nav.children)
+    expect(links).toContainElement(screen.getByRole('link', { name: 'Documents' }))
+    expect(links).toContainElement(screen.getByText('STOCK ANALYZER'))
+    expect(account).toContainElement(screen.getByTestId('nav-search'))
+    expect(account).toContainElement(screen.getByText('solo'))
+    expect(account).toContainElement(screen.getByRole('button', { name: 'Log out' }))
+
+    // The search takes the row's spare width (capped) and keeps breathing room
+    // from the username; it stops being the widest thing before the row wraps.
+    const search = screen.getByTestId('nav-search').parentElement
+    expect(search).toHaveClass('flex-1', 'min-w-[12rem]', 'lg:max-w-[24rem]')
+  })
+
   it('keeps sheen off without a fine pointer (jsdom default)', () => {
     renderNav()
     expect(screen.getByTestId('glass-nav')).toHaveAttribute('data-sheen', 'off')

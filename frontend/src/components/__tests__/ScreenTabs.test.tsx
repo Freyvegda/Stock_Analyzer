@@ -77,6 +77,12 @@ describe('ScreenTabs', () => {
     expect(screen.getByRole('tab', { name: 'Quality' })).not.toHaveAttribute('data-dirty')
   })
 
+  it('reserves room beside the label for the rename and close controls', () => {
+    renderTabs()
+    expect(screen.getByRole('tab', { name: 'Default' })).toHaveClass('pr-12')
+    expect(screen.getByRole('tab', { name: 'Quality' })).toHaveClass('pr-7')
+  })
+
   it('creates a screen by typing in a new draft tab', async () => {
     const { onCreate } = renderTabs()
     await userEvent.click(screen.getByRole('button', { name: /new screen/i }))

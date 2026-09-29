@@ -5,12 +5,12 @@
 ## Purpose
 
 React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (Fundamental Analysis · Documents · Model & Backtest); Fundamental Analysis carries its own side rail:
-1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: Chrome-style glass tabs for saved screens (`GET /screen/sets`; inline new/rename/close, one active, dirty dot), active-screen badges, dialog-free inline criteria editor (category sub-accordions, per-criterion bookmark ribbons + 3D ribbon rail, thesis), Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). `/fundamentals/top10`: the active screen's latest run (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
+1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: Chrome-style glass tabs for saved screens (`GET /screen/sets`; inline new/rename/close, one active, dirty dot) sitting in ONE card stack with the active screen's enabled-ratio badges and the dialog-free inline criteria editor (rotor category dial, one category at a time, per-criterion bookmark ribbons + 3D ribbon rail, thesis), then the Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). The badge row is the cross-category summary — the dial shows one category at a time. `/fundamentals/top10`: the active screen's latest run (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
 2. **Stock detail** (`/stock/:symbol`) — two equal-height halves (company description, clipped with "More" opening the full profile dialog | per-user verdict with score and criteria checks), then the price chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), then main fundamental ratios, "What it has" (market cap first), "What it's done" and all other ratios; Refresh button in the header
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
 
-The navbar also carries a **stock search** (`components/NavSearch.tsx`): an always-visible glass bar (no icon trigger; Ctrl/Cmd+K focuses it), lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
+The navbar also carries a **stock search** (`components/NavSearch.tsx`): an always-visible glass bar (no icon trigger; Ctrl/Cmd+K focuses it), lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`. It sits in the account cluster on the same row as the nav links (`lg:flex-nowrap`, `h-10`, 12rem–24rem wide, `gap-3` from the username); below `lg` the cluster takes its own full-width row.
 
 Dense, tabular, dark-themed. This is a tool, not a marketing site.
 
@@ -86,7 +86,8 @@ frontend/src/
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
     ├── CriteriaPanel.tsx    # active-screen badges (bookmark ribbons) + Edit Criteria
-    ├── CriteriaEditor.tsx   # dialog-free inline editor: category sub-accordions, criterion flashcards, 3D ribbon rail
+    ├── CriteriaEditor.tsx   # dialog-free inline editor: rotor category dial, criterion flashcards, 3D ribbon rail
+    ├── CategoryDial.tsx     # rotary "dialling telephone" category selector (plate, rotor, finger holes, hub)
     ├── CriterionCard.tsx    # one criterion as a glass flashcard (ribbon, switch, value chip, remove)
     ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (draft tab, rename-in-place, dirty dot)
     ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes

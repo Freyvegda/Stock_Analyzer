@@ -1,3 +1,10 @@
+/**
+ * Active screen's enabled-ratio summary — the cross-category view above the
+ * inline editor (the editor shows one category at a time). The owning page
+ * renders it inside the merged tabs+panel shell, so this component paints no
+ * frame of its own.
+ */
+
 import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from '@chakra-ui/react'
 import { Bookmark } from 'lucide-react'
 import type { RatioSpec, ScreeningSet } from '@/api/types'
@@ -18,14 +25,12 @@ export function CriteriaPanel({
   set,
   ratios,
   onEdit,
-  connected = false,
   onRetry,
   error = null,
 }: {
   set: ScreeningSet | null
   ratios: RatioSpec[]
   onEdit: () => void
-  connected?: boolean
   onRetry?: () => void
   error?: string | null
 }) {
@@ -34,15 +39,7 @@ export function CriteriaPanel({
   const bookmarked = enabled.filter((criterion) => criterion.bookmarked).length
 
   return (
-    <Box
-      borderWidth="1px"
-      borderColor="border"
-      rounded="lg"
-      borderTopWidth={connected ? '0px' : '1px'}
-      borderTopRadius={connected ? 'none' : 'lg'}
-      p={4}
-      bg="bg.panel"
-    >
+    <Box>
       <Flex justify="space-between" align="center" mb={2} gap={4}>
         <Box>
           <Text fontWeight="semibold" fontSize="sm">

@@ -122,94 +122,106 @@ export default function ScreeningCriteria() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <Text as="h1" fontSize="xl" fontWeight="semibold">
         Screening Criteria
       </Text>
 
-      <ScreenTabs
-        sets={sets}
-        active={activeSet}
-        dirty={dirty}
-        busy={switching}
-        onSelect={requestSwitch}
-        onCreate={async (name) => {
-          await ensureDraftSaved()
-          await createSet(name)
-        }}
-        onRename={async (set, name) => {
-          await ensureDraftSaved()
-          await updateSet(set.id, { name })
-        }}
-        onDelete={async (set) => {
-          if (set.id === activeSet?.id) setEditorOpen(false)
-          await deleteSet(set.id)
-        }}
-      />
-
-      {pendingSwitch !== null ? (
-        <Flex
-          role="alert"
-          align="center"
-          gap={3}
-          wrap="wrap"
-          borderWidth="1px"
-          borderColor="border"
-          rounded="lg"
-          px={4}
-          py={3}
-          bg="bg.panel"
+      <div>
+        <Box
+          data-testid="criteria-shell"
+          className="overflow-hidden rounded-t-lg border border-b-0 border-border bg-card"
         >
-          <Text fontSize="sm" flex="1">
-            Unsaved changes — save them before switching to {pendingSwitch.name}?
-          </Text>
-          <Button size="sm" colorPalette="sakura" loading={switching} onClick={() => void saveAndSwitch()}>
-            Save &amp; switch
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={switching}
-            onClick={() => void doActivate(pendingSwitch)}
+          <Box className="px-4 pt-4">
+            <ScreenTabs
+              sets={sets}
+              active={activeSet}
+              dirty={dirty}
+              busy={switching}
+              onSelect={requestSwitch}
+              onCreate={async (name) => {
+                await ensureDraftSaved()
+                await createSet(name)
+              }}
+              onRename={async (set, name) => {
+                await ensureDraftSaved()
+                await updateSet(set.id, { name })
+              }}
+              onDelete={async (set) => {
+                if (set.id === activeSet?.id) setEditorOpen(false)
+                await deleteSet(set.id)
+              }}
+            />
+          </Box>
+
+          <Box
+            role="tabpanel"
+            id={TABPANEL_ID}
+            aria-labelledby={activeSet !== null ? tabId(activeSet.id) : undefined}
+            className="px-4 pt-5 pb-5"
           >
-            Discard &amp; switch
-          </Button>
-          <Button size="sm" variant="ghost" disabled={switching} onClick={() => setPendingSwitch(null)}>
-            Cancel
-          </Button>
-        </Flex>
-      ) : null}
+            <CriteriaPanel
+              set={activeSet}
+              ratios={ratios}
+              onEdit={() => setEditorOpen(true)}
+              onRetry={() => void reloadSets()}
+              error={setsError}
+            />
+          </Box>
+        </Box>
 
-      {switchError !== null ? (
-        <Text role="alert" color="fg.error" fontSize="sm">
-          {switchError}
-        </Text>
-      ) : null}
+        {pendingSwitch !== null ? (
+          <Flex
+            role="alert"
+            align="center"
+            gap={3}
+            wrap="wrap"
+            borderWidth="1px"
+            borderColor="border"
+            rounded="lg"
+            px={4}
+            py={3}
+            my={3}
+            bg="bg.panel"
+          >
+            <Text fontSize="sm" flex="1">
+              Unsaved changes — save them before switching to {pendingSwitch.name}?
+            </Text>
+            <Button size="sm" colorPalette="sakura" loading={switching} onClick={() => void saveAndSwitch()}>
+              Save &amp; switch
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={switching}
+              onClick={() => void doActivate(pendingSwitch)}
+            >
+              Discard &amp; switch
+            </Button>
+            <Button size="sm" variant="ghost" disabled={switching} onClick={() => setPendingSwitch(null)}>
+              Cancel
+            </Button>
+          </Flex>
+        ) : null}
 
-      <Box
-        role="tabpanel"
-        id={TABPANEL_ID}
-        aria-labelledby={activeSet !== null ? tabId(activeSet.id) : undefined}
-      >
-        <CriteriaPanel
+        {switchError !== null ? (
+          <Text role="alert" color="fg.error" fontSize="sm" my={3}>
+            {switchError}
+          </Text>
+        ) : null}
+
+        {/* Flush against the shell: the editor's accordion item drops its top
+            edge, so tabs → criteria summary → editor read as one card stack. */}
+        <CriteriaEditor
+          ref={editorRef}
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
           set={activeSet}
           ratios={ratios}
-          onEdit={() => setEditorOpen(true)}
-          connected={sets.length > 0}
-          onRetry={() => void reloadSets()}
-          error={setsError}
+          onSave={handleSave}
+          onDirtyChange={setDirty}
         />
-      </Box>
-
-      <CriteriaEditor
-        ref={editorRef}
-        open={editorOpen}
-        onOpenChange={setEditorOpen}
-        set={activeSet}
-        ratios={ratios}
-        onSave={handleSave}
-        onDirtyChange={setDirty}
-      />
+      </div>
 
       <BlurFade>
         <div className="relative overflow-hidden rounded-lg border border-border bg-card p-4">

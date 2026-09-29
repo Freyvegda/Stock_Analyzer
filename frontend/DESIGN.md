@@ -104,6 +104,10 @@ Signatures (the whole inventory):
 8. Row entrance — first load only: 12ms stagger, cap 8 rows; sorting/filtering is instant.
 9. Navbar — pointer sheen, hover brighten, spring active pill, one-shot entrance; no tilt or
    movement on pointer move (see the navbar section).
+10. Category dial — the criteria editor's rotor turns under its finger stop with a slight
+    overshoot (420 ms, `cubic-bezier(0.34, 1.32, 0.5, 1)` — the one sanctioned overshoot, a
+    real dial snapping home); the plate enters with a shallow perspective tilt. A turn is a
+    selection response, not a loop.
 
 **Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
 last-run status dot pulse, Bonfire flame + embers (signed-in app), Sakura Garden falling
@@ -140,11 +144,30 @@ and the theme toggle.
   ringed; an unsaved draft marks the active tab with a sakura dot plus an sr-only
   "(unsaved changes)" description. Naming happens inside the strip: `+` spawns a dashed draft
   tab whose textbox is temporary (strict tablist semantics trade-off, accepted), the pencil
-  flips the active tab into rename-in-place. No new colours, no loops.
+  flips the active tab into rename-in-place. Inactive labels sit brighter than muted body text
+  (`foreground` 68% mixed with `muted-foreground`) so a resting tab still reads as available.
+  Rename and close controls are **always visible** (hover only brightens them) and each tab
+  reserves their width — `pr-12` on the active tab for both, `pr-7` elsewhere for close only —
+  so a control never lands on the label. No new colours, no loops.
 - Criterion flashcards: `.glass-card` continues the same recipe (55% card → 40% background
   gradient, inset top highlight, soft shadow); hover/focus-within brighten toward sakura;
   bookmarked cards carry a 2px sakura left edge; disabled cards dim with a dashed border; the
   editor's add tile is the dashed variant.
+- Criteria stack and rotor dial (2026-09-29/30): the screen tab strip, the enabled-ratio
+  summary and the criteria editor read as ONE card stack — the shell owns the frame, keeps a
+  small gap between the tab row and the summary, and drops its bottom edge; the editor
+  accordion drops its top edge. Breathing room is deliberate on a 4px grid: page title →
+  stack 24px, tab row inset 16px, tab row → summary 20px, editor trigger 16px. The dial (`.dial-plate`/`.dial-rotor`/`.dial-wedge`/
+  `.dial-hole`) is the "dialling telephone" control: a raised glass plate carrying a short,
+  fat rotor ring cut into one wedge per category, a recessed finger hole per wedge, a fixed
+  finger-stop notch at 6 o'clock and a hub that names the chosen category. The rotor is a
+  plain element turned by a **CSS transform** — rotating an SVG `<g>` repaints geometry every
+  frame, which is what made the first cut choppy — with `will-change: transform` and the
+  overshoot curve above. Wedges tint toward sakura on hover and hold a 22% wash plus a soft
+  glow while chosen; the enabled share is a sakura arc just inside the rim. Focus-visible on a
+  wedge strokes the wedge itself: `outline` paints a rectangle around an SVG path's bounding
+  box, which read as a stray square around the dial. Everything is static under reduced
+  motion (no entrance, instant turn).
 - Editor motion: the add-criterion dropdown enters with the nav-search recipe
   (`.combobox-pop`: rotateX 8→0 + fade 200 ms, 16 ms option stagger), accordion content
   animates height + fade 200 ms (`--height` keyframes), flashcards stagger 12 ms (cap 8). All
@@ -156,7 +179,13 @@ and the theme toggle.
   inset top highlight; `:hover`/`:focus-within` brighten the border toward sakura (colour
   only). Always visible at every width (own row on narrow screens; no icon trigger), and
   Ctrl/Cmd+K focuses it. The results panel (`.glass-panel`) keeps the perspective entrance
-  and pointer sheen described above.
+  and pointer sheen described above, and spans the field's width.
+- Nav layout: brand + links, then the search, then the account cluster — one row (`lg:flex-nowrap`),
+  right-aligned as a group. The search takes the row's spare width, capped at 24rem and floor-ed at
+  12rem, so it stays the biggest thing in the capsule without pushing the row into a second line;
+  below `lg` the cluster moves to a second, full-width row. It is never centred: the capsule's
+  centre is not a fixed landmark when the link labels change length, and a centred column pushed
+  the links into a wrapped second line.
 
 ### Fundamentals side rail
 

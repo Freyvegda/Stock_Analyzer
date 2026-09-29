@@ -202,7 +202,7 @@ export function ScreenTabs({
                     tabIndex={tabIndex}
                     data-active={isActive ? 'true' : 'false'}
                     data-dirty={isActive && dirty ? 'true' : undefined}
-                    className="glass-tab"
+                    className={isActive ? 'glass-tab pr-12' : 'glass-tab pr-7'}
                     onClick={() => {
                       if (!disabled) onSelect(set)
                     }}

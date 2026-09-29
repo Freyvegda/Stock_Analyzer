@@ -163,10 +163,10 @@ export function NavSearch() {
           : 'No stocks match'
 
   return (
-    <div ref={wrapper} data-testid="nav-search" className="relative flex items-center">
+    <div ref={wrapper} data-testid="nav-search" className="relative flex w-full items-center">
       <div
         data-testid="nav-search-field"
-        className="glass-field relative flex min-w-0 flex-1 items-center md:flex-none md:w-72"
+        className="glass-field relative flex min-w-0 flex-1 items-center"
       >
         <input
           ref={input}
@@ -188,7 +188,7 @@ export function NavSearch() {
           onKeyDown={onInputKeyDown}
           placeholder="Search stocks…"
           autoComplete="off"
-          className="h-9 w-full min-w-0 bg-transparent px-2 text-sm outline-none"
+          className="h-10 w-full min-w-0 bg-transparent px-3 text-sm outline-none"
         />
         <kbd className="mr-2 hidden shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground md:block">
           ⌘K
@@ -201,7 +201,7 @@ export function NavSearch() {
           data-testid="nav-search-panel"
           data-motion={reduced ? 'static' : 'animated'}
           data-sheen={sheen ? 'on' : 'off'}
-          className="glass-panel absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(24rem,calc(100vw-2rem))] p-1"
+          className="glass-panel absolute top-[calc(100%+0.5rem)] right-0 left-0 z-40 p-1"
           initial={reduced ? false : { opacity: 0, rotateX: 8, y: -4 }}
           animate={reduced ? undefined : { opacity: 1, rotateX: 0, y: 0 }}
           style={{ transformPerspective: 900 }}

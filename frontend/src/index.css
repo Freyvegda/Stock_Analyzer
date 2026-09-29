@@ -487,8 +487,9 @@
     );
   }
 
-  /* Hover/focus controls live OUTSIDE the role=tab element (a11y); the wrapper
-     reveals them, so they never intercept the tab's own activation. */
+  /* Hover/focus controls live OUTSIDE the role=tab element (a11y); they stay
+     visible at rest — a hover-only rename/close read as missing controls — and
+     the tab reserves their width (`pr-12` active, `pr-7` inactive). */
   .tab-wrap {
     position: relative;
     display: inline-flex;
@@ -497,21 +498,18 @@
 
   .tab-controls {
     position: absolute;
-    right: 0.15rem;
+    right: 0.2rem;
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;
     align-items: center;
     gap: 0.05rem;
-    opacity: 0;
-    pointer-events: none;
     transition: opacity var(--duration-fast) var(--ease-vault);
   }
 
   .tab-wrap:hover .tab-controls,
   .tab-wrap:focus-within .tab-controls {
     opacity: 1;
-    pointer-events: auto;
   }
 
   .glass-tab {
@@ -529,7 +527,7 @@
       color-mix(in oklab, var(--card) 40%, transparent),
       color-mix(in oklab, var(--background) 25%, transparent)
     );
-    color: var(--muted-foreground);
+    color: color-mix(in oklab, var(--foreground) 68%, var(--muted-foreground));
     font-size: 0.875rem;
     line-height: 1.25rem;
     cursor: pointer;
@@ -583,6 +581,108 @@
     border-style: dashed;
     background: transparent;
     box-shadow: none;
+  }
+
+  /* Criteria category dial: a raised glass plate carrying a short, fat rotor
+     ring cut into one wedge per category, with a recessed finger hole per wedge
+     — a dialling-telephone dial. The rotor is a plain box turned by a CSS
+     transform so the browser composites the turn instead of repainting SVG
+     geometry every frame, and it snaps with a slight overshoot like a dial
+     settling against its finger stop. Wedges read as quiet glass, tint toward
+     sakura on hover and hold a 22% sakura wash while chosen; the enabled-share
+     mark is the sakura arc just inside the rim. */
+  .dial-plate {
+    position: relative;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+    background:
+      radial-gradient(
+        circle at 50% 26%,
+        color-mix(in oklab, var(--foreground) 8%, transparent),
+        transparent 58%
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--card) 72%, transparent),
+        color-mix(in oklab, var(--background) 55%, transparent)
+      );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 14%, transparent),
+      inset 0 -14px 26px -20px rgb(0 0 0 / 0.7),
+      0 18px 34px -22px rgb(0 0 0 / 0.55);
+    animation: dial-in var(--duration-entrance) var(--ease-vault);
+  }
+
+  .dial-plate:hover {
+    border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+  }
+
+  .dial-rotor {
+    position: relative;
+    transform-origin: 50% 50%;
+    will-change: transform;
+    transition: transform 420ms cubic-bezier(0.34, 1.32, 0.5, 1);
+  }
+
+  .dial-wedge {
+    fill: color-mix(in oklab, var(--card) 55%, transparent);
+    stroke: color-mix(in oklab, var(--border) 80%, transparent);
+    cursor: pointer;
+    /* `outline` paints a rectangle around a path's bounding box — never here. */
+    outline: none;
+    transition:
+      fill var(--duration-fast) var(--ease-vault),
+      stroke var(--duration-fast) var(--ease-vault);
+  }
+
+  .dial-wedge:hover {
+    fill: color-mix(in oklab, var(--primary) 12%, transparent);
+    stroke: color-mix(in oklab, var(--primary) 30%, var(--border));
+  }
+
+  .dial-wedge[data-active='true'] {
+    fill: color-mix(in oklab, var(--primary) 22%, transparent);
+    stroke: color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+
+  .dial-wedge:hover,
+  .dial-wedge[data-active='true'] {
+    filter: drop-shadow(0 0 7px color-mix(in oklab, var(--primary) 40%, transparent));
+  }
+
+  /* The focus ring follows the wedge shape instead of boxing it. */
+  .dial-wedge:focus-visible {
+    stroke: var(--ring);
+    stroke-width: 2.5;
+  }
+
+  .dial-hole {
+    fill: color-mix(in oklab, var(--background) 90%, transparent);
+    stroke: color-mix(in oklab, var(--border) 85%, transparent);
+  }
+
+  .dial-hole[data-active='true'] {
+    fill: color-mix(in oklab, var(--primary) 26%, transparent);
+    stroke: color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+
+  .dial-mark {
+    stroke: color-mix(in oklab, var(--primary) 85%, transparent);
+  }
+
+  .dial-notch {
+    fill: var(--primary);
+  }
+
+  .dial-hub-name {
+    text-shadow: 0 1px 0 rgb(0 0 0 / 0.35);
+  }
+
+  @keyframes dial-in {
+    from {
+      opacity: 0;
+      transform: perspective(700px) rotateX(9deg) scale(0.96);
+    }
   }
 
   /* Motion: the add-criterion dropdown enters like the nav search panel
@@ -771,6 +871,14 @@
 
     .glass-rail {
       transition: none;
+    }
+
+    .dial-rotor {
+      transition: none;
+    }
+
+    .dial-plate {
+      animation: none;
     }
 
     .glass-nav::after {

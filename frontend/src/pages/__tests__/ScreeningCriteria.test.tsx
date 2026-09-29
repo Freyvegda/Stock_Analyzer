@@ -244,8 +244,46 @@ describe('ScreeningCriteria', () => {
     await screen.findByText('PE ≤ 25×')
     await userEvent.click(screen.getByRole('button', { name: /edit criteria/i }))
     expect(await screen.findByLabelText('PE value')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /valuation/i })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Valuation' })).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps breathing room between the title, the tabs, the summary and the editor', async () => {
+    mockLoads()
+    renderFundamentals()
+    const shell = await screen.findByTestId('criteria-shell')
+    const page = shell.closest('div.space-y-6')
+    const tabRow = screen.getByRole('tablist', { name: 'Screening screens' }).closest('.pt-4')
+    const editorTitle = screen.getByText('Criteria · Default').closest('button')
+
+    expect(page).not.toBeNull()
+    expect(tabRow).not.toBeNull()
+    expect(shell.querySelector('[role="tabpanel"]')).toHaveClass('px-4', 'pt-5', 'pb-5')
+    expect(editorTitle).toHaveClass('py-4')
+  })
+
+  it('joins the screen tabs and the criteria panel into one shell with a small gap', async () => {
+    mockLoads()
+    renderFundamentals()
+    const shell = await screen.findByTestId('criteria-shell')
+    expect(shell).toContainElement(screen.getByRole('tablist', { name: 'Screening screens' }))
+    expect(shell).toContainElement(screen.getByTestId('panel-summary'))
+    expect(shell).toContainElement(screen.getByRole('button', { name: /edit criteria/i }))
+    expect(shell.querySelector('[role="tabpanel"]')).toHaveClass('pt-5')
+  })
+
+  it('sits flush against the editor so tabs, summary and editor are one stack', async () => {
+    mockLoads()
+    renderFundamentals()
+    const shell = await screen.findByTestId('criteria-shell')
+    const editor = await screen.findByText('Criteria · Default')
+    const item = editor.closest('[data-part="item"]')
+    const stack = shell.parentElement
+
+    expect(item).not.toBeNull()
+    expect(item).toHaveClass('border-t-0')
+    expect(stack?.contains(item)).toBe(true)
+    expect(stack?.className ?? '').not.toContain('space-y')
   })
 
   it('shows the unsaved-changes bar and saves before switching screens', async () => {

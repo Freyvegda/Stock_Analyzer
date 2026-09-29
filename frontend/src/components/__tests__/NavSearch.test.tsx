@@ -125,6 +125,8 @@ describe('NavSearch', () => {
     renderSearch()
     expect(screen.getByRole('combobox')).toBeInTheDocument()
     expect(screen.getByTestId('nav-search-field')).toHaveClass('glass-field')
+    expect(screen.getByTestId('nav-search-field')).toHaveClass('flex-1')
+    expect(screen.getByRole('combobox')).toHaveClass('h-10')
     expect(screen.queryByTestId('nav-search-panel')).not.toBeInTheDocument()
     expect(mockedApi.get).not.toHaveBeenCalled()
   })

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CriteriaEditor } from '../CriteriaEditor'
@@ -78,21 +78,47 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('CriteriaEditor', () => {
-  it('shows every category and the saved rows', async () => {
+  it('lists every category on the dial and shows the selected category’s rows', async () => {
     renderEditor()
-    expect(await screen.findByRole('button', { name: /valuation/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /profitability/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /liquidity/i })).toBeInTheDocument()
+    const dial = await screen.findByRole('radiogroup', { name: 'Ratio category' })
+    expect(within(dial).getAllByRole('radio')).toHaveLength(3)
+    expect(screen.getByRole('radio', { name: 'Valuation' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('dial-hub')).toHaveTextContent('Valuation')
     expect(screen.getByRole('checkbox', { name: 'PE' })).toBeChecked()
     expect(screen.getByLabelText('PE value')).toHaveValue('25')
+    expect(screen.queryByRole('checkbox', { name: 'ROE' })).not.toBeInTheDocument()
+  })
+
+  it('turns to another category when its segment is picked', async () => {
+    renderEditor()
+    await screen.findByRole('checkbox', { name: 'PE' })
+    await userEvent.click(screen.getByRole('radio', { name: 'Profitability' }))
+    expect(screen.getByRole('checkbox', { name: 'ROE' })).toBeChecked()
+    expect(screen.getByTestId('dial-hub')).toHaveTextContent('Profitability')
+    expect(screen.queryByRole('checkbox', { name: 'PE' })).not.toBeInTheDocument()
+  })
+
+  it('turns the dial to a criterion picked on the ribbon rail', async () => {
+    renderEditor()
+    await screen.findByRole('checkbox', { name: 'PE' })
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark PE' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Profitability' }))
+    expect(screen.queryByRole('checkbox', { name: 'PE' })).not.toBeInTheDocument()
+
+    // The rail is a lazy chunk: it only appears once the import resolves.
+    const ribbon = await screen.findByRole('button', { name: 'PE' }, { timeout: 5000 })
+    await userEvent.click(ribbon)
+    expect(screen.getByRole('checkbox', { name: 'PE' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'Valuation' })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('saves toggled and edited rows through onSave', async () => {
     const { onSave } = renderEditor()
-    await userEvent.click(await screen.findByRole('checkbox', { name: 'ROE' }))
-    const peInput = screen.getByLabelText('PE value')
+    const peInput = await screen.findByLabelText('PE value')
     await userEvent.clear(peInput)
     await userEvent.type(peInput, '18')
+    await userEvent.click(screen.getByRole('radio', { name: 'Profitability' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'ROE' }))
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
@@ -107,8 +133,11 @@ describe('CriteriaEditor', () => {
 
   it('adds a criterion from its category and removes another', async () => {
     const { onSave } = renderEditor()
-    await userEvent.click(await screen.findByRole('button', { name: 'Remove ROE' }))
+    await screen.findByRole('checkbox', { name: 'PE' })
+    await userEvent.click(screen.getByRole('radio', { name: 'Profitability' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove ROE' }))
     expect(screen.queryByRole('checkbox', { name: 'ROE' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('radio', { name: 'Liquidity' }))
     await userEvent.click(screen.getByLabelText('Add Liquidity criterion'))
     await userEvent.type(screen.getByLabelText('Add Liquidity criterion'), 'Curr')
     const option = await screen.findByRole('option', { name: /current ratio/i })
@@ -140,6 +169,7 @@ describe('CriteriaEditor', () => {
   it('requires at least one enabled criterion', async () => {
     const { onSave } = renderEditor()
     await userEvent.click(await screen.findByRole('checkbox', { name: 'PE' }))
+    await userEvent.click(screen.getByRole('radio', { name: 'Profitability' }))
     await userEvent.click(screen.getByRole('checkbox', { name: 'ROE' }))
     await userEvent.click(screen.getByRole('button', { name: /^save$/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/at least one/i)
@@ -153,7 +183,11 @@ describe('CriteriaEditor', () => {
         criteria: [{ key: 'mystery', enabled: true, value: 3 }],
       },
     })
-    expect(await screen.findByRole('checkbox', { name: 'mystery' })).toBeChecked()
+    expect(await screen.findByRole('radio', { name: 'Other' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(screen.getByRole('checkbox', { name: 'mystery' })).toBeChecked()
     const input = screen.getByLabelText('mystery value')
     await userEvent.clear(input)
     await userEvent.type(input, '4')
@@ -215,11 +249,20 @@ describe('CriteriaEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: /bookmarked only/i }))
     expect(screen.getByRole('checkbox', { name: 'PB' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'PE' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /profitability/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Profitability' })).not.toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Valuation' })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('renders criteria as flashcards inside a category grid', async () => {
-    renderEditor()
+    renderEditor({
+      set: {
+        ...savedSet,
+        criteria: [
+          { key: 'pe', enabled: true, value: 25 },
+          { key: 'pb', enabled: true, value: 3 },
+        ],
+      },
+    })
     const cards = await screen.findAllByTestId('criterion-card')
     expect(cards).toHaveLength(2)
     expect(cards[0].closest('.grid')).not.toBeNull()
@@ -232,7 +275,7 @@ describe('CriteriaEditor', () => {
         ...savedSet,
         criteria: [
           { key: 'pe', enabled: true, value: 25, bookmarked: true },
-          { key: 'roe', enabled: true, value: 15 },
+          { key: 'pb', enabled: true, value: 3 },
         ],
       },
     })
@@ -253,7 +296,8 @@ describe('CriteriaEditor', () => {
     await screen.findByRole('checkbox', { name: 'PE' })
     expect(screen.queryByTestId('ribbon-rail')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Bookmark PE' }))
-    expect(await screen.findByTestId('ribbon-rail')).toBeInTheDocument()
+    // The rail is a lazy chunk: it only appears once the import resolves.
+    expect(await screen.findByTestId('ribbon-rail', {}, { timeout: 5000 })).toBeInTheDocument()
 
     view.unmount()
     renderEditor({
