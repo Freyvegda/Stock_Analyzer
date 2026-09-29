@@ -8,9 +8,11 @@ from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
 from app.screener import service
 from app.screener.catalog import RATIO_CATALOG
-from app.screener.criteria import CriteriaUpdate
+from app.screener.criteria import ScreeningSetCreate, ScreeningSetUpdate
 
 router = APIRouter()
+
+_NOT_FOUND = "Screen not found"
 
 
 def get_provider() -> DataProvider:
@@ -31,18 +33,51 @@ def ratios(user: dict = Depends(current_user)) -> list[dict]:
     ]
 
 
-@router.get("/criteria")
-def get_criteria(user: dict = Depends(current_user)) -> dict:
+@router.get("/sets")
+def list_sets(user: dict = Depends(current_user)) -> list[dict]:
     init_db()
-    return service.get_criteria(SessionLocal, user["id"])
+    return service.list_sets(SessionLocal, user["id"])
 
 
-@router.put("/criteria")
-def put_criteria(payload: CriteriaUpdate, user: dict = Depends(current_user)) -> dict:
+@router.post("/sets", status_code=201)
+def create_set(payload: ScreeningSetCreate, user: dict = Depends(current_user)) -> dict:
     init_db()
-    return service.save_criteria(
-        SessionLocal, user["id"], [item.model_dump() for item in payload.criteria], payload.thesis
+    criteria = (
+        [item.model_dump() for item in payload.criteria] if payload.criteria is not None else None
     )
+    return service.create_set(SessionLocal, user["id"], payload.name, criteria, payload.thesis)
+
+
+@router.put("/sets/{set_id}")
+def update_set(
+    set_id: int, payload: ScreeningSetUpdate, user: dict = Depends(current_user)
+) -> dict:
+    init_db()
+    changes = payload.model_dump(exclude_unset=True)
+    try:
+        return service.update_set(SessionLocal, user["id"], set_id, changes)
+    except service.SetNotFoundError:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+
+
+@router.delete("/sets/{set_id}", status_code=204)
+def delete_set(set_id: int, user: dict = Depends(current_user)) -> None:
+    init_db()
+    try:
+        service.delete_set(SessionLocal, user["id"], set_id)
+    except service.SetNotFoundError:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    except service.LastSetError:
+        raise HTTPException(status_code=400, detail="The last screen cannot be deleted")
+
+
+@router.post("/sets/{set_id}/activate")
+def activate_set(set_id: int, user: dict = Depends(current_user)) -> dict:
+    init_db()
+    try:
+        return service.activate_set(SessionLocal, user["id"], set_id)
+    except service.SetNotFoundError:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
 
 
 @router.post("/run")

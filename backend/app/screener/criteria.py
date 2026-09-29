@@ -118,33 +118,20 @@ class ScreeningSetUpdate(BaseModel):
         return self
 
 
-class CriteriaUpdate(BaseModel):
-    """Body of the retired ``PUT /screen/criteria``. ``extra="forbid"`` rejects
-    ``shortlist_size`` (server-owned) and any other unexpected field."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    criteria: list[CriterionItem] = Field(min_length=1, max_length=50)
-    thesis: str | None = Field(default=None, max_length=500)
-
-    @model_validator(mode="after")
-    def _consistent(self) -> "CriteriaUpdate":
-        validate_criteria_list(self.criteria)
-        return self
-
-
 def criteria_to_json(criteria: list[dict[str, Any]]) -> str:
     return json.dumps(criteria)
 
 
 def criteria_from_json(text: str) -> list[dict[str, Any]]:
     """Parse stored criteria; corrupt or invariant-breaking payloads fall back
-    to defaults. Full ``CriteriaUpdate`` validation means an empty list,
-    all-disabled set, duplicate keys, or >50 items can never silently change
+    to defaults. Full validation means an empty list, all-disabled set,
+    duplicate keys, unknown keys, or >50 items can never silently change
     what a run means."""
     try:
         data = json.loads(text)
-        model = CriteriaUpdate.model_validate({"criteria": data})
+        if not isinstance(data, list) or not 1 <= len(data) <= 50:
+            raise ValueError("criteria must be a non-empty list")
+        items = [CriterionItem.model_validate(item) for item in data]
+        return validate_criteria_list(items)
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
         return default_criteria()
-    return [item.model_dump() for item in model.criteria]
