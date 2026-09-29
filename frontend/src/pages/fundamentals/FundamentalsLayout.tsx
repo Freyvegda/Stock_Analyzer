@@ -1,7 +1,7 @@
 /**
  * Fundamentals layout: side rail + content column, and the single owner of
- * screen-run state. Children read it through the outlet context so a run
- * survives side-nav navigation; the rail itself never unmounts.
+ * saved-screen + screen-run state. Children read it through the outlet context
+ * so a run survives side-nav navigation; the rail itself never unmounts.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -11,8 +11,9 @@ import type {
   LatestScreen,
   RatioSpec,
   ScreenRunResult,
+  ScreeningSet,
+  ScreeningSetChanges,
   ShortlistRow,
-  UserCriteria,
 } from '@/api/types'
 import { FundamentalNav } from '@/components/FundamentalNav'
 import { useStatusFact } from '@/components/StatusRail'
@@ -25,9 +26,10 @@ export interface RunSummary {
 }
 
 export interface FundamentalsOutletContext {
-  criteria: UserCriteria | null
+  sets: ScreeningSet[]
+  activeSet: ScreeningSet | null
+  setsError: string | null
   ratios: RatioSpec[]
-  criteriaError: string | null
   rows: ShortlistRow[]
   summary: RunSummary | null
   lastRunDate: string | null
@@ -36,14 +38,17 @@ export interface FundamentalsOutletContext {
   running: boolean
   elapsed: number
   runError: string | null
-  saveCriteria: (saved: UserCriteria) => void
+  activateSet: (id: number) => Promise<void>
+  createSet: (name: string) => Promise<ScreeningSet>
+  updateSet: (id: number, changes: ScreeningSetChanges) => Promise<ScreeningSet>
+  deleteSet: (id: number) => Promise<void>
   runScreen: () => Promise<void>
 }
 
 export default function FundamentalsLayout() {
-  const [criteria, setCriteria] = useState<UserCriteria | null>(null)
+  const [sets, setSets] = useState<ScreeningSet[]>([])
+  const [setsError, setSetsError] = useState<string | null>(null)
   const [ratios, setRatios] = useState<RatioSpec[]>([])
-  const [criteriaError, setCriteriaError] = useState<string | null>(null)
   const [rows, setRows] = useState<ShortlistRow[]>([])
   const [summary, setSummary] = useState<RunSummary | null>(null)
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
@@ -79,17 +84,20 @@ export default function FundamentalsLayout() {
     return () => window.clearInterval(id)
   }, [running])
 
-  async function loadCriteria() {
+  async function loadSets() {
     try {
-      const [saved, ratioList] = await Promise.all([
-        api.get<UserCriteria>('/screen/criteria'),
-        api.get<RatioSpec[]>('/screen/ratios'),
-      ])
-      setCriteria(saved)
-      setRatios(ratioList)
-      setCriteriaError(null)
+      setSets(await api.get<ScreeningSet[]>('/screen/sets'))
+      setSetsError(null)
     } catch (e) {
-      setCriteriaError(e instanceof Error ? e.message : 'Failed to load screening criteria')
+      setSetsError(e instanceof Error ? e.message : 'Failed to load screening screens')
+    }
+  }
+
+  async function loadRatios() {
+    try {
+      setRatios(await api.get<RatioSpec[]>('/screen/ratios'))
+    } catch (e) {
+      setSetsError(e instanceof Error ? e.message : 'Failed to load screening criteria')
     }
   }
 
@@ -100,7 +108,14 @@ export default function FundamentalsLayout() {
       setLastRunDate(latest.run_date)
       setLatestError(null)
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) return // no run yet
+      if (e instanceof ApiError && e.status === 404) {
+        // This screen has no run yet — clear the previous screen's results.
+        setRows([])
+        setLastRunDate(null)
+        setLatestError(null)
+        setSummary(null)
+        return
+      }
       const message = e instanceof Error ? e.message : 'Failed to load the latest run'
       setError(message)
       setLatestError(message)
@@ -110,10 +125,43 @@ export default function FundamentalsLayout() {
   }
 
   useEffect(() => {
-    loadCriteria()
-    loadLatest()
+    void loadSets()
+    void loadRatios()
+    void loadLatest()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function activateSet(id: number) {
+    const activated = await api.post<ScreeningSet>(`/screen/sets/${id}/activate`, {})
+    setSets((prev) =>
+      prev.map((set) =>
+        set.id === activated.id ? activated : { ...set, is_active: false },
+      ),
+    )
+    setSummary(null)
+    await loadLatest()
+  }
+
+  async function createSet(name: string) {
+    const created = await api.post<ScreeningSet>('/screen/sets', { name })
+    setSummary(null)
+    await loadSets()
+    await loadLatest()
+    return created
+  }
+
+  async function updateSet(id: number, changes: ScreeningSetChanges) {
+    const saved = await api.put<ScreeningSet>(`/screen/sets/${id}`, changes)
+    setSets((prev) => prev.map((set) => (set.id === saved.id ? saved : set)))
+    return saved
+  }
+
+  async function deleteSet(id: number) {
+    await api.delete<void>(`/screen/sets/${id}`)
+    setSummary(null)
+    await loadSets()
+    await loadLatest()
+  }
 
   async function runScreen() {
     setRunning(true)
@@ -163,9 +211,10 @@ export default function FundamentalsLayout() {
   }
 
   const context: FundamentalsOutletContext = {
-    criteria,
+    sets,
+    activeSet: sets.find((set) => set.is_active) ?? null,
+    setsError,
     ratios,
-    criteriaError,
     rows,
     summary,
     lastRunDate,
@@ -174,7 +223,10 @@ export default function FundamentalsLayout() {
     running,
     elapsed,
     runError: error,
-    saveCriteria: setCriteria,
+    activateSet,
+    createSet,
+    updateSet,
+    deleteSet,
     runScreen,
   }
 

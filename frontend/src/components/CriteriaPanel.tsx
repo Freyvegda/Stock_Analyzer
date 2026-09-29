@@ -1,5 +1,5 @@
-import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from "@chakra-ui/react"
-import type { RatioSpec, UserCriteria } from "@/api/types"
+import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from '@chakra-ui/react'
+import type { RatioSpec, ScreeningSet } from '@/api/types'
 
 /** '%' and '×' attach directly; other units get a space (e.g. "1000 ₹ cr"). */
 function unitSuffix(unit: string): string {
@@ -14,30 +14,30 @@ function badgeText(spec: RatioSpec | undefined, key: string, value: number): str
 }
 
 export function CriteriaPanel({
-  criteria,
+  set,
   ratios,
   onEdit,
   error = null,
 }: {
-  criteria: UserCriteria | null
+  set: ScreeningSet | null
   ratios: RatioSpec[]
   onEdit: () => void
   error?: string | null
 }) {
   const catalog = new Map(ratios.map((ratio) => [ratio.key, ratio]))
-  const enabled = criteria?.criteria.filter((criterion) => criterion.enabled) ?? []
+  const enabled = set?.criteria.filter((criterion) => criterion.enabled) ?? []
 
   return (
     <Box borderWidth="1px" borderColor="border" rounded="lg" p={4} bg="bg.panel">
       <Flex justify="space-between" align="center" mb={2} gap={4}>
         <Text fontWeight="semibold" fontSize="sm">
-          Screening Criteria
+          {set !== null ? set.name : 'Screening Criteria'}
         </Text>
-        <Button size="sm" colorPalette="sakura" onClick={onEdit}>
+        <Button size="sm" colorPalette="sakura" onClick={onEdit} disabled={set === null}>
           Edit Criteria
         </Button>
       </Flex>
-      {criteria === null ? (
+      {set === null ? (
         <Text fontSize="sm" color="fg.muted">
           Loading criteria…
         </Text>
@@ -51,7 +51,7 @@ export function CriteriaPanel({
             </WrapItem>
           ))}
           <WrapItem>
-            <Badge variant="outline">Top {criteria.shortlist_size}</Badge>
+            <Badge variant="outline">Top {set.shortlist_size}</Badge>
           </WrapItem>
         </Wrap>
       )}
