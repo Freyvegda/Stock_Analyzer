@@ -553,3 +553,30 @@ git commit -m "feat: Chrome-style glass screen tabs; criteria page polish"
 - Navbar search is always visible ≥ md, collapses < md, keyboard-complete.
 - Existing Phase 1.6/1.6b/1.6c tests (`Stocks`, `StockDetail`, `ShortlistTable`,
   `GlassNav`, `FundamentalNav`, theme suites) stay green.
+
+## Revision — 2026-09-30 (rotor dial, one criteria stack, centred search)
+
+Code wins over the earlier task text; these supersede the matching lines above.
+
+- **Category sub-accordions are gone.** `CategoryDial.tsx` (+ pure geometry in `lib/dial.ts`)
+  is the category picker: a raised glass plate with a short, fat rotor ring cut into one wedge
+  per catalog category, a recessed finger hole per wedge, a fixed finger-stop notch at 6
+  o'clock and a hub naming the chosen category plus its `enabled/total` tally. One category
+  shows at a time next to the dial; the enabled-ratio badges in the panel above are the
+  cross-category summary. `Bookmarked only` filters the ring itself, and a ribbon-rail pick
+  turns the dial to that criterion's category.
+- **Motion:** the rotor is a plain box turned by a CSS transform (`will-change: transform`) —
+  rotating an SVG `<g>` repainted geometry every frame and read as choppy — with a 420 ms
+  overshoot curve, a perspective plate entrance, hover/active glow and a shaped focus ring
+  (a wedge stroke; `outline` boxed the path's bounding box, the "square around the dial").
+  Static and instant under reduced motion.
+- **One card stack:** the shell holds the tab strip and the panel with a small gap between
+  them, drops its bottom edge, and the editor accordion drops its top edge, so tabs → summary
+  → editor read as a single card.
+- **Navbar:** brand + links, search, account cluster — one right-aligned row (`lg:flex-nowrap`);
+  the search takes the spare width, floored at 12rem and capped at 24rem, `h-10`, with the
+  cluster dropping to its own full-width row below `lg`. The centred middle column was tried
+  and reverted: it pushed the link cluster into a wrapped second line.
+- **Spacing and tab controls:** title → stack 24px, tab row inset 16px, tab row → summary 20px,
+  editor trigger 16px. The rename/close controls are always visible (hover brightens) and the
+  tabs reserve their width (`pr-12` active, `pr-7` inactive), so they never sit on the label.
