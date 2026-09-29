@@ -11,20 +11,22 @@ import { describe, expect, it } from 'vitest'
 
 import { pagodaLayout } from '../pagodaScene'
 import {
+  QUALITY_PROFILES,
   WORLD_LIMITS,
   birdFlock,
   celestialBody,
   fireflyPose,
   fireflySeeds,
   grove,
-  mistBands,
   mountainRidges,
   petalPose,
   petalSeeds,
+  pickQuality,
   skyGradient,
   starField,
   toriiPath,
   waterPlane,
+  worldPlan,
 } from '../pagodaWorld'
 
 describe('skyGradient', () => {
@@ -110,28 +112,6 @@ describe('mountainRidges', () => {
 
   it('is deterministic', () => {
     expect(mountainRidges()).toEqual(ridges)
-  })
-})
-
-describe('mistBands', () => {
-  const bands = mistBands()
-
-  it('stays inside its cap', () => {
-    expect(bands.length).toBeLessThanOrEqual(WORLD_LIMITS.mist)
-  })
-
-  it('sits between the ridges, not in front of the tower', () => {
-    for (const b of bands) expect(b.z).toBeLessThan(0)
-  })
-
-  it('gives every band its own drift speed', () => {
-    // Identical speeds make the mist move as one sheet.
-    expect(new Set(bands.map((b) => b.speed.toFixed(4))).size).toBe(bands.length)
-    for (const b of bands) expect(b.speed).toBeGreaterThan(0)
-  })
-
-  it('is deterministic', () => {
-    expect(mistBands()).toEqual(bands)
   })
 })
 
@@ -374,5 +354,119 @@ describe('WORLD_LIMITS', () => {
       expect(Number.isInteger(cap), `${key} is not a whole number`).toBe(true)
       expect(cap, `${key} is not positive`).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('worldPlan', () => {
+  it('decides the whole composition, so the renderer branches on nothing', () => {
+    const night = worldPlan(true, false)
+    const day = worldPlan(false, false)
+    expect(night.celestial.kind).toBe('moon')
+    expect(day.celestial.kind).toBe('sun')
+  })
+
+  it('keeps the stars, fireflies and moon to the night', () => {
+    const night = worldPlan(true, false)
+    const day = worldPlan(false, false)
+    expect(night.stars.length).toBeGreaterThan(0)
+    expect(day.stars).toHaveLength(0)
+    expect(night.fireflies.length).toBeGreaterThan(0)
+    expect(day.fireflies).toHaveLength(0)
+  })
+
+  it('keeps the birds to the day', () => {
+    expect(worldPlan(true, false).birds).toHaveLength(0)
+    expect(worldPlan(false, false).birds.length).toBeGreaterThan(0)
+  })
+
+  it('thins the petals by day', () => {
+    // Both modes drift petals, but a bright frame needs fewer of them or it
+    // reads as confetti.
+    const night = worldPlan(true, false)
+    const day = worldPlan(false, false)
+    expect(day.petals.length).toBeGreaterThan(0)
+    expect(day.petals.length).toBeLessThan(night.petals.length)
+    expect(day.petals.length).toBeLessThanOrEqual(WORLD_LIMITS.petals)
+  })
+
+  it('keeps every layer under reduced motion, and only stops the clock', () => {
+    // "Final state instantly", not a strip-down: the still frame still shows the
+    // sky, the stars and the water.
+    const still = worldPlan(true, true)
+    expect(still.still).toBe(true)
+    expect(still.waterMoves).toBe(false)
+    expect(still.stars.length).toBeGreaterThan(0)
+    expect(still.fireflies.length).toBeGreaterThan(0)
+  })
+
+  it('scales the populations and the pixel ratio with the quality tier', () => {
+    // The scene has to run on a modest laptop and a phone, so every population
+    // scales together rather than being fixed.
+    const low = worldPlan(true, false, 'low')
+    const high = worldPlan(true, false, 'high')
+    expect(low.stars.length).toBeLessThan(high.stars.length)
+    expect(low.fireflies.length).toBeLessThan(high.fireflies.length)
+    expect(low.dpr).toBeLessThan(high.dpr)
+    expect(low.shadows).toBe(false)
+    expect(high.shadows).toBe(true)
+  })
+
+  it('drops the geometry-heavy scenery at the lowest tier, and keeps the sky', () => {
+    // A weak device loses the grove and the gates, never the picture: the sky,
+    // the tower's own world and the atmosphere all survive.
+    const low = worldPlan(false, false, 'low')
+    expect(low.scenery).toBe(false)
+    expect(low.petals.length).toBeGreaterThan(0)
+    expect(low.celestial).toBeDefined()
+    expect(worldPlan(false, false, 'high').scenery).toBe(true)
+  })
+
+  it('never exceeds a cap at any tier', () => {
+    for (const quality of ['low', 'medium', 'high'] as const) {
+      const plan = worldPlan(true, false, quality)
+      expect(plan.stars.length).toBeLessThanOrEqual(WORLD_LIMITS.stars)
+      expect(plan.petals.length).toBeLessThanOrEqual(WORLD_LIMITS.petals)
+      expect(plan.fireflies.length).toBeLessThanOrEqual(WORLD_LIMITS.fireflies)
+      expect(plan.birds.length).toBeLessThanOrEqual(WORLD_LIMITS.birds)
+    }
+  })
+
+  it('is deterministic', () => {
+    expect(worldPlan(true, false)).toEqual(worldPlan(true, false))
+  })
+})
+
+describe('pickQuality', () => {
+  it('drops to the lowest tier on a low-memory or low-core device', () => {
+    expect(pickQuality({ deviceMemory: 4, hardwareConcurrency: 8 })).toBe('low')
+    expect(pickQuality({ deviceMemory: 16, hardwareConcurrency: 4 })).toBe('low')
+    expect(pickQuality({ deviceMemory: 2, hardwareConcurrency: 2 })).toBe('low')
+  })
+
+  it('uses the middle tier on a touch device even when it reports strong hardware', () => {
+    // A phone on battery has a thermal budget, not a capability one.
+    expect(pickQuality({ deviceMemory: 16, hardwareConcurrency: 12, coarsePointer: true })).toBe(
+      'medium',
+    )
+  })
+
+  it('only reaches the top tier on a device that reports both', () => {
+    expect(pickQuality({ deviceMemory: 16, hardwareConcurrency: 12 })).toBe('high')
+    // One signal alone is not enough: `hardwareConcurrency` is a poor proxy for
+    // a GPU, so an unknown device gets the middle tier rather than the benefit
+    // of the doubt.
+    expect(pickQuality({ hardwareConcurrency: 12 })).toBe('medium')
+    expect(pickQuality({ deviceMemory: 16 })).toBe('medium')
+    expect(pickQuality()).toBe('medium')
+  })
+
+  it('keeps every profile self-consistent', () => {
+    for (const [name, p] of Object.entries(QUALITY_PROFILES)) {
+      expect(p.particleScale, name).toBeGreaterThan(0)
+      expect(p.particleScale, name).toBeLessThanOrEqual(1)
+      expect(p.dpr, name).toBeGreaterThan(0)
+      expect(p.dpr, name).toBeLessThanOrEqual(2)
+    }
+    expect(QUALITY_PROFILES.low.dpr).toBeLessThan(QUALITY_PROFILES.high.dpr)
   })
 })

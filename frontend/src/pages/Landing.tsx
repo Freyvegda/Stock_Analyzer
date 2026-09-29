@@ -1,12 +1,17 @@
-import { motion, useMotionValueEvent, useScroll, useTransform } from 'motion/react'
+import { motion, useScroll, useTransform } from 'motion/react'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '@/auth/AuthContext'
 import { TOWER_TIERS } from '@/content/tower'
-import { SCROLL_SPAN, stageProgress } from '@/components/three/pagodaScene'
+import { tierStage } from '@/components/three/pagodaScene'
+import { TowerAccordion } from '@/components/TowerAccordion'
+import { TowerRail } from '@/components/TowerRail'
+import { ColorModeButton } from '@/components/ui/color-mode'
 import { useIsDesktop } from '@/lib/useIsDesktop'
 import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
+import { useFinePointer } from '@/lib/useFinePointer'
+import { useLandingStage } from '@/lib/useLandingStage'
 import { hasWebGL } from '@/lib/webgl'
 import { cn } from '@/lib/utils'
 
@@ -22,9 +27,7 @@ import { cn } from '@/lib/utils'
  * a same-height `<div>`. That wrapper matters: a `sticky` element is bounded by
  * its *parent*, and the parent here is `<main>` — the whole page. Without the
  * wrapper the first tier pins at the top and never releases, so every later
- * section stacks on top of it. The wrapper gives each storey its own containing
- * block and exactly one stage of scroll, which is also what keeps the 3D scroll
- * maths honest.
+ * section stacks on top of it.
  */
 const Pagoda = lazy(() => import('@/components/three/Pagoda'))
 
@@ -35,36 +38,28 @@ export function Landing() {
   const { user } = useAuth()
   const reduced = usePrefersReducedMotion()
   const isDesktop = useIsDesktop()
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  const { scrollYProgress } = useScroll({ target: scrollRef, offset: ['start start', 'end end'] })
-
-  // The 3D needs a real number every frame; this is that number. Both consumers
-  // read the *same* unsprung value, so the tower can never lag the cards.
-  const raw = useTransform(scrollYProgress, (v) => v)
-
-  // The DOM only cares which stage is on screen, and that changes 7 times, not
-  // once per frame.
-  const [activeStage, setActiveStage] = useState(0)
-  useMotionValueEvent(raw, 'change', (v) => {
-    const s = Math.min(SCROLL_SPAN, Math.floor(stageProgress(v)))
-    setActiveStage((prev) => (prev === s ? prev : s))
-  })
-
-  const openTier = activeStage - 2
-  const heroOpacity = useTransform(raw, [0, 0.1, 0.2], [1, 1, 0])
-  const ctaOpacity = useTransform(raw, [0.86, 0.96], [0, 1])
-  const ctaY = useTransform(raw, [0.86, 1], [24, 0])
+  const finePointer = useFinePointer()
+  const [webgl, setWebgl] = useState<boolean | null>(null)
 
   // `hasWebGL` creates a canvas and gets a context. In the render body that is
   // one leaked context per re-render — and this page re-renders on every stage
   // change — until the browser drops the oldest and the canvas goes black.
-  const [webgl, setWebgl] = useState<boolean | null>(null)
   useEffect(() => setWebgl(hasWebGL()), [])
 
   // Below `md` (and without WebGL, and under reduced motion) the story is told
   // by the DOM alone. Same content, no 3D chunk requested.
   const showTower = isDesktop && !reduced && webgl === true
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({ target: scrollRef, offset: ['start start', 'end end'] })
+  // The 3D needs a real number every frame; this is that number.
+  const raw = useTransform(scrollYProgress, (v) => v)
+
+  const { activeStage, openTier, openRow, onOpen, goToStage } = useLandingStage(raw)
+
+  const heroOpacity = useTransform(raw, [0, 0.08, 0.16], [1, 1, 0])
+  const ctaOpacity = useTransform(raw, [0.9, 0.98], [0, 1])
+  const ctaY = useTransform(raw, [0.9, 1], [24, 0])
 
   return (
     <div ref={scrollRef} data-testid="landing" className="relative">
@@ -84,14 +79,21 @@ export function Landing() {
             <PagodaMark />
             STOCK ANALYZER
           </Link>
-          <Link
-            to={user ? '/fundamentals/criteria' : '/login'}
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {user ? 'Open the analyzer' : 'Sign in'}
-          </Link>
+          <div className="flex items-center gap-1">
+            {/* The theme selector: sun or moon, and the whole scene follows it.
+                The landscape switches its sky and its celestial body with it. */}
+            <ColorModeButton />
+            <Link
+              to={user ? '/fundamentals/criteria' : '/login'}
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {user ? 'Open the analyzer' : 'Sign in'}
+            </Link>
+          </div>
         </div>
       </header>
+
+      <TowerRail openTier={showTower ? openTier : null} onJump={goToStage} visible={showTower} />
 
       <main>
         {/* Hero — copy on top, the small tower at the foot of the screen. */}
@@ -111,23 +113,37 @@ export function Landing() {
           <div className="h-40" aria-hidden="true" />
         </section>
 
-        {/* Overview — the whole tower, all four storeys named. */}
+        {/* Overview — the whole tower, all four storeys named. This doubles as a
+            table of contents: every row jumps to its storey. */}
         <section className={cn(STAGE_H, 'flex items-center px-6')}>
           <ol className="mx-auto w-full max-w-2xl space-y-3">
-            {TOWER_TIERS.map((t, i) => (
-              <li
-                key={t.id}
-                className={cn(
-                  'flex items-baseline justify-between gap-4 border-l pl-4 transition-colors',
-                  activeStage >= 2 + i
-                    ? 'border-primary text-foreground'
-                    : 'border-border text-muted-foreground',
-                )}
-              >
-                <span className="font-medium">{t.heading}</span>
-                <span className="text-xs text-muted-foreground">{String(i + 1).padStart(2, '0')}</span>
-              </li>
-            ))}
+            {TOWER_TIERS.map((t, i) => {
+              const current = activeStage >= tierStage(i)
+              return (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => goToStage(tierStage(i))}
+                    className={cn(
+                      'group flex w-full items-baseline justify-between gap-4 border-l pl-4 text-left transition-colors',
+                      current
+                        ? 'border-primary text-foreground'
+                        : 'border-border text-muted-foreground hover:border-muted-foreground',
+                    )}
+                  >
+                    <span className="font-medium">{t.heading}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="hidden text-sm text-muted-foreground group-hover:block">
+                        {t.tagline}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
           </ol>
         </section>
 
@@ -135,6 +151,7 @@ export function Landing() {
             sticky section inside it. */}
         {TOWER_TIERS.map((tier, i) => {
           const open = openTier === i
+          const built = tier.status === 'built'
           return (
             <div key={tier.id} className={STAGE_H}>
               <section
@@ -144,8 +161,10 @@ export function Landing() {
               >
                 <div
                   className={cn(
-                    'ml-auto w-full max-w-xl transition-opacity duration-200',
-                    showTower ? 'md:max-w-[46%]' : 'mx-auto max-w-2xl',
+                    // Narrower than before so the rail, which sits outside it,
+                    // can never overlap the copy at any width.
+                    'ml-auto w-full transition-opacity duration-200',
+                    showTower ? 'md:max-w-[42%] lg:max-w-[40%]' : 'mx-auto max-w-2xl',
                     open ? 'opacity-100' : 'opacity-70',
                   )}
                 >
@@ -160,20 +179,37 @@ export function Landing() {
                     ) : null}
                   </div>
                   <p className="mt-2 text-muted-foreground">{tier.tagline}</p>
-                  <div className="mt-6 grid gap-3 sm:grid-cols-3 md:grid-cols-1">
-                    {tier.cards.map((card) => (
-                      <article key={card.title} className="glass-panel rounded-[--radius-lg] p-4">
-                        <h3 className="text-sm font-medium">{card.title}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">{card.body}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <Link
-                    to={user ? tier.route : '/login'}
-                    className="mt-6 inline-block text-sm text-primary underline underline-offset-4"
-                  >
-                    {user ? 'Open it' : 'Sign in to use it'}
-                  </Link>
+
+                  <TowerAccordion
+                    id={tier.id}
+                    cards={tier.cards}
+                    finePointer={finePointer}
+                    reduced={reduced}
+                    openRow={open ? openRow : null}
+                    onOpen={onOpen}
+                  />
+
+                  {/* The CTA is computed from the storey's status. A built storey
+                      links to its route; an unbuilt one does not pretend, and
+                      offers a working screen instead of a dead end. */}
+                  {built ? (
+                    <Link
+                      to={user ? tier.route : '/login'}
+                      className="mt-6 inline-block text-sm text-primary underline underline-offset-4"
+                    >
+                      {user ? 'Open it' : 'Sign in to use it'}
+                    </Link>
+                  ) : (
+                    <div className="mt-6 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                      <span className="text-sm text-muted-foreground">Not built yet</span>
+                      <Link
+                        to={user ? tier.fallbackRoute! : '/login'}
+                        className="text-sm text-primary underline underline-offset-4"
+                      >
+                        {user ? 'See the screen that works' : 'Sign in to see what works'}
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </section>
             </div>

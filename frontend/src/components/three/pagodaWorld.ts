@@ -21,7 +21,6 @@ import { PAGODA_SEED, type TierGeometry } from './pagodaScene'
  */
 export const WORLD_LIMITS = {
   ridges: 3,
-  mist: 6,
   trees: 4,
   torii: 8,
   stars: 90,
@@ -29,6 +28,59 @@ export const WORLD_LIMITS = {
   fireflies: 18,
   birds: 7,
 } as const
+
+/**
+ * Quality tiers, chosen from the device's own capability.
+ *
+ * The scene has to run on a five-year-old laptop and a phone as well as a
+ * desktop, so the populations and the pixel ratio are scaled together rather
+ * than fixed. `low` is not a broken scene — it is the same picture with fewer
+ * particles and no shadows.
+ */
+export type Quality = 'low' | 'medium' | 'high'
+
+interface QualityProfile {
+  /** Scale on every particle population. */
+  particleScale: number
+  /** Scale on the star field. */
+  starScale: number
+  /** Renderer pixel ratio ceiling. */
+  dpr: number
+  shadows: boolean
+  /** The grove and the torii gates, which cost geometry rather than fill. */
+  scenery: boolean
+}
+
+export const QUALITY_PROFILES: Record<Quality, QualityProfile> = {
+  low: { particleScale: 0.35, starScale: 0.4, dpr: 1, shadows: false, scenery: false },
+  medium: { particleScale: 0.7, starScale: 0.75, dpr: 1.25, shadows: true, scenery: true },
+  high: { particleScale: 1, starScale: 1, dpr: 1.5, shadows: true, scenery: true },
+}
+
+/**
+ * Pick a tier from what the browser is willing to tell us.
+ *
+ * `deviceMemory` is Chrome-only and `hardwareConcurrency` is a poor proxy for a
+ * GPU, so neither is trusted alone: the lowest signal wins, and a device that
+ * reports nothing gets `medium` rather than the benefit of the doubt.
+ */
+export function pickQuality(hints?: {
+  deviceMemory?: number
+  hardwareConcurrency?: number
+  coarsePointer?: boolean
+}): Quality {
+  const memory = hints?.deviceMemory
+  const cores = hints?.hardwareConcurrency
+  if (typeof memory === 'number' && memory > 0 && memory <= 4) return 'low'
+  if (typeof cores === 'number' && cores > 0 && cores <= 4) return 'low'
+  // A touch device is usually a phone or a tablet on battery. It gets the middle
+  // tier even when it reports strong hardware, because the budget is thermal.
+  if (hints?.coarsePointer) return 'medium'
+  if (typeof memory === 'number' && memory >= 8 && typeof cores === 'number' && cores >= 8) {
+    return 'high'
+  }
+  return 'medium'
+}
 
 // --- the seeded generator ---------------------------------------------------
 
@@ -153,38 +205,13 @@ export function mountainRidges(): Ridge[] {
   return ridges
 }
 
-// --- mist -------------------------------------------------------------------
-
-export interface MistBand {
-  index: number
-  y: number
-  z: number
-  width: number
-  height: number
-  /** Drift speed. Every band differs, or the mist moves as one sheet. */
-  speed: number
-  opacity: number
-}
-
-/** Horizontal strips of haze drifting between the ridges. */
-export function mistBands(): MistBand[] {
-  const rand = rng(PAGODA_SEED ^ 0x7a1d)
-  const bands: MistBand[] = []
-  for (let i = 0; i < WORLD_LIMITS.mist; i += 1) {
-    const at = i / (WORLD_LIMITS.mist - 1)
-    bands.push({
-      index: i,
-      y: 0.4 + at * 3.4,
-      // Between the ridges, always behind the tower.
-      z: -18 + at * 9,
-      width: 34 - at * 8,
-      height: 1.5 + rand() * 0.9,
-      speed: 0.08 + rand() * 0.22,
-      opacity: 0.1 + rand() * 0.1,
-    })
-  }
-  return bands
-}
+// --- mist removed -----------------------------------------------------------
+//
+// There was a band of drifting haze here, between the ridges. It is gone: the
+// user asked for it out. The scene does not need it — the ridges already recede
+// by value, and the haze was costing six additive transparent quads across the
+// whole width of the frame, which is exactly the kind of full-screen fill that
+// hurts on integrated graphics. Do not reintroduce it without saying so.
 
 // --- grove ------------------------------------------------------------------
 
@@ -461,4 +488,65 @@ export function birdFlock(): Bird[] {
     phase: rand(),
     direction: 1 as const,
   }))
+}
+
+// --- the plan ---------------------------------------------------------------
+
+export interface WorldPlan {
+  /** Which celestial body is in the sky. */
+  celestial: CelestialBody
+  /** Whether the star field is drawn. */
+  stars: Star[]
+  /** Drifting petals. Present in both modes; sparse by day. */
+  petals: PetalSeed[]
+  fireflies: FireflySeed[]
+  birds: Bird[]
+  /** Whether the water ripples on the shared clock. */
+  waterMoves: boolean
+  /** Ridges, grove and torii. Off at the lowest tier, which is geometry cost. */
+  scenery: boolean
+  /** The tier this plan was built for, for the renderer's own settings. */
+  quality: Quality
+  dpr: number
+  shadows: boolean
+  /** True when the scene is drawn but frozen. */
+  still: boolean
+}
+
+/**
+ * What the world layer should draw, for a mode, a motion preference and a
+ * quality tier.
+ *
+ * This is the whole decision surface of `PagodaEnvironment.tsx`, kept here so it
+ * can be tested without a canvas — r3f elements are not DOM nodes, so a renderer
+ * test in jsdom can only ever assert that something was passed down, not what.
+ * Everything that branches lives in this function; the renderer just executes it.
+ *
+ * Night gets stars, fireflies and a moving moon; day gets birds and a sparser
+ * petal drift. Reduced motion keeps every layer and freezes the clock — the
+ * "final state instantly" rule, not a strip-down.
+ */
+export function worldPlan(
+  night: boolean,
+  reduced: boolean,
+  quality: Quality = 'high',
+): WorldPlan {
+  const profile = QUALITY_PROFILES[quality]
+  const take = <T>(all: T[], scale: number): T[] => all.slice(0, Math.ceil(all.length * scale))
+
+  return {
+    celestial: celestialBody(night ? 'dark' : 'light'),
+    stars: night ? take(starField(), profile.starScale) : [],
+    // Petals fall in both modes, but a bright day needs fewer of them or the
+    // frame fills with confetti.
+    petals: take(petalSeeds(), profile.particleScale * (night ? 1 : 0.6)),
+    fireflies: night ? take(fireflySeeds(), profile.particleScale) : [],
+    birds: night ? [] : take(birdFlock(), profile.particleScale),
+    waterMoves: !reduced,
+    scenery: profile.scenery,
+    quality,
+    dpr: profile.dpr,
+    shadows: profile.shadows,
+    still: reduced,
+  }
 }

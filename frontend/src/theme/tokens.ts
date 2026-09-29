@@ -399,7 +399,6 @@ export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
     soffit: '#C9A3B3',
     ambient: '#FFF4F8',
     fill: '#FFE7EF',
-    sun: '#FFF3E2',
     // Daylight sky: a cool high blue over a warm sakura horizon.
     skyTop: '#9FC4E4',
     skyHorizon: '#F6DCE4',

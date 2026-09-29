@@ -444,7 +444,7 @@ export function hangingLanterns(tier: TierGeometry): HangingLantern[] {
   // Hung just under the eave line, from the corner tips: the four diagonals and
   // the four side mid-points.
   const eaveY = tier.bodyHeight + tier.roofRise * 0.16
-  const anchors: Array<[number, number]> = [
+  const all: Array<[number, number]> = [
     [span * 0.86, span * 0.86],
     [-span * 0.86, span * 0.86],
     [span * 0.86, -span * 0.86],
@@ -453,7 +453,8 @@ export function hangingLanterns(tier: TierGeometry): HangingLantern[] {
     [0, -span * 0.92],
     [span * 0.92, 0],
     [-span * 0.92, 0],
-  ].slice(0, LANTERN_LIMIT)
+  ]
+  const anchors = all.slice(0, LANTERN_LIMIT)
 
   const lanternHeight = 0.11
   const cordLength = 0.075 + (tier.index % 3) * 0.012

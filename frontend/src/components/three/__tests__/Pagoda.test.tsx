@@ -106,7 +106,7 @@ describe('pagodaPalette', () => {
     for (const mode of ['dark', 'light'] as const) {
       for (const role of roles) {
         expect(
-          (pagodaPalette[mode] as Record<string, string>)[role],
+          (pagodaPalette[mode] as unknown as Record<string, string>)[role],
           `${mode}.${role} is missing`,
         ).toMatch(/^#[0-9A-Fa-f]{6}$/)
       }
