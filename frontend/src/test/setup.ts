@@ -1,8 +1,33 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 
 afterEach(() => cleanup())
+
+// AuthContext boots by exchanging the refresh cookie for an access token
+// (the access token itself is memory-only, so a test "page load" always starts
+// without one). jsdom has no server, so without this every suite that mounts
+// AuthProvider would make a real network call and hang.
+//
+// The default answer is a successful refresh: a signed-in user is the case most
+// component tests want. A suite testing the anonymous path stubs `fetch` itself.
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/refresh')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ user: { id: 1, username: 'solo' }, access_token: 'test-token' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        )
+      }
+      return Promise.reject(new Error(`unstubbed fetch: ${url}`))
+    }),
+  )
+})
 
 // jsdom has no matchMedia; next-themes, Chakra, and usePrefersReducedMotion read it.
 // Deliberately a plain function (not vi.fn) so vi.resetAllMocks() cannot strip its
