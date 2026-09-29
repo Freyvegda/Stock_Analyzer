@@ -6,7 +6,8 @@ from pydantic import ValidationError
 from app.screener.catalog import CATALOG_BY_KEY
 from app.screener.criteria import (
     DEFAULT_CRITERIA,
-    CriteriaUpdate,
+    ScreeningSetCreate,
+    ScreeningSetUpdate,
     criteria_from_json,
     criteria_to_json,
     default_criteria,
@@ -30,58 +31,92 @@ def test_defaults_are_copied_not_shared():
     assert DEFAULT_CRITERIA[0]["value"] == 25.0
 
 
-def payload(**over):
+def criteria_payload(**over):
     criteria = over.pop("criteria", [{"key": "pe", "enabled": True, "value": 25}])
-    return {"criteria": criteria, **over}
+    return {"name": "Quality", "criteria": criteria, **over}
 
 
-def test_valid_payload_round_trips():
-    model = CriteriaUpdate.model_validate(payload(thesis="quality"))
+def test_screening_set_create_round_trips():
+    model = ScreeningSetCreate.model_validate(criteria_payload(thesis="quality"))
+    assert model.name == "Quality"
     assert model.criteria[0].key == "pe" and model.thesis == "quality"
 
 
-def test_unknown_key_rejected():
+def test_screening_set_create_strips_name():
+    model = ScreeningSetCreate.model_validate({"name": "  Momentum  "})
+    assert model.name == "Momentum"
+
+
+def test_screening_set_create_rejects_blank_name():
+    for bad in ("", "   "):
+        with pytest.raises(ValidationError):
+            ScreeningSetCreate.model_validate({"name": bad})
+
+
+def test_screening_set_create_rejects_shortlist_size():
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate(payload(criteria=[{"key": "bogus", "enabled": True, "value": 1}]))
+        ScreeningSetCreate.model_validate({"name": "x", "shortlist_size": 5})
 
 
-def test_duplicate_keys_rejected():
-    dupes = [
-        {"key": "pe", "enabled": True, "value": 25},
-        {"key": "pe", "enabled": False, "value": 30},
-    ]
+def test_screening_set_create_accepts_without_criteria():
+    model = ScreeningSetCreate.model_validate({"name": "Quality"})
+    assert model.criteria is None
+
+
+def test_screening_set_create_validates_criteria():
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate(payload(criteria=dupes))
-
-
-def test_non_finite_value_rejected():
+        ScreeningSetCreate.model_validate(
+            criteria_payload(criteria=[{"key": "bogus", "enabled": True, "value": 1}])
+        )
+    with pytest.raises(ValidationError):
+        ScreeningSetCreate.model_validate(
+            criteria_payload(
+                criteria=[
+                    {"key": "pe", "enabled": True, "value": 25},
+                    {"key": "pe", "enabled": False, "value": 30},
+                ]
+            )
+        )
+    with pytest.raises(ValidationError):
+        ScreeningSetCreate.model_validate(
+            criteria_payload(criteria=[{"key": "pe", "enabled": False, "value": 25}])
+        )
     for bad in (float("nan"), float("inf")):
         with pytest.raises(ValidationError):
-            CriteriaUpdate.model_validate(payload(criteria=[{"key": "pe", "enabled": True, "value": bad}]))
-
-
-def test_non_numeric_value_rejected():
+            ScreeningSetCreate.model_validate(
+                criteria_payload(criteria=[{"key": "pe", "enabled": True, "value": bad}])
+            )
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate(payload(criteria=[{"key": "pe", "enabled": True, "value": "abc"}]))
+        ScreeningSetCreate.model_validate(criteria_payload(thesis="x" * 501))
 
 
-def test_zero_enabled_rejected():
+def test_screening_set_update_requires_a_field():
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate(payload(criteria=[{"key": "pe", "enabled": False, "value": 25}]))
+        ScreeningSetUpdate.model_validate({})
+    model = ScreeningSetUpdate.model_validate({"name": "x"})
+    assert model.name == "x"
 
 
-def test_shortlist_size_rejected():
+def test_screening_set_update_allows_clearing_thesis():
+    model = ScreeningSetUpdate.model_validate({"thesis": None})
+    assert model.thesis is None
+    assert model.model_fields_set == {"thesis"}
+
+
+def test_screening_set_update_validates_criteria_and_name():
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate({**payload(), "shortlist_size": 5})
-
-
-def test_thesis_over_500_rejected():
+        ScreeningSetUpdate.model_validate({"name": "   "})
     with pytest.raises(ValidationError):
-        CriteriaUpdate.model_validate(payload(thesis="x" * 501))
+        ScreeningSetUpdate.model_validate(
+            {"criteria": [{"key": "pe", "enabled": False, "value": 25}]}
+        )
 
 
 def test_json_round_trip():
-    items = [c.model_dump() for c in CriteriaUpdate.model_validate(payload()).criteria]
+    items = [
+        c.model_dump()
+        for c in ScreeningSetCreate.model_validate(criteria_payload()).criteria
+    ]
     assert criteria_from_json(criteria_to_json(items)) == items
 
 
