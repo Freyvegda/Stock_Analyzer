@@ -405,4 +405,20 @@ def test_delete_screen_keeps_runs_unstamped(client, sign_in, provider, test_db):
     assert runs and all(r.set_id is None for r in runs)
 
 
+def test_run_uses_the_updated_active_set(client, sign_in, provider):
+    sign_in()
+    provider(FakeProvider())  # AAA pe=20 passes, BBB pe=80 fails
+    created = client.post(
+        "/screen/sets",
+        json={"name": "Tight", "criteria": [{"key": "pe", "enabled": True, "value": 15}]},
+    ).json()
+    assert client.post("/screen/run").json()["shortlisted"] == []
+
+    client.put(
+        f"/screen/sets/{created['id']}",
+        json={"criteria": [{"key": "pe", "enabled": True, "value": 25}]},
+    )
+    assert [r["symbol"] for r in client.post("/screen/run").json()["shortlisted"]] == ["AAA"]
+
+
 

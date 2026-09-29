@@ -9,8 +9,8 @@
  * motion.
  */
 
-import { useMemo, useRef } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { useEffect, useMemo, useRef } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { cn } from '@/lib/utils'
 import { hasWebGL } from '@/lib/webgl'
@@ -61,8 +61,15 @@ function RibbonScene({
 }) {
   const geometry = useMemo(ribbonGeometry, [])
   const groups = useRef(new Map<string, THREE.Group>())
+  const { invalidate } = useThree()
+
+  // One-shot: a change schedules a frame; easing schedules the next until settled.
+  useEffect(() => {
+    invalidate()
+  }, [items, invalidate])
 
   useFrame((_, delta) => {
+    let moving = false
     groups.current.forEach((group, key) => {
       const index = items.findIndex((item) => item.key === key)
       if (index === -1) return
@@ -73,9 +80,12 @@ function RibbonScene({
       }
       // Frame-rate independent ease toward the slot; settles within ~0.3 s.
       const ease = 1 - Math.pow(0.0005, delta)
-      group.position.x += (targetX - group.position.x) * ease
-      group.position.y += (0 - group.position.y) * ease
+      const x = group.position.x + (targetX - group.position.x) * ease
+      const y = group.position.y + (0 - group.position.y) * ease
+      group.position.set(x, y, 0)
+      if (Math.abs(targetX - x) > 0.002 || Math.abs(y) > 0.002) moving = true
     })
+    if (moving) invalidate()
   })
 
   return (
@@ -137,7 +147,6 @@ export function RibbonRail({
   const hasGl = useMemo(() => hasWebGL(), [])
 
   if (!hasGl || !isDesktop || items.length === 0) return null
-
   return (
     <div
       data-testid="ribbon-rail"
@@ -152,7 +161,7 @@ export function RibbonRail({
         ))}
       </div>
       <Canvas
-        frameloop={reduced ? 'demand' : 'always'}
+        frameloop="demand"
         dpr={[1, 1.5]}
         camera={{ position: [0, 0, 3.1], fov: 36 }}
         gl={{ antialias: false, powerPreference: 'low-power', alpha: true }}

@@ -31,7 +31,7 @@ per user is active; service code enforces the invariant.
 | id | Int PK autoincr | |
 | user_id | Int NOT NULL, indexed, FK → users.id | |
 | name | String NOT NULL | 1–60 chars, trimmed; unique per user (`uq_screening_sets_user_name`; case-insensitive enforced in service) |
-| criteria_json | Text NOT NULL | JSON array `[{key, enabled, value}]`; keys owned by `screener/catalog.py` |
+| criteria_json | Text NOT NULL | JSON array `[{key, enabled, value, bookmarked?}]` (bookmark flag since Phase 1.7 addendum); keys owned by `screener/catalog.py` |
 | thesis | Text? | free-text note per screen, ≤ 500 chars |
 | shortlist_size | Int NOT NULL default 10 | server-set; engine clamps to `min(value, 10)` |
 | is_active | Boolean NOT NULL default false | exactly one active per user (service-enforced) |

@@ -315,7 +315,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                 </Text>
               ) : (
                 <Stack gap={4}>
-                  {bookmarkedItems.length > 0 ? (
+                  {open && bookmarkedItems.length > 0 ? (
                     <Suspense fallback={null}>
                       <RibbonRail items={bookmarkedItems} onSelect={handleRibbonSelect} />
                     </Suspense>

@@ -1,12 +1,13 @@
 """Service-level tests for Phase 1.7 screening-set CRUD (no HTTP)."""
 
+import json
 from datetime import datetime, timezone
 
 import pytest
 
 from app.auth.security import hash_password
 from app.auth.service import create_user
-from app.db.models import User
+from app.db.models import ScreeningSet, User
 from app.screener import service
 from app.screener.criteria import ConfigError, default_criteria
 
@@ -141,3 +142,68 @@ def test_get_criteria_returns_active_set(test_db):
     assert active["id"] == created["id"]
     assert active["criteria"] == created["criteria"]
     assert active["thesis"] == "run hot"
+
+
+def test_seed_recovers_when_a_parallel_first_load_wins(test_db, monkeypatch):
+    """The criteria page fires GET /screen/sets and GET /screen/latest together;
+    the losing seed must adopt the winner's row, not 500."""
+    user = make_user(test_db)
+    with test_db() as other:
+        other.add(
+            ScreeningSet(
+                user_id=user["id"],
+                name="Default",
+                criteria_json=json.dumps(default_criteria()),
+                thesis=None,
+                shortlist_size=10,
+                is_active=True,
+                updated_at="now",
+            )
+        )
+        other.commit()
+    real = service._user_sets
+    state = {"first": True}
+
+    def stale_once(session, user_id):
+        if state["first"]:
+            state["first"] = False
+            return []  # the racing session's stale read
+        return real(session, user_id)
+
+    monkeypatch.setattr(service, "_user_sets", stale_once)
+    with test_db() as session:
+        row = service._seed_active_set(session, user["id"])
+        session.commit()
+        assert row.name == "Default"
+    with test_db() as session:
+        assert session.query(ScreeningSet).filter_by(user_id=user["id"]).count() == 1
+
+
+def test_seed_repairs_multiple_active_sets(test_db):
+    user = make_user(test_db)
+    with test_db() as session:
+        session.add(
+            ScreeningSet(
+                user_id=user["id"],
+                name="A",
+                criteria_json=json.dumps(default_criteria()),
+                thesis=None,
+                shortlist_size=10,
+                is_active=True,
+                updated_at="2026-01-01T00:00:00+00:00",
+            )
+        )
+        session.add(
+            ScreeningSet(
+                user_id=user["id"],
+                name="B",
+                criteria_json=json.dumps(default_criteria()),
+                thesis=None,
+                shortlist_size=10,
+                is_active=True,
+                updated_at="2026-01-02T00:00:00+00:00",
+            )
+        )
+        session.commit()
+    sets = service.list_sets(test_db, user["id"])
+    assert [s["name"] for s in sets if s["is_active"]] == ["B"]

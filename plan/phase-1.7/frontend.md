@@ -294,8 +294,9 @@ git commit -m "feat: saved-screen picker + dialog-free criteria page; per-screen
 - Desktop (≥ md): the input is always rendered, `w-72` (18rem), `.glass-field` styling, a
   leading `Search` icon (16px, decorative) and a `⌘K`/`Ctrl K` hint inside; focus ring;
   results panel below unchanged (`glass-panel`, perspective entrance, sheen, stagger,
-  verdict chips, listbox a11y).
-- Below md: keep today's icon button + expand-on-open behavior.
+  verdict chips, listbox a11y). **Owner ruling (2026-09-29): the icon trigger and the
+  leading icon were removed — the bar itself is the only affordance at every width.**
+- Below md: the same bar fills its own row (no icon fallback).
 - Ctrl/Cmd+K: `preventDefault`, focus the input (desktop) and open (mobile).
 - One `GET /stocks` lazy fetch on first interaction/focus stays.
 

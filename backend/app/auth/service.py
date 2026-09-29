@@ -1,4 +1,4 @@
-"""User lifecycle: create / authenticate / seed default criteria.
+"""User lifecycle: create / authenticate / look up users.
 
 One account in practice; the schema is multi-user-ready (see the Phase 1.5
 spec). Sessions are stateless signed cookies — there is no sessions table.

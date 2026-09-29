@@ -16,6 +16,7 @@ vi.mock('@react-three/fiber', () => ({
     <div data-testid="ribbon-rail-canvas" data-frameloop={props.frameloop} />
   ),
   useFrame: () => {},
+  useThree: () => ({ invalidate: () => {} }),
 }))
 
 import { RibbonRail } from '../RibbonRail'
@@ -72,6 +73,7 @@ describe('RibbonRail', () => {
     mockMedia()
     render(<RibbonRail items={items} />)
     expect(screen.getByTestId('ribbon-rail')).toBeInTheDocument()
+    expect(screen.getByTestId('ribbon-rail-canvas')).toHaveAttribute('data-frameloop', 'demand')
     expect(screen.getAllByRole('button')).toHaveLength(2)
     expect(screen.getByRole('button', { name: 'PE' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ROE' })).toBeInTheDocument()

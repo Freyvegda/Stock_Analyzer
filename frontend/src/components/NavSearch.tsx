@@ -166,7 +166,7 @@ export function NavSearch() {
     <div ref={wrapper} data-testid="nav-search" className="relative flex items-center">
       <div
         data-testid="nav-search-field"
-        className="glass-field relative flex w-full items-center md:w-72"
+        className="glass-field relative flex min-w-0 flex-1 items-center md:flex-none md:w-72"
       >
         <input
           ref={input}

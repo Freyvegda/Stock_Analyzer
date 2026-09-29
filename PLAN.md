@@ -28,7 +28,7 @@ Long holding horizon (fundamental-driven). Signals only — no auto-trading. Bud
 | Filings/PDFs | NSE/BSE announcement endpoints | Free, official |
 | Doc AI | Gemini Flash free tier; keyword-based fallback | 0 INR at 10 stocks/quarter volume |
 | Price model | XGBoost primary, LSTM optional experiment, behind `Model` interface | Custom transformer = overfit on ~1250 rows; dropped |
-| Screener config | DB-backed per-user criteria (`user_criteria` + `screener/catalog.py`); `screening.yaml` retired in Phase 1.5 | changeable ratios per user, no file edits or restarts |
+| Screener config | DB-backed per-user screens (`screening_sets` + `screener/catalog.py`; one active drives runs/verdicts); `user_criteria` retired in Phase 1.7, `screening.yaml` in Phase 1.5 | changeable ratios per user, no file edits or restarts |
 | Pipeline trigger | Manual UI buttons now; scheduler later | MVP scope |
 | Testing | pytest + vitest (unit/integration) + walk-forward backtest (strategy) | Backtest = real validation |
 
@@ -118,13 +118,13 @@ D:\CODES\Projects\stock-analyzer\
 
 ### Phase 1.5 — Authorization + DB-driven screener
 - Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card
-- Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired
+- Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired (superseded by `screening_sets` in Phase 1.7)
 - Dynamic ratio catalog (`app/screener/catalog.py`) with on/off toggles and thresholds; unknown keys → 422
 - Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
 - Backend: `plan/phase-1.5/{backend,database}.md`; spec `docs/superpowers/specs/2026-09-26-phase-1.5-...md`
 
 ### Phase 1.6 — Stock detail page
-- Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from `user_criteria`), catalog fundamentals grid, daily chart
+- Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from the active screen since Phase 1.7), catalog fundamentals grid, daily chart
 - Stock data shared across users: stored-first snapshot, lazy first fetch, manual Refresh; report never persisted
 - Candles 6m/1y/2y/5y × 1d/15d/1mo from a process-memory TTL cache; daily bars never written to the DB
 - 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes — retired in Phase 1.6c
@@ -143,8 +143,8 @@ D:\CODES\Projects\stock-analyzer\
 
 ### Phase 1.7 — Saved screens + inline criteria editor + navbar search
 - Multiple named screening criteria per user in `screening_sets`; exactly one active; runs and Top 10 are per active screen (`screen_runs.set_id`)
-- Criteria page: screen picker + dialog-free inline editor (category sub-accordions); Edit Criteria expands it; Run saves the draft first
-- Navbar search: always-visible 3D-glass bar ≥ md (icon fallback < md), Ctrl/Cmd+K focuses
+- Criteria page: screen picker + dialog-free inline editor (category sub-accordions); criterion bookmarks (ribbon toggle, pinned rows, "Bookmarked only" filter, 3D ribbon rail); Edit Criteria expands it; Run saves the draft first
+- Navbar search: always-visible 3D-glass bar at every width (no icon trigger — owner ruling 2026-09-29), Ctrl/Cmd+K focuses
 - Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
 
 ### Phase 2 — Document analysis

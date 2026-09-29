@@ -1,9 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CriteriaEditor } from '../CriteriaEditor'
 import { Provider } from '../ui/provider'
 import type { RatioSpec, ScreeningSet } from '../../api/types'
+
+vi.mock('@/lib/webgl', () => ({ hasWebGL: () => true }))
+
+vi.mock('@react-three/fiber', () => ({
+  Canvas: (props: { frameloop?: string }) => (
+    <div data-testid="ribbon-rail-canvas" data-frameloop={props.frameloop} />
+  ),
+  useFrame: () => {},
+  useThree: () => ({ invalidate: () => {} }),
+}))
 
 const catalog: RatioSpec[] = [
   { key: 'pe', label: 'PE', unit: '×', category: 'Valuation', direction: 'max' },
@@ -26,16 +36,17 @@ const savedSet: ScreeningSet = {
 }
 
 function renderEditor(overrides: {
+  open?: boolean
   set?: ScreeningSet
   onSave?: (criteria: unknown, thesis: string | null) => Promise<void>
   onDirtyChange?: (dirty: boolean) => void
 } = {}) {
   const onSave = overrides.onSave ?? vi.fn(() => Promise.resolve())
   const onDirtyChange = overrides.onDirtyChange ?? vi.fn()
-  render(
+  const view = render(
     <Provider>
       <CriteriaEditor
-        open
+        open={overrides.open ?? true}
         onOpenChange={() => {}}
         set={overrides.set ?? savedSet}
         ratios={catalog}
@@ -44,10 +55,27 @@ function renderEditor(overrides: {
       />
     </Provider>,
   )
-  return { onSave, onDirtyChange }
+  return { onSave, onDirtyChange, view }
 }
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: query.includes('min-width'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList,
+  )
+})
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('CriteriaEditor', () => {
   it('shows every category and the saved rows', async () => {
@@ -188,6 +216,21 @@ describe('CriteriaEditor', () => {
     expect(screen.getByRole('checkbox', { name: 'PB' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'PE' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /profitability/i })).not.toBeInTheDocument()
+  })
+
+  it('mounts the 3D ribbon rail only while the editor is open and a bookmark exists', async () => {
+    const { view } = renderEditor()
+    await screen.findByRole('checkbox', { name: 'PE' })
+    expect(screen.queryByTestId('ribbon-rail')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark PE' }))
+    expect(await screen.findByTestId('ribbon-rail')).toBeInTheDocument()
+
+    view.unmount()
+    renderEditor({
+      open: false,
+      set: { ...savedSet, criteria: [{ key: 'pe', enabled: true, value: 25, bookmarked: true }] },
+    })
+    expect(screen.queryByTestId('ribbon-rail')).not.toBeInTheDocument()
   })
 
   it('reports dirty state changes', async () => {

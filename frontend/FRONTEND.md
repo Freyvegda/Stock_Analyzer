@@ -62,7 +62,7 @@ frontend/src/
 ├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
 │   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", 401 event
-│   └── types.ts        # AuthUser, RatioSpec, Criterion, UserCriteria, screen types
+│   └── types.ts        # AuthUser, RatioSpec, Criterion, ScreeningSet, screen types
 ├── auth/
 │   └── AuthContext.tsx # session user state, logout, listens for auth:unauthorized
 ├── theme/

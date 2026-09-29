@@ -1,5 +1,7 @@
 """API tests for /screen/sets and the retired /screen/criteria (Phase 1.7)."""
 
+from app.db.models import ScreeningSet
+
 
 def create_screen(client, name, **extra):
     response = client.post("/screen/sets", json={"name": name, **extra})
@@ -101,3 +103,23 @@ def test_criteria_endpoints_retired(client, sign_in):
 
 def test_sets_require_auth(client):
     assert client.get("/screen/sets").status_code == 401
+
+
+def test_corrupt_criteria_json_falls_back_to_defaults(client, sign_in, test_db):
+    user = sign_in()
+    with test_db() as session:
+        session.add(
+            ScreeningSet(
+                user_id=user["id"],
+                name="Broken",
+                criteria_json="{not json",
+                thesis=None,
+                shortlist_size=10,
+                is_active=True,
+                updated_at="now",
+            )
+        )
+        session.commit()
+    body = client.get("/screen/sets").json()
+    assert body[0]["name"] == "Broken"
+    assert len(body[0]["criteria"]) == 6  # Phase-1 defaults, never a 500
