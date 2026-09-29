@@ -274,7 +274,9 @@ describe('towerPose', () => {
       expect(pose.x).toBeLessThan(-1)
       expect(pose.activeTier).toBe(i)
       expect(pose.tiers[i].emphasis).toBeCloseTo(1, 5)
-      expect(pose.tiers[i].lift).toBeGreaterThan(0.5)
+      // Opened, not cleared: the size of the lift is pinned by its own test
+      // below, and is deliberately a fraction of the storey height.
+      expect(pose.tiers[i].lift).toBeGreaterThan(0.1)
     }
   })
 
@@ -295,6 +297,15 @@ describe('towerPose', () => {
       if (i === 1) continue
       expect(pose.tiers[i].brightness).toBeLessThan(open)
     }
+  })
+
+  it('lifts only far enough to read as opening, not as detaching', () => {
+    // A lift on the order of a whole storey height clears the wall and floats
+    // the roof into the storey above, which reads as the tower coming apart.
+    const tier = pagodaLayout(4)[0]
+    const pose = towerPose(tierStage(0) / SCROLL_SPAN)
+    expect(pose.tiers[0].lift).toBeGreaterThan(0.1)
+    expect(pose.tiers[0].lift).toBeLessThan(tier.bodyHeight * 0.5)
   })
 
   it('returns to centre and closes up for the call to action', () => {

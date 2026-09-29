@@ -605,7 +605,14 @@ export interface TowerPose {
 const DIMMED = 0.35
 /** The open storey's roof leans this far, in radians. */
 const OPEN_TILT = 0.105
-const OPEN_LIFT = 0.62
+/**
+ * How far the open storey's roof rises.
+ *
+ * Small on purpose. At a full storey height the roof clears the wall entirely
+ * and floats into the storey above, which reads as the tower coming apart rather
+ * than opening. A short lift plus the lean is what sells the reveal.
+ */
+const OPEN_LIFT = 0.2
 
 /**
  * The whole scroll story, as one function of progress.

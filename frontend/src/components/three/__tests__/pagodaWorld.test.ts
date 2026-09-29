@@ -22,9 +22,12 @@ import {
   petalPose,
   petalSeeds,
   pickQuality,
+  ridgeReach,
   skyGradient,
   starField,
   toriiPath,
+  CAMERA_Z,
+  visibleHalfHeight,
   waterPlane,
   worldPlan,
 } from '../pagodaWorld'
@@ -41,6 +44,17 @@ describe('skyGradient', () => {
     // Big enough to sit behind everything and never show an edge.
     expect(g.radius).toBeGreaterThan(20)
     expect(Number.isFinite(g.radius)).toBe(true)
+  })
+
+  it('keeps the gradient on the dome rather than on a coplanar band', () => {
+    // The bug this pins: a separate horizon plane has to pick a depth, and at
+    // the near ridge's depth the two z-fight — which drew as vertical striping
+    // across the lower frame. The gradient is baked into the dome, so there is
+    // no second surface to fight with.
+    const g = skyGradient()
+    expect(g.zenith.role).toBe('skyTop')
+    expect(g.horizon.role).toBe('skyHorizon')
+    expect(Object.keys(g)).not.toContain('horizonZ')
   })
 })
 
@@ -105,13 +119,54 @@ describe('mountainRidges', () => {
     }
   })
 
-  it('keeps every ridge behind the tower', () => {
-    // Anything at or in front of the tower occludes it.
-    for (const r of ridges) expect(r.z).toBeLessThan(0)
+  it('reaches past the edge of the frame at every aspect it supports', () => {
+    // A ridge whose silhouette ends inside the frustum shows a hard vertical
+    // edge — a stuck rectangle rather than a mountain. The reach is derived from
+    // the camera, so this is the relationship being pinned.
+    for (const r of ridges) {
+      const half = Math.max(...r.points.filter((_, i) => i % 2 === 0).map(Math.abs))
+      const visible = visibleHalfHeight(r.z)
+      expect(half, `ridge at z=${r.z}`).toBeGreaterThan(visible * 2.2)
+    }
+  })
+
+  it('falls away to ground well before its own edge, so width is margin not mass', () => {
+    // The extra width has to be off-screen margin. If the arch still carried
+    // height at the strip's edge, every ridge would read as a plateau.
+    for (const r of ridges) {
+      const ys = r.points.filter((_, i) => i % 2 === 1)
+      const edge = Math.max(ys[0], ys[ys.length - 1])
+      const middle = Math.max(...ys)
+      expect(edge).toBeLessThan(middle * 0.25)
+    }
+  })
+
+  it('never lets a nearer range subtend a smaller angle than a further one', () => {
+    // Apparent size, not raw height: a tall range twice as far away is still
+    // smaller on screen. This is the cue that reads as depth.
+    const apparent = ridges.map((r) => r.peak / Math.abs(r.z))
+    for (let i = 1; i < apparent.length; i += 1) {
+      expect(apparent[i], `ridge ${i} recedes`).toBeGreaterThan(apparent[i - 1])
+    }
   })
 
   it('is deterministic', () => {
     expect(mountainRidges()).toEqual(ridges)
+  })
+})
+
+describe('ridgeReach and visibleHalfHeight', () => {
+  it('grows with distance, because a further ridge needs to be wider', () => {
+    expect(visibleHalfHeight(-70)).toBeGreaterThan(visibleHalfHeight(-30))
+    expect(ridgeReach(-70)).toBeGreaterThan(ridgeReach(-30))
+    for (const z of [-70, -50, -30]) {
+      expect(ridgeReach(z)).toBeGreaterThan(visibleHalfHeight(z))
+    }
+  })
+
+  it('agrees with the camera it is derived from', () => {
+    // tan(22.5 degrees) at a distance of `CAMERA_Z - z`.
+    expect(visibleHalfHeight(0)).toBeCloseTo(0.41421356 * 6.4, 5)
   })
 })
 
@@ -157,6 +212,12 @@ describe('waterPlane', () => {
     expect(water.depth).toBeGreaterThan(0)
   })
 
+  it('keeps its own near edge behind the camera, so it can never show', () => {
+    // A plane sized just around the tower ends inside the frustum, and the hard
+    // horizontal edge reads as a clipped sprite rather than ground.
+    expect(water.edgeZ).toBeGreaterThan(CAMERA_Z)
+  })
+
   it('is deterministic', () => {
     expect(waterPlane(layout)).toEqual(water)
   })
@@ -169,20 +230,23 @@ describe('toriiPath', () => {
     expect(gates.length).toBeLessThanOrEqual(WORLD_LIMITS.torii)
   })
 
-  it('runs from the foreground to the tower, shrinking with distance', () => {
+  it('runs from the middle distance up to the tower, shrinking with distance', () => {
     expect(gates.length).toBeGreaterThan(2)
     for (let i = 1; i < gates.length; i += 1) {
       expect(gates[i].scale).toBeLessThan(gates[i - 1].scale)
+      expect(gates[i].position.z).toBeLessThan(gates[i - 1].position.z)
     }
   })
 
-  it('lines the path up on the centre line', () => {
-    for (const g of gates) expect(Math.abs(g.position.x)).toBeLessThan(1e-9)
-  })
-
-  it('puts the far end of the path at the tower, not past it', () => {
-    const last = gates[gates.length - 1]
-    expect(last.position.z).toBeLessThan(0)
+  it('keeps clear of the camera and of the tower', () => {
+    // The camera sits at z = 6.4. The first version ran the path to z = 6.2,
+    // which put a gate at the lens: eight storey-height bars across the frame.
+    // The far end must also stop short of the plinth, or a gate stands inside
+    // the building.
+    for (const g of gates) {
+      expect(g.position.z, `gate at z=${g.position.z} is at the camera`).toBeLessThan(4.4)
+      expect(g.position.z, `gate at z=${g.position.z} is inside the tower`).toBeGreaterThan(0.5)
+    }
   })
 
   it('is deterministic', () => {

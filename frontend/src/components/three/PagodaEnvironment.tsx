@@ -2,7 +2,6 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import {
   AdditiveBlending,
   BackSide,
-  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -27,6 +26,7 @@ import {
   type Quality,
 } from './pagodaWorld'
 import { pagodaLayout, type TierGeometry } from './pagodaScene'
+import { mergePlaced, ridgeStrip, toriiParts } from './worldGeometry'
 
 /**
  * The world the pagoda stands in.
@@ -87,7 +87,11 @@ export function PagodaEnvironment({
   // value progression *is* the depth cue. Merging them would flatten the scene
   // into one silhouette.
   const ridgeGeometry = useMemo(
-    () => ridges.map((r) => ridgeStrip(r.points, -10)),
+    // The base has to sit below the frame for the *furthest* ridge, which is the
+    // one whose bottom edge comes closest to the horizon: at z = -70 the visible
+    // half-height is about 32 units, so anything shallower than that shows as a
+    // hard horizontal line across the mountains.
+    () => ridges.map((r) => ridgeStrip(r.points, -90)),
     [ridges],
   )
 
@@ -130,28 +134,7 @@ export function PagodaEnvironment({
   }, [trees, plan.scenery])
   return (
     <group>
-      {/* Sky. A back-faced sphere: the camera sees its inside. */}
-      <mesh scale={[sky.radius, sky.radius, sky.radius]}>
-        <sphereGeometry args={[1, 20, 12]} />
-        <meshBasicMaterial
-          color={mix(light.skyTop, dark.skyTop)}
-          side={BackSide}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
-
-      {/* The horizon band, so the sky is not one flat colour top to bottom. */}
-      <mesh position={[0, sky.horizon.y, -sky.radius * 0.5]}>
-        <planeGeometry args={[sky.radius * 4, sky.radius * 0.8]} />
-        <meshBasicMaterial
-          color={mix(light.skyHorizon, dark.skyHorizon)}
-          transparent
-          opacity={0.85}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
+      <SkyDome night={night} sky={sky} />
 
       <Celestial plan={plan} night={night} clock={t} halo={mix(light.halo, dark.halo)} />
 
@@ -176,7 +159,7 @@ export function PagodaEnvironment({
       {/* Ranges, far to near, each with its own value. */}
       {plan.scenery
         ? ridges.map((r, i) => (
-            <mesh key={r.index} geometry={ridgeGeometry[i]} position={[0, -0.5, r.z]}>
+            <mesh key={r.index} geometry={ridgeGeometry[i]} position={[0, -1.2, r.z]}>
               <meshBasicMaterial
                 color={mix(light[r.colourRole], dark[r.colourRole])}
                 side={DoubleSide}
@@ -369,6 +352,44 @@ function Celestial({
   )
 }
 
+/**
+ * The sky dome, with the gradient painted into its vertices.
+ *
+ * A vertex-colour gradient rather than a separate horizon plane: a separate band
+ * has to pick a depth, and at the near ridge's depth the two become coplanar and
+ * z-fight. A gradient baked into the dome cannot fight with anything, and it is
+ * one draw call.
+ */
+function SkyDome({ night, sky }: { night: boolean; sky: ReturnType<typeof skyGradient> }) {
+  const geometry = useMemo(() => {
+    const g = new SphereGeometry(1, 24, 16)
+    const position = g.getAttribute('position')
+    const top = new Color(night ? pagodaPalette.dark.skyTop : pagodaPalette.light.skyTop)
+    const bottom = new Color(
+      night ? pagodaPalette.dark.skyHorizon : pagodaPalette.light.skyHorizon,
+    )
+    const blend = new Color()
+    const colours = new Float32Array(position.count * 3)
+    for (let i = 0; i < position.count; i += 1) {
+      // 0 at the bottom of the dome, 1 at the top. The 0.6 exponent lifts the
+      // horizon glow up the dome, which is where a real sky is lightest.
+      const t = Math.pow(Math.max(0, (position.getY(i) + 1) / 2), 0.6)
+      blend.copy(bottom).lerp(top, t)
+      colours[i * 3] = blend.r
+      colours[i * 3 + 1] = blend.g
+      colours[i * 3 + 2] = blend.b
+    }
+    g.setAttribute('color', new BufferAttribute(colours, 3))
+    return g
+  }, [night])
+
+  return (
+    <mesh renderOrder={-2} scale={[sky.radius, sky.radius, sky.radius]} geometry={geometry}>
+      <meshBasicMaterial vertexColors side={BackSide} depthWrite={false} toneMapped={false} />
+    </mesh>
+  )
+}
+
 /** The pool. Low roughness and some metalness, so it catches the sky. */
 function Water({
   plane,
@@ -394,121 +415,3 @@ function Water({
     </mesh>
   )
 }
-
-/**
- * A ridge as a filled strip under its jagged top edge.
- *
- * The lower edge is pinned well below every peak, so the strip always closes and
- * the mountain reads as ground rather than a floating ribbon.
- */
-function ridgeStrip(points: number[], base: number): BufferGeometry {
-  const positions: number[] = []
-  const indices: number[] = []
-  const topCount = points.length / 2
-  for (let i = 0; i < topCount; i += 1) positions.push(points[i * 2], points[i * 2 + 1], 0)
-  for (let i = 0; i < topCount; i += 1) positions.push(points[i * 2], base, 0)
-  for (let i = 0; i < topCount - 1; i += 1) {
-    indices.push(i, topCount + i, topCount + i + 1)
-    indices.push(i, topCount + i + 1, i + 1)
-  }
-  const g = new BufferGeometry()
-  g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
-  g.setIndex(indices)
-  return g
-}
-
-/**
- * A torii gate: two uprights, a tie beam, and the top lintel that oversails them.
- *
- * Built from four boxes rather than a torus, because a half-torus is a horseshoe
- * and a gate is not.
- */
-function toriiParts(gate: {
-  position: { x: number; y: number; z: number }
-  scale: number
-}): Array<{
-  geometry: BufferGeometry
-  offset: readonly [number, number, number]
-  scale: number
-}> {
-  const s = gate.scale
-  const h = 1.15 * s
-  const spread = 0.42 * s
-  const parts: Array<{
-    geometry: BufferGeometry
-    offset: readonly [number, number, number]
-    scale: number
-  }> = []
-  for (const side of [-1, 1]) {
-    parts.push({
-      geometry: new BoxGeometry(0.055 * s, h, 0.055 * s),
-      offset: [gate.position.x + side * spread, h / 2, gate.position.z],
-      scale: 1,
-    })
-  }
-  // The tie beam, just under the lintel.
-  parts.push({
-    geometry: new BoxGeometry(spread * 2.1, 0.06 * s, 0.05 * s),
-    offset: [gate.position.x, h * 0.82, gate.position.z],
-    scale: 1,
-  })
-  // The lintel, oversailing both uprights — the shape that says "torii".
-  parts.push({
-    geometry: new BoxGeometry(spread * 2.7, 0.085 * s, 0.09 * s),
-    offset: [gate.position.x, h, gate.position.z],
-    scale: 1,
-  })
-  return parts
-}
-
-/**
- * Merge geometries that each carry an offset and a uniform scale.
- *
- * Written by hand rather than with `mergeGeometries`, because these parts differ
- * in attribute sets and `mergeGeometries` refuses those outright. Baking every
- * transform into one buffer is what gets a grove or a row of gates down to a
- * single draw call.
- */
-function mergePlaced(
-  parts: Array<{
-    geometry: BufferGeometry
-    offset: readonly [number, number, number]
-    scale: number
-  }>,
-): BufferGeometry {
-  const positions: number[] = []
-  const normals: number[] = []
-  const indices: number[] = []
-  let offset = 0
-
-  for (const part of parts) {
-    const g = part.geometry
-    if (!g.getAttribute('position')) continue
-    if (!g.getAttribute('normal')) g.computeVertexNormals()
-    if (g.getIndex() === null) {
-      g.setIndex(Array.from({ length: g.getAttribute('position').count }, (_, i) => i))
-    }
-    const pos = g.getAttribute('position')
-    const nor = g.getAttribute('normal')
-    const index = g.getIndex()!
-    for (let i = 0; i < pos.count; i += 1) {
-      positions.push(
-        pos.getX(i) * part.scale + part.offset[0],
-        pos.getY(i) * part.scale + part.offset[1],
-        pos.getZ(i) * part.scale + part.offset[2],
-      )
-      normals.push(nor.getX(i), nor.getY(i), nor.getZ(i))
-    }
-    for (let i = 0; i < index.count; i += 1) indices.push(index.getX(i) + offset)
-    offset += pos.count
-    g.dispose()
-  }
-
-  const merged = new BufferGeometry()
-  merged.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
-  merged.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3))
-  merged.setIndex(indices)
-  return merged
-}
-
-export default PagodaEnvironment

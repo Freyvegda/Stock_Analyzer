@@ -22,7 +22,7 @@ import { PAGODA_SEED, type TierGeometry } from './pagodaScene'
 export const WORLD_LIMITS = {
   ridges: 3,
   trees: 4,
-  torii: 8,
+  torii: 5,
   stars: 90,
   petals: 40,
   fireflies: 18,
@@ -82,6 +82,27 @@ export function pickQuality(hints?: {
   return 'medium'
 }
 
+/**
+ * The scene camera. Stated here because the world's geometry has to be sized
+ * against it: a ridge whose edges fall inside the frustum shows a hard vertical
+ * line where the silhouette stops, and how far it must reach is decided by the
+ * camera's distance and field of view, not by taste.
+ */
+export const CAMERA_Z = 6.4
+export const CAMERA_FOV = 45
+/** Widest aspect the scene is laid out for, so an ultrawide still has no edge. */
+export const MAX_ASPECT = 3.2
+
+/** Visible half-height at a given depth, for the scene camera. */
+export function visibleHalfHeight(z: number): number {
+  return Math.tan((CAMERA_FOV * Math.PI) / 360) * (CAMERA_Z - z)
+}
+
+/** How far a ridge must reach sideways to cover the widest supported frame. */
+export function ridgeReach(z: number): number {
+  return visibleHalfHeight(z) * MAX_ASPECT
+}
+
 // --- the seeded generator ---------------------------------------------------
 
 /**
@@ -108,7 +129,15 @@ export interface SkyGradient {
   radius: number
 }
 
-/** The dome behind everything. Big enough that its edge never enters frame. */
+/**
+ * The dome behind everything. Big enough that its edge never enters frame.
+ *
+ * The renderer paints this dome with a **vertex-colour gradient** rather than
+ * putting a separate horizon plane in front of it. That is not a style choice:
+ * a separate band has to pick a depth, and at the near ridge's depth the two are
+ * coplanar and z-fight, which drew as vertical striping across the lower frame.
+ * A gradient baked into the dome cannot fight with anything.
+ */
 export function skyGradient(): SkyGradient {
   return {
     zenith: { role: 'skyTop', y: 16 },
@@ -183,20 +212,28 @@ export function mountainRidges(): Ridge[] {
 
   for (let i = 0; i < WORLD_LIMITS.ridges; i += 1) {
     const at = i / (WORLD_LIMITS.ridges - 1) // 0 far, 1 near
-    const depth = 26 - 16 * at
-    const peak = 4.2 + 3.4 * at
-    const z = -22 + 16 * at
-    const halfSpan = depth * 0.62
+    // Pushed well back and scaled with distance so each range subtends a
+    // *smaller* angle than the one behind it. The first version sat the near
+    // range at z = -6 with an eight-unit peak, which put a black wall across the
+    // whole frame and hid the tower.
+    const depth = 84 - 40 * at
+    const peak = 12 + 3 * at
+    const z = -70 + 40 * at
+    // Wide enough that the ridge never ends inside the frame, whatever the
+    // window's aspect. A silhouette that stops mid-screen reads as a stuck
+    // rectangle, not a mountain.
+    const halfSpan = ridgeReach(z)
     const points: number[] = []
     // An odd number of segments so the ridge has a peak in the middle and reads
     // as a mountain rather than a plateau.
-    const segments = 13
+    const segments = 17
     for (let s = 0; s < segments; s += 1) {
       const t = s / (segments - 1)
       const x = (t - 0.5) * 2 * halfSpan
-      // A broad arch, roughened. The arch is what makes it a ridge; the
-      // roughness is what makes it rock.
-      const arch = Math.sin(t * Math.PI) ** 0.7
+      // A narrow arch on a wide base: the peak sits in the middle and the range
+      // falls away to flat ground well before the strip's own edge, so the
+      // extra width is off-screen margin rather than a wider mountain.
+      const arch = Math.exp(-((t - 0.5) ** 2) / (2 * 0.17 ** 2))
       const roughness = 0.82 + rand() * 0.36
       points.push(x, peak * arch * roughness)
     }
@@ -262,6 +299,8 @@ export interface WaterPlane {
   z: number
   width: number
   depth: number
+  /** The near edge, which is the one that can show inside the frame. */
+  edgeZ: number
 }
 
 /**
@@ -273,10 +312,14 @@ export interface WaterPlane {
 export function waterPlane(tiers: TierGeometry[]): WaterPlane {
   const base = tiers[0]?.bodyWidth ?? 1.34
   return {
-    y: -0.16,
-    z: -0.4,
-    width: base * 9,
-    depth: 13,
+    y: -0.18,
+    z: 0,
+    // Large enough that its own edge is never inside the frame. A plane sized
+    // just around the tower shows a hard horizontal line across the foreground
+    // where it ends, which reads as a clipped sprite rather than ground.
+    width: base * 40,
+    depth: 90,
+    edgeZ: 0 + 90 / 2,
   }
 }
 
@@ -290,10 +333,11 @@ export interface Torii {
 }
 
 /**
- * A row of gates running from the foreground to the tower's steps.
+ * A row of gates running from the middle distance up to the tower's steps.
  *
- * Shrinking with distance does the perspective work for free, and every gate
- * carries a small lantern that lights at night.
+ * The near end is deliberately kept well clear of the camera (which sits at
+ * z = 6.4): the first version ran the path to z = 6.2, which put a gate at the
+ * lens — eight storey-height bars across the whole frame.
  */
 export function toriiPath(): Torii[] {
   const rand = rng(PAGODA_SEED ^ 0x5c4d)
@@ -302,9 +346,10 @@ export function toriiPath(): Torii[] {
     const at = i / (WORLD_LIMITS.torii - 1)
     gates.push({
       index: i,
-      // Dead on the centre line: this is a path, and it has to read as one.
-      position: { x: 0, y: -0.16, z: 6.2 - at * 8.4 },
-      scale: 1 - at * 0.62 + (rand() - 0.5) * 0.03,
+      // Dead on the centre line: this is a path, and it has to read as one. The
+      // far end stops short of the plinth so no gate stands inside the tower.
+      position: { x: 0, y: -0.16, z: 3.2 - at * 2.2 },
+      scale: 0.5 - at * 0.24 + (rand() - 0.5) * 0.03,
       lit: true,
     })
   }

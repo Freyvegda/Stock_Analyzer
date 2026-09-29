@@ -375,6 +375,9 @@ function Scene({
       {layout.map((tier, i) => (
         <group
           key={tier.index}
+          // The storey's own place in the stack. Without this every storey sits
+          // at y=0 and the tower renders as one overlapping heap.
+          position={[0, tier.y, 0]}
           ref={(node) => {
             tierRefs.current[i] = node
           }}
