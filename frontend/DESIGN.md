@@ -105,16 +105,22 @@ Signatures (the whole inventory):
 9. Navbar — pointer sheen, hover brighten, spring active pill, one-shot entrance; no tilt or
    movement on pointer move (see the navbar section).
 
-**Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
+**Loops - complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
 last-run status dot pulse, Bonfire flame + embers (signed-in app), Sakura Garden falling
 petals (login only), Pagoda tower (landing page only). Max one loop per viewport zone;
 `/login` swaps the bonfire out for the garden, and `/` swaps it out for the pagoda. Loops
 never render inside tables, summaries, or chart interiors.
 
-6. **Pagoda tower** (landing page `/` only) — scroll-linked, four storeys, one open at a
+The landing page is allowed one *primary* loop (the tower: sway, lantern swing, roof
+reveal) plus a **shared atmosphere loop** (petals, fireflies, birds and the water, all
+driven off the same clock so they read as one weather system rather than four unrelated
+animations). No other loop mounts in the landing viewport.
+
+6. **Pagoda tower** (landing page `/` only) - scroll-linked, four storeys, one open at a
    time; a slow finial and eave sway is its only autonomous motion. Under reduced motion it
    renders a single static frame; below `md` a static inline SVG mark replaces it and the 3D
-   chunk is never requested. No second loop renders in the landing viewport.
+   chunk is never requested. The landing page carries the primary loop and the shared
+   atmosphere loop, and nothing else.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
@@ -234,18 +240,42 @@ otherwise dense and tabular, and it is the only place the storey metaphor is use
   route, badge, cards. Both the scene and the DOM sections read it, and every geometry function
   derives from `TOWER_TIERS.length`, so the pagoda cannot end up with a different number of
   storeys than the page has sections.
-- **Geometry is pure.** `pagodaLayout`, `pagodaRoofVertices`, `finialLayout`, `towerPose` and
-  `stageProgress` live in `three/pagodaScene.ts` (three-free, unit-tested, no WebGL needed), so
-  `Pagoda.tsx` stays a thin renderer and `components/three/**` stays hex-free. The roof is a
-  custom apex-plus-eave-ring build rather than `ConeGeometry(4)`: a square pyramid does not read
-  as a pagoda, and the upturned corner is the shape that does.
+- **Geometry is pure.** `pagodaLayout`, `pagodaRoofVertices`, `finialLayout`, `towerPose`,
+  `storeyOpenings`, `roofCourses`, `hangingLanterns` and `baseDetail` live in
+  `three/pagodaScene.ts`; the world's layout lives in `three/pagodaWorld.ts` — sky, sun or moon,
+  ridges, grove, water, torii, stars, petals, fireflies and birds — and both are unit-tested with
+  no WebGL. `storeyGeometry.ts` assembles a storey into merged buffers. The renderers compute no
+  shape of their own, and `components/three/**` stays hex-free. The roof is a custom
+  apex-plus-eave-ring build rather than `ConeGeometry(4)`: a square pyramid does not read as a
+  pagoda, and the upturned corner is the shape that does.
+- **Detail** follows the reference illustration's anatomy, not its palette: corner posts, a
+  veranda with balusters, a ground-floor double-leaf door with ring pulls, lattice window screens,
+  concentric roof tile courses with hip ridges, and lanterns hung on visible cords from the eave
+  tips. The lanterns are the tower's own light after dark, and only a capped few carry a real
+  point light — the scene's main cost control.
 - **One scroll value, two consumers.** `useScroll` produces a single `MotionValue`. The scene
-  samples it inside `useFrame` (continuous, no React re-render); the DOM subscribes for the
-  active stage index (7 changes, not one per frame). Neither owns the state, so the tower and the
-  cards cannot disagree about which storey is open. Section pinning is CSS `position: sticky`.
+  samples it inside `useFrame` (continuous, no React re-render); the DOM subscribes through
+  `useLandingStage` for the active stage index and the open accordion row. Neither owns the state,
+  so the tower and the cards cannot disagree about which storey is open. Section pinning is CSS
+  `position: sticky`.
 - **One storey at a time.** Tier windows are half a stage wide so they meet edge to edge; wider
-  overlaps opened two roofs at once and pulled the tower apart. The open storey's roof lifts off
-  the stack to reveal it, and the other three dim.
+  overlaps opened two roofs at once and pulled the tower apart. The other three dim.
+- **The reveal.** Only the storey's *roof* lifts and leans. Lifting the whole storey opened a gap
+  in the stack and read as the tower coming apart. Every pose value is damped toward its target in
+  the frame loop, so scroll jitter cannot shake the building, and the camera follows the open
+  storey's height so a storey is shown rather than merely scrolled past.
+- **Cost.** Three rules, each held by a test: geometry is merged per material, repeated fields are
+  a single `InstancedMesh` each, and nothing calls `setState` per frame. A storey draws a handful
+  of calls rather than ninety. `pickQuality` scales particles, `dpr` and shadows to the device, so
+  a modest laptop or a touch device gets the same picture with fewer particles instead of a worse
+  one. Merged buffers and material sets are disposed on unmount. There is no drifting mist: the
+  ridges recede by value, and full-width additive quads are exactly the fill cost that hurts
+  integrated graphics.
+- **Landing navigation.** The overview list and the storey rail both jump to a storey; the rail
+  sits on the *right*, because the pose slides the tower left and a left rail would sit on top of
+  it. Each storey's cards are a hover-open, keyboard-operable accordion, one row at a time, which
+  is also what carries the content when the 3D is absent. Storeys marked `in-progress` do not link
+  to their own stub route: they say so and offer a screen that works.
 - **Colour.** `pagodaPalette` (`tokens.ts`, a sibling of `bonfirePalette`, outside `ThemeTokens`).
   Both palettes are resident and crossfade over roughly 300ms, like the bonfire. The pagoda is
   brand, not status: lit surfaces use sakura and the site's own plum-ink neutrals, and **no
