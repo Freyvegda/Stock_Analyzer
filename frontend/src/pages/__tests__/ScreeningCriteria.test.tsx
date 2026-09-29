@@ -265,8 +265,8 @@ describe('ScreeningCriteria', () => {
     await waitFor(() =>
       expect(mockedApi.put).toHaveBeenCalledWith('/screen/sets/1', {
         criteria: [
-          { key: 'pe', enabled: true, value: 18 },
-          { key: 'roe', enabled: true, value: 15 },
+          { key: 'pe', enabled: true, value: 18, bookmarked: false },
+          { key: 'roe', enabled: true, value: 15, bookmarked: false },
         ],
         thesis: null,
       }),
