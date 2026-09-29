@@ -117,7 +117,8 @@ D:\CODES\Projects\stock-analyzer\
 - Unit tests: ratio math vs hand-computed fixtures; YAML validation
 
 ### Phase 1.5 — Authorization + DB-driven screener
-- Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card
+- Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card — the cookie
+  session is retired in Phase 1.8
 - Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired
 - Dynamic ratio catalog (`app/screener/catalog.py`) with on/off toggles and thresholds; unknown keys → 422
 - Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
@@ -140,6 +141,13 @@ D:\CODES\Projects\stock-analyzer\
 - Navbar stock search (`components/NavSearch.tsx`): Ctrl/Cmd+K glass combobox, lazy `GET /stocks`, client-side filter, top 8 with per-user verdict chips; keyboard-complete; opens `/stock/{symbol}`
 - Stock detail layout: description | verdict equal-height halves (description clipped, "More" opens the full profile dialog) → price chart → main ratios → "What it has" (market cap first) → "What it's done" → all other ratios
 - Candle Ridge 3D hero retired: component, pure helpers and tests removed; `DESIGN.md` loop whitelist and 3D sections updated
+
+### Phase 1.8 — Pagoda landing page + JWT authorization
+- Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven pagoda whose four storeys open one at a time, each with real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does
+- Tier content lives in one place (`src/content/tower.ts`); geometry, the scroll story and the roof mesh are pure and three-free (`three/pagodaScene.ts`), so the tower cannot drift from the page's sections and none of it needs WebGL to test
+- Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256 and *is* the revocation mechanism. Client single-flights refreshes (rotation would otherwise invalidate them in parallel); 3h sliding idle logout with a server-side backstop
+- `SessionMiddleware` and the `sa_session` cookie are gone; `logout`/`refresh` no longer depend on `current_user` so a logout after token expiry still revokes
+- `DESIGN.md` loop whitelist amended to admit the pagoda; "not a marketing site" amended to note the one exception
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

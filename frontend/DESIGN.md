@@ -107,8 +107,14 @@ Signatures (the whole inventory):
 
 **Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
 last-run status dot pulse, Bonfire flame + embers (signed-in app), Sakura Garden falling
-petals (login only). Max one loop per viewport zone; `/login` swaps the bonfire out for the
-garden. Loops never render inside tables, summaries, or chart interiors.
+petals (login only), Pagoda tower (landing page only). Max one loop per viewport zone;
+`/login` swaps the bonfire out for the garden, and `/` swaps it out for the pagoda. Loops
+never render inside tables, summaries, or chart interiors.
+
+6. **Pagoda tower** (landing page `/` only) — scroll-linked, four storeys, one open at a
+   time; a slow finial and eave sway is its only autonomous motion. Under reduced motion it
+   renders a single static frame; below `md` a static inline SVG mark replaces it and the 3D
+   chunk is never requested. No second loop renders in the landing viewport.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
@@ -217,6 +223,41 @@ wanderers that carries sparks across the whole screen. `emberSeeds`, `emberPose`
 - Budgets: 280 embers (cap 320, one instanced mesh of axis-aligned square pixel quads,
   `EMBER_PIXEL` ≈ 2–3 screen px before per-ember scale), 9 stones, 3 logs, 6 flame layers, one
   bloom sprite, one 128px canvas texture — no assets, no new dependency.
+
+## Pagoda
+
+`components/three/Pagoda.tsx` is the landing page's scene: a four-storey pagoda at `/` whose
+storeys open one at a time as the page scrolls. It is the one marketing surface in a tool that is
+otherwise dense and tabular, and it is the only place the storey metaphor is used.
+
+- **One source of truth.** `src/content/tower.ts` holds the tier list — id, heading, tagline,
+  route, badge, cards. Both the scene and the DOM sections read it, and every geometry function
+  derives from `TOWER_TIERS.length`, so the pagoda cannot end up with a different number of
+  storeys than the page has sections.
+- **Geometry is pure.** `pagodaLayout`, `pagodaRoofVertices`, `finialLayout`, `towerPose` and
+  `stageProgress` live in `three/pagodaScene.ts` (three-free, unit-tested, no WebGL needed), so
+  `Pagoda.tsx` stays a thin renderer and `components/three/**` stays hex-free. The roof is a
+  custom apex-plus-eave-ring build rather than `ConeGeometry(4)`: a square pyramid does not read
+  as a pagoda, and the upturned corner is the shape that does.
+- **One scroll value, two consumers.** `useScroll` produces a single `MotionValue`. The scene
+  samples it inside `useFrame` (continuous, no React re-render); the DOM subscribes for the
+  active stage index (7 changes, not one per frame). Neither owns the state, so the tower and the
+  cards cannot disagree about which storey is open. Section pinning is CSS `position: sticky`.
+- **One storey at a time.** Tier windows are half a stage wide so they meet edge to edge; wider
+  overlaps opened two roofs at once and pulled the tower apart. The open storey's roof lifts off
+  the stack to reveal it, and the other three dim.
+- **Colour.** `pagodaPalette` (`tokens.ts`, a sibling of `bonfirePalette`, outside `ThemeTokens`).
+  Both palettes are resident and crossfade over roughly 300ms, like the bonfire. The pagoda is
+  brand, not status: lit surfaces use sakura and the site's own plum-ink neutrals, and **no
+  element ever encodes gain or loss** — a roof tinted by "did this stock pass" would break the
+  rule above. `Pagoda.test.tsx` pins this.
+- **Gates:** lazy route chunk *and* lazy scene chunk (three.js is never in the initial bundle, and
+  a visitor landing on `/login` never downloads it), `hasWebGL()` else nothing, hidden below `md`,
+  paused when the tab is hidden, `aria-hidden`, `pointer-events-none`, `-z-10`.
+- **Degradations, deliberately different.** Below `md`, without WebGL, or under reduced motion the
+  DOM story carries the whole content on its own: same four sections, same cards, no 3D chunk
+  requested. Reduced motion additionally renders a single static frame rather than removing the
+  scene outright, which is the "final state instantly" rule.
 - The fire is never interactive and never carries text; toasts (also bottom-end) render above
   it.
 

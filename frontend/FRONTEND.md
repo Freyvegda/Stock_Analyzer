@@ -12,7 +12,9 @@ React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (
 
 The navbar also carries a **stock search** (`components/NavSearch.tsx`): Ctrl/Cmd+K or the icon opens a glass input, lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
 
-Dense, tabular, dark-themed. This is a tool, not a marketing site.
+Dense, tabular, dark-themed. This is a tool, not a marketing site — with one exception: `/` is a
+public landing page (a 3D pagoda) and the only marketing surface. Everything behind auth stays
+dense and tabular.
 
 ## Stack
 
@@ -25,10 +27,17 @@ Dense, tabular, dark-themed. This is a tool, not a marketing site.
   cards, and dense tables. Accessible snippets (provider, color-mode, toaster, tooltip) live
   in `src/components/ui/` too.
 - Charts: `lightweight-charts` (candlesticks/OHLC + signal markers), `recharts` (metric/ratio charts)
-- Auth: HttpOnly cookie session (`sa_session`) issued by the backend. `AuthProvider`
-  (`src/auth/AuthContext.tsx`) resolves `GET /auth/me` on mount; `RequireAuth` gates every route
-  except `/login`. Any non-login/setup 401 dispatches `auth:unauthorized`, clears the user, and the
-  guard redirects to `/login`.
+- Auth: a short-lived (15 min) HS256 access token held **in memory only** in
+  `src/auth/tokenStore.ts`, plus a rotating opaque refresh token in an HttpOnly `SameSite=Strict`
+  `sa_refresh` cookie. `AuthProvider` (`src/auth/AuthContext.tsx`) boots by exchanging the refresh
+  cookie for an access token, then resolves `GET /auth/me`; a failed refresh short-circuits to
+  anonymous without the extra request. `api/client.ts` attaches `Authorization: Bearer` and, on a
+   401 for a non-login/setup path, refreshes **once** and replays the request. That refresh is
+  single-flighted and must stay so — the server rotates the refresh token, so parallel refreshes
+  would invalidate each other. `RequireAuth` gates every route except `/login` and `/`. 3h of real
+  user activity inactivity signs the user out (`useIdleLogout`); the backend enforces the same
+  window server-side as a backstop. Any non-login/setup 401 that survives a refresh dispatches
+  `auth:unauthorized`, clears the token and the user, and the guard redirects to `/login`.
 - Theming v3 "Sakura Vault": `src/theme/tokens.ts` is the single source of colour truth; the
   marked block in `src/index.css` is test-synced (`$env:VAULT_SYNC='1'; npm run tokens:sync`),
   Chakra `system.ts` derives from it (sakura scale + `colorPalette="sakura"`, `bg.panel`), and
@@ -61,10 +70,13 @@ frontend/src/
 ├── App.tsx             # /login public; everything else inside RequireAuth + GlassNav shell
 ├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
-│   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", 401 event
+│   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", bearer + 401 refresh/replay
 │   └── types.ts        # AuthUser, RatioSpec, Criterion, UserCriteria, screen types
 ├── auth/
-│   └── AuthContext.tsx # session user state, logout, listens for auth:unauthorized
+│   ├── AuthContext.tsx # user state, re-bootstrap from the refresh cookie, logout, auth:unauthorized
+│   └── tokenStore.ts   # in-memory access token + single-flighted refresh (never localStorage)
+├── content/
+│   └── tower.ts        # the landing page's tiers: the single source of the storey count
 ├── theme/
 │   └── system.ts       # Chakra v3 system (sakura + brand/gain/loss + bg.panel); tokens.ts is the source
 ├── pages/

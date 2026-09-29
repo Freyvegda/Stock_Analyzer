@@ -10,7 +10,7 @@ Rationale: zero setup, zero cost, single-file backup. 500 stocks x 5yr daily pri
 
 **Hard rule: schema stays Postgres-compatible.** No SQLite-only column types, no SQLite-specific SQL. If scale ever demands it, swap = change connection string only. Mongo/NoSQL NOT used — documents live on the filesystem (`data/docs/{symbol}/`), their metadata + AI results in relational tables.
 
-## Tables (11)
+## Tables (12)
 
 Defined in `backend/app/db/models.py`. SQLAlchemy 2.x typed mappings (`Mapped[...]`).
 
@@ -22,6 +22,23 @@ Single account in practice; multi-user-ready schema.
 | username | String unique, NOT NULL | trimmed, 3–32 chars, stored lowercase |
 | password_hash | String NOT NULL | `scrypt$n$r$p$salt$hash` (stdlib hashlib.scrypt) |
 | created_at | String NOT NULL | ISO date-time |
+
+### auth_sessions (Phase 1.8)
+One row per issued refresh token. The row *is* the revocation mechanism: without it a refresh
+token could only be invalidated by rotating a secret, which logs out everyone rather than one
+session. Only the SHA-256 of the token is stored, so a database leak yields no usable credential.
+| Column | Type | Notes |
+|---|---|---|
+| id | Int PK autoincr | |
+| user_id | Int NOT NULL, indexed, FK → `users.id` | |
+| token_hash | String NOT NULL, unique | `sha256(token)` hex; the raw token exists only in the cookie |
+| created_at | String NOT NULL | ISO date-time |
+| last_seen_at | String NOT NULL | ISO; slides on every refresh, drives the 3h idle logout |
+| revoked_at | String NULL | set by logout, or when an idle/ownerless session is refused |
+
+No `expires_at`: the policy is sliding 3h with no absolute ceiling, so a second expiry rule would
+be invented complexity. `sweep_sessions` runs on login and deletes rows that are revoked or idle
+past the window — unreachable by policy anyway — which is what keeps the table bounded.
 
 ### screening_sets (Phase 1.7)
 Named screening criteria per user — the retired `user_criteria`, multiplied. Exactly one row
@@ -163,10 +180,10 @@ Model outputs. Composite PK allows multiple models per stock/day.
 - Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`latest_ok_fundamentals`); the stored snapshot is gated for rejection detail, then every symbol whose snapshot is not from today is refreshed (plus symbols with no row)
 - Universe list: `GET /stocks` reads `stocks` + the newest `ok` row per symbol, seeds `stocks` lazily when empty, and computes each row's verdict from the caller's criteria on read
 - Stock detail: same newest-`ok` lookup per symbol; no stored row -> lazy fetch + `merge`; candles are cache-only (`app/stock/candles.py`) — the DB is not involved in `/stock/{symbol}/ohlc` writes
-- Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)
+- Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset). **Adding a table needs no reset**: `create_all` creates tables that do not exist yet; it only never `ALTER`s existing ones. Deleting the file is only required when an *existing* column changes.
 - Dates as ISO strings — sortable, comparable, timezone-free (market data is date-granular)
 - JSON-in-Text columns (`shortlisted_json`, `criteria_json`, `report_json`, `red_flags_json`) for variable-shape payloads; parse at service layer, never in SQL
-- Session signing secret lives at `data/.session_secret` (file, not a table; gitignored, delete/rotate = logout all)
+- Auth signing secret lives at `data/.auth_secret` (file, not a table; gitignored, delete/rotate = logout all)
 
 ## Rules
 
