@@ -313,6 +313,33 @@ export interface PagodaPalette {
   fill: string
   /** The sun, by day. */
   sun: string
+  // --- the world the tower stands in -------------------------------------
+  /** Sky at the zenith. */
+  skyTop: string
+  /** Sky at the horizon, which the ridges recede toward. */
+  skyHorizon: string
+  /** The nearest mountain range — the darkest and most contrasted. */
+  ridgeNear: string
+  /** The middle range. */
+  ridgeMid: string
+  /** The furthest range, closest in value to the sky. */
+  ridgeFar: string
+  /** Drifting haze between the ranges. */
+  mist: string
+  /** The pool at the tower's foot. */
+  water: string
+  /** Blossom canopy. */
+  foliage: string
+  /** Trunk and branches. */
+  bark: string
+  /** Night sky points. */
+  star: string
+  /** The moon's disc. */
+  moon: string
+  /** Corona by day, halo by night. */
+  halo: string
+  /** The torii gates' lacquer. */
+  torii: string
 }
 
 /**
@@ -339,6 +366,25 @@ export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
     ambient: '#5C6B93',
     fill: '#FFA9C6',
     sun: '#FFD9A8',
+    // Night sky: plum at the horizon lifting to deep indigo overhead, so the
+    // zenith reads as the darkest thing in the frame.
+    skyTop: '#14101F',
+    skyHorizon: '#2E1E30',
+    // The ranges recede toward the horizon colour, so they stack into depth.
+    // By night the sky is already near-black, so the recession has to happen
+    // *upward* from the horizon rather than downward from it.
+    ridgeNear: '#150F1B',
+    ridgeMid: '#201726',
+    ridgeFar: '#332336',
+    mist: '#6E5A7A',
+    water: '#120E19',
+    foliage: '#6B3352',
+    bark: '#241A22',
+    star: '#E8DCF0',
+    // Cool, so it reads as moonlight rather than a second sun.
+    moon: '#DCE4F2',
+    halo: '#8FA0C4',
+    torii: '#7A2F4E',
   },
   light: {
     // Petal Paper, in daylight: the same building, sunlit. Plaster reads warm
@@ -354,6 +400,26 @@ export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
     ambient: '#FFF4F8',
     fill: '#FFE7EF',
     sun: '#FFF3E2',
+    // Daylight sky: a cool high blue over a warm sakura horizon.
+    skyTop: '#9FC4E4',
+    skyHorizon: '#F6DCE4',
+    // Receding toward the horizon, and lighter with distance.
+    ridgeNear: '#6E7A96',
+    ridgeMid: '#A8B4C6',
+    ridgeFar: '#EAEEF4',
+    mist: '#FFFFFF',
+    water: '#A8C4D6',
+    foliage: '#F0A8C4',
+    bark: '#6B4A52',
+    star: '#FFFFFF',
+    // Warm, so it reads as a sun and not as a pale moon.
+    sun: '#FFF6DC',
+    // The moon is never rendered by day, but the key must exist in both modes —
+    // a palette whose two halves disagree on their shape is a palette the
+    // crossfade will drop keys out of.
+    moon: '#DCE4F2',
+    halo: '#FFE2A8',
+    torii: '#B0336A',
   },
 }
 

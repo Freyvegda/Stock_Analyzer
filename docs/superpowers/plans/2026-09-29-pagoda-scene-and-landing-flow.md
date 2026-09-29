@@ -49,10 +49,10 @@ read the same stage hook the scene does.
 
 ## Status
 
-- [ ] 1. content/tower.ts
-- [ ] 2. pagodaScene.ts
-- [ ] 3. pagodaWorld.ts
-- [ ] 4. tokens.ts
+- [x] 1. content/tower.ts
+- [x] 2. pagodaScene.ts
+- [x] 3. pagodaWorld.ts
+- [x] 4. tokens.ts
 - [ ] 5. Renderers
 - [ ] 6. DOM
 - [ ] 7. Contracts
