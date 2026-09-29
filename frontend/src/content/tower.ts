@@ -11,6 +11,15 @@ export interface TowerTier {
   tagline: string
   /** Where the CTA goes once signed in. */
   route: string
+  /**
+   * Whether the destination is built. An unbuilt storey must not link to its own
+   * route — that is the dead end. It shows a non-link and offers
+   * `fallbackRoute` instead, which must resolve to a route some built storey
+   * also uses.
+   */
+  status: 'built' | 'in-progress'
+  /** Required on every `in-progress` storey, absent on every `built` one. */
+  fallbackRoute?: string
   /** Set on tiers whose destination exists but is not built yet. */
   badge?: string
   cards: Card[]
@@ -27,6 +36,7 @@ export const TOWER_TIERS: TowerTier[] = [
     heading: 'Fundamental Analysis',
     tagline: 'Screen 500 companies on the ratios that actually matter.',
     route: '/fundamentals/criteria',
+    status: 'built',
     cards: [
       {
         title: 'Your criteria, not ours',
@@ -47,6 +57,7 @@ export const TOWER_TIERS: TowerTier[] = [
     heading: 'The Universe',
     tagline: 'Search all 500 names, then open any stock in full.',
     route: '/fundamentals/stocks',
+    status: 'built',
     cards: [
       {
         title: 'Search by symbol or name',
@@ -67,6 +78,8 @@ export const TOWER_TIERS: TowerTier[] = [
     heading: 'Models & Signals',
     tagline: 'Turn price history into an actual buy, sell or hold.',
     route: '/backtest',
+    status: 'in-progress',
+    fallbackRoute: '/fundamentals/criteria',
     badge: 'In progress',
     cards: [
       {
@@ -88,6 +101,8 @@ export const TOWER_TIERS: TowerTier[] = [
     heading: 'Documents',
     tagline: 'Read the annual report so you do not have to.',
     route: '/documents',
+    status: 'in-progress',
+    fallbackRoute: '/fundamentals/criteria',
     badge: 'In progress',
     cards: [
       {

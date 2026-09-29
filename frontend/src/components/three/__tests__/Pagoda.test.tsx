@@ -108,13 +108,35 @@ describe('tier coverage', () => {
   })
 
   it('marks the routes that are not built yet', () => {
-    const unbuilt = TOWER_TIERS.filter((t) => t.badge)
+    const unbuilt = TOWER_TIERS.filter((t) => t.status === 'in-progress')
     expect(unbuilt).toHaveLength(2)
     for (const t of unbuilt) expect(t.badge).toBe('In progress')
   })
 
-  it('uses unique ids and unique routes', () => {
+  it('gives every tier a valid route and unique ids', () => {
+    // Unique ids, not unique routes: two unbuilt storeys legitimately share a
+    // fallback destination, so requiring unique routes would forbid honest copy.
+    for (const t of TOWER_TIERS) expect(t.route).toMatch(/^\//)
     expect(new Set(TOWER_TIERS.map((t) => t.id)).size).toBe(TOWER_TIERS.length)
-    expect(new Set(TOWER_TIERS.map((t) => t.route)).size).toBe(TOWER_TIERS.length)
+  })
+
+  it('points every unbuilt storey at a fallback that exists', () => {
+    // The anti-dead-end rule: a storey that is not built must offer somewhere
+    // real to go instead.
+    const built = new Set(
+      TOWER_TIERS.filter((t) => t.status === 'built').map((t) => t.route),
+    )
+    const unbuilt = TOWER_TIERS.filter((t) => t.status === 'in-progress')
+    expect(unbuilt.length).toBeGreaterThan(0)
+    for (const t of unbuilt) {
+      expect(t.fallbackRoute, `${t.id} has no fallback`).toMatch(/^\//)
+      expect(built.has(t.fallbackRoute!), `${t.id} falls back to a dead route`).toBe(true)
+    }
+  })
+
+  it('gives built storeys no fallback, so the CTA stays a plain link', () => {
+    for (const t of TOWER_TIERS) {
+      if (t.status === 'built') expect(t.fallbackRoute).toBeUndefined()
+    }
   })
 })

@@ -190,18 +190,23 @@ export interface FinialLayout {
   baseY: number
   /** y of the jewel at the very top, which carries the night glow. */
   tipY: number
+  /** y of the wind-bell that hangs beneath the tip. */
+  bellY: number
 }
 
 /** The spire on top: stacked rings over a rod, tipped with a jewel. */
 export function finialLayout(): FinialLayout {
   const rings = 5
   const rodHeight = 0.5
+  const tipY = rodHeight + 0.09
   return {
     rings,
     ringY: Array.from({ length: rings }, (_, i) => 0.16 * i),
     rodHeight,
     baseY: 0.04,
-    tipY: rodHeight + 0.09,
+    tipY,
+    // Below the jewel, clear of the rings.
+    bellY: tipY - 0.17,
   }
 }
 
@@ -270,7 +275,232 @@ export function tierDetail(tier: TierGeometry): TierDetail {
   }
 }
 
-// --- lighting --------------------------------------------------------------
+// --- storey openings, tiles, hanging lanterns, base --------------------------
+
+export interface Vec3 {
+  x: number
+  y: number
+  z: number
+}
+
+export interface Screen {
+  centre: Vec3
+  width: number
+  height: number
+  /** Lattice bars across the screen. More bars, finer the grid. */
+  bars: number
+}
+
+export interface Door {
+  centre: Vec3
+  width: number
+  height: number
+  /** Ring pulls, one per leaf. */
+  pulls: Array<[number, number, number]>
+}
+
+export interface StoreyOpenings {
+  door: Door | null
+  screens: Screen[]
+}
+
+/**
+ * What is in a storey's walls.
+ *
+ * `centre` is the opening's centre **on the wall face it sits in**, and the
+ * wall face is named by which axis it is mounted on: a `z` face is the front
+ * wall, an `x` face a side wall. So the ground storey's door reads `x: 0` and
+ * `z: half` — centred across the building, on the front wall — and an upper
+ * storey reads `z: half, x: 0` for its front band and `x: half, z: 0` for its
+ * side band.
+ *
+ * The reference spends its detail budget on the ground floor — a double-leaf
+ * door with ring pulls, lattice screens either side — so `ground` swaps the
+ * door for a plain window band on the upper storeys. Kept pure so the layout is
+ * testable without a canvas.
+ */
+export function storeyOpenings(tier: TierGeometry, ground: boolean): StoreyOpenings {
+  const half = tier.bodyWidth / 2
+  // A door that fills the wall reads as a hole, not a door. Roughly a third of
+  // the wall width, and its leaves meet on the centre line.
+  const doorWidth = tier.bodyWidth * 0.34
+  const doorHeight = tier.bodyHeight * 0.72
+
+  if (ground) {
+    const screenWidth = tier.bodyWidth * 0.2
+    const screenHeight = tier.bodyHeight * 0.5
+    // Screens sit between the door's edge and the corner, not hard against the
+    // corner, or the wall reads as a frame with nothing in it.
+    const offset = doorWidth / 2 + screenWidth / 2 + tier.bodyWidth * 0.06
+    return {
+      door: {
+        centre: { x: 0, y: doorHeight / 2, z: half },
+        width: doorWidth,
+        height: doorHeight,
+        // One pull per leaf, just inside the meeting stile.
+        pulls: [
+          [-doorWidth * 0.08, doorHeight * 0.52, half + 0.01],
+          [doorWidth * 0.08, doorHeight * 0.52, half + 0.01],
+        ],
+      },
+      screens: [
+        {
+          centre: { x: -offset, y: screenHeight / 2 + tier.bodyHeight * 0.16, z: half },
+          width: screenWidth,
+          height: screenHeight,
+          bars: 5,
+        },
+        {
+          centre: { x: offset, y: screenHeight / 2 + tier.bodyHeight * 0.16, z: half },
+          width: screenWidth,
+          height: screenHeight,
+          bars: 5,
+        },
+      ],
+    }
+  }
+
+  // Upper storeys: a band of lattice across the front wall, and one down the
+  // side the camera can see. Both are inset from the corner so they never
+  // overhang the storey they belong to.
+  const screenWidth = tier.bodyWidth * 0.46
+  const screenHeight = tier.bodyHeight * 0.34
+  const y = tier.bodyHeight * 0.34
+  // The side band is centred on its own wall, so its across-the-wall offset is
+  // 0; only the front band's x is a real offset.
+  return {
+    door: null,
+    screens: [
+      { centre: { x: 0, y, z: half }, width: screenWidth, height: screenHeight, bars: 7 },
+      { centre: { x: half, y, z: 0 }, width: screenWidth, height: screenHeight, bars: 7 },
+    ],
+  }
+}
+
+export interface RoofCourse {
+  /** Distance from the ridge, along the slope. */
+  radius: number
+  /** Height of the course above the eave line. */
+  y: number
+  /** Tile step depth. */
+  step: number
+}
+
+/** How many concentric tile courses a roof carries. */
+const ROOF_COURSES = 5
+
+/**
+ * The concentric tile courses laid over a roof.
+ *
+ * A pagoda roof reads as tiled precisely because the slope is stepped, not
+ * because it is a smooth cone. `radius` shrinks and `y` rises toward the ridge,
+ * which is the direction the test pins.
+ */
+export function roofCourses(halfSpan: number): RoofCourse[] {
+  // Eave first, ridge last, so a caller's straight walk inward sees the radius
+  // shrink and the height rise — the direction the courses are actually laid.
+  return Array.from({ length: ROOF_COURSES }, (_, i) => {
+    const at = 1 - (i + 1) / ROOF_COURSES
+    return {
+      radius: halfSpan * at,
+      // Matches the SAG curve the roof itself uses, so a course sits *on* the
+      // slope rather than floating above it.
+      y: halfSpan * 0.5 * Math.pow(1 - at, 1.55),
+      step: halfSpan * 0.06,
+    }
+  })
+}
+
+/** Lanterns hung under one storey's eave. The count is capped. */
+export const LANTERN_LIMIT = 8
+/** How many of them may carry a real point light. The cost control. */
+export const MAX_LANTERN_LIGHTS = 2
+
+export interface HangingLantern {
+  /** Where the cord meets the eave. */
+  cordTop: Vec3
+  /** Where the cord ends and the lantern begins. */
+  cordBottom: Vec3
+  /** The lantern's own centre. */
+  body: Vec3
+  radius: number
+  height: number
+  /** Carries a real point light (and only the first few do). */
+  lit: boolean
+  /** Its own swing phase, so the row never moves as one block. */
+  phase: number
+}
+
+/**
+ * The lanterns, hung on visible cords from the eave tips.
+ *
+ * This is the detail the reference is most specific about: red lanterns dangling
+ * on strings from the corner of each roof. So the cord is modelled, the lantern
+ * hangs *below* it, and the anchor sits out at the eave rather than tucked in
+ * under the roof where the old four cubes lived.
+ */
+export function hangingLanterns(tier: TierGeometry): HangingLantern[] {
+  const span = tier.roofHalfSpan
+  // Hung just under the eave line, from the corner tips: the four diagonals and
+  // the four side mid-points.
+  const eaveY = tier.bodyHeight + tier.roofRise * 0.16
+  const anchors: Array<[number, number]> = [
+    [span * 0.86, span * 0.86],
+    [-span * 0.86, span * 0.86],
+    [span * 0.86, -span * 0.86],
+    [-span * 0.86, -span * 0.86],
+    [0, span * 0.92],
+    [0, -span * 0.92],
+    [span * 0.92, 0],
+    [-span * 0.92, 0],
+  ].slice(0, LANTERN_LIMIT)
+
+  const lanternHeight = 0.11
+  const cordLength = 0.075 + (tier.index % 3) * 0.012
+
+  return anchors.map(([x, z], i) => {
+    // Phase walks the golden-ish irrational step so no two lanterns are in
+    // step, and no two are exactly a half-cycle apart either.
+    const phase = ((i * 2.399963) % (2 * Math.PI))
+    return {
+      cordTop: { x, y: eaveY, z },
+      cordBottom: { x, y: eaveY - cordLength, z },
+      body: {
+        x,
+        y: eaveY - cordLength - lanternHeight / 2,
+        z,
+      },
+      radius: 0.05 - (i % 2) * 0.006,
+      height: lanternHeight,
+      // The two most forward-facing get a real light; the rest are emissive only.
+      lit: z > 0 && i < MAX_LANTERN_LIGHTS,
+      phase,
+    }
+  })
+}
+
+export interface BaseDetail {
+  balusters: Array<[number, number, number]>
+  stoneLanterns: Array<[number, number, number]>
+}
+
+/** The plinth's furniture: a balustrade and a stone lantern either side. */
+export function baseDetail(tiers: TierGeometry[]): BaseDetail {
+  const plinth = plinthLayout(tiers)
+  const railY = -plinth.height + plinth.height * 1.1
+  const balusters: Array<[number, number, number]> = []
+  for (let i = 0; i < 7; i += 1) {
+    const t = (i / 6 - 0.5) * plinth.width * 0.82
+    balusters.push([t, railY, plinth.width * 0.42], [t, railY, -plinth.width * 0.42])
+  }
+  return {
+    balusters,
+    stoneLanterns: [
+      [plinth.width * 0.56, railY, plinth.width * 0.5],
+      [-plinth.width * 0.56, railY, plinth.width * 0.5],
+    ],
+  }
+}
 
 export type LightMode = 'dark' | 'light'
 
@@ -353,6 +583,8 @@ export interface TierPose {
   lift: number
   /** 0 dimmed, 1 full. */
   brightness: number
+  /** Radians of lean on the roof as it opens. Lifting alone reads as a rail. */
+  tilt: number
 }
 
 export interface TowerPose {
@@ -363,9 +595,16 @@ export interface TowerPose {
   cameraZ: number
   tiers: TierPose[]
   activeTier: number
+  /** Multiplier on every lantern's swing. >1 while a storey is opening. */
+  swayGain: number
+  /** Water ripple amplitude at the base. */
+  ripple: number
 }
 
 const DIMMED = 0.35
+/** The open storey's roof leans this far, in radians. */
+const OPEN_TILT = 0.105
+const OPEN_LIFT = 0.62
 
 /**
  * The whole scroll story, as one function of progress.
@@ -381,6 +620,7 @@ export function towerPose(p: number): TowerPose {
     emphasis: 0,
     lift: 0,
     brightness: DIMMED,
+    tilt: 0,
   }))
 
   const hero = smoothstep(s / 1.2)
@@ -411,8 +651,11 @@ export function towerPose(p: number): TowerPose {
     const e = smoothstep(near)
     tiers[i] = {
       emphasis: e,
-      lift: 0.62 * e,
+      lift: OPEN_LIFT * e,
       brightness: DIMMED + (1 - DIMMED) * e,
+      // Lean away from the tower's own side, so the open roof tips toward the
+      // viewer rather than back into the building behind it.
+      tilt: OPEN_TILT * e,
     }
   }
 
@@ -421,5 +664,11 @@ export function towerPose(p: number): TowerPose {
   const openIndex = tiers.findIndex((t) => t.emphasis > 0.001)
   const activeTier = shift > 0.02 && openIndex !== -1 ? openIndex : -1
 
-  return { scale, x, y, cameraZ, tiers, activeTier }
+  // How hard the lanterns swing, and how much the water moves. Both key off the
+  // strongest open storey, so they rise together and fall together.
+  const openStrength = tiers.reduce((acc, t) => Math.max(acc, t.emphasis), 0)
+  const swayGain = 1 + 0.85 * openStrength
+  const ripple = 0.35 + 1.15 * openStrength
+
+  return { scale, x, y, cameraZ, tiers, activeTier, swayGain, ripple }
 }

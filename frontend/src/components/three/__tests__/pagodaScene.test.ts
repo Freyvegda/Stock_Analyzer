@@ -8,17 +8,23 @@ import { describe, expect, it } from 'vitest'
 
 import { TOWER_TIERS } from '@/content/tower'
 import {
+  LANTERN_LIMIT,
+  MAX_LANTERN_LIGHTS,
   SCROLL_SPAN,
   STAGE_COUNT,
+  baseDetail,
   clamp,
   finialLayout,
+  hangingLanterns,
   lightingRig,
   pagodaLayout,
   pagodaRoofVertices,
   plinthLayout,
+  roofCourses,
   smoothstep,
   stageAt,
   stageProgress,
+  storeyOpenings,
   tierDetail,
   tierStage,
   towerPose,
@@ -365,6 +371,215 @@ describe('tierDetail', () => {
     expect(d.balconyY).toBeGreaterThan(0)
     expect(d.balconyWidth).toBeGreaterThan(layout[2].bodyWidth)
     expect(d.railingHeight).toBeGreaterThan(0)
+  })
+})
+
+describe('storey openings', () => {
+  const layout = pagodaLayout(TOWER_TIERS.length)
+
+  it('puts a door on the ground storey, centred on the front wall', () => {
+    // The reference spends its detail budget on the ground floor, so that is
+    // where the door goes. "Centred" means centred *across* the front wall, and
+    // the front wall is the one at z = +half — not the middle of the building.
+    const ground = storeyOpenings(layout[0], true)
+    expect(ground.door).not.toBeNull()
+    const { x, z } = ground.door!.centre
+    expect(x).toBeCloseTo(0, 6)
+    expect(z).toBeCloseTo(layout[0].bodyWidth / 2, 6)
+    expect(ground.door!.width).toBeGreaterThan(0)
+    expect(ground.door!.width).toBeLessThan(layout[0].bodyWidth)
+    expect(ground.door!.height).toBeLessThan(layout[0].bodyHeight)
+  })
+
+  it('gives the ground storey lattice screens flanking the door', () => {
+    const ground = storeyOpenings(layout[0], true)
+    expect(ground.screens).toHaveLength(2)
+    for (const s of ground.screens) {
+      // A screen sits off-centre, to the side of the door, and inside the wall.
+      expect(Math.abs(s.centre.x)).toBeGreaterThan(0)
+      expect(Math.abs(s.centre.x)).toBeLessThan(layout[0].bodyWidth / 2)
+      expect(s.bars).toBeGreaterThan(1)
+    }
+    // one either side, mirrored
+    expect(Math.sign(ground.screens[0].centre.x)).toBe(
+      -Math.sign(ground.screens[1].centre.x),
+    )
+  })
+
+  it('gives an upper storey a window instead of a door', () => {
+    const upper = storeyOpenings(layout[2], false)
+    expect(upper.door).toBeNull()
+    expect(upper.screens.length).toBeGreaterThan(0)
+  })
+
+  it('puts every screen inside the wall it is mounted on', () => {
+    // A screen that overhangs the storey it belongs to is the failure a
+    // finiteness check would never catch. Which wall a screen sits in is decided
+    // by which axis is at the wall plane; the *across* offset is the other one.
+    for (let i = 0; i < layout.length; i += 1) {
+      const half = layout[i].bodyWidth / 2
+      const o = storeyOpenings(layout[i], i === 0)
+      for (const s of o.screens) {
+        const onFront = Math.abs(s.centre.z - half) < 1e-9
+        const onSide = Math.abs(s.centre.x - half) < 1e-9
+        expect(onFront || onSide, `tier ${i} screen on no wall`).toBe(true)
+        // The across-the-wall offset is what must stay inside the storey.
+        const across = onFront ? s.centre.x : s.centre.z
+        expect(Math.abs(across), `tier ${i} across`).toBeLessThan(half)
+        // and the screen's own width must not push it past the corner either
+        expect(Math.abs(across) + s.width / 2, `tier ${i} edge`).toBeLessThanOrEqual(half + 1e-9)
+        expect(s.height, `tier ${i} h`).toBeLessThan(layout[i].bodyHeight)
+      }
+    }
+  })
+
+  it('is deterministic', () => {
+    expect(storeyOpenings(layout[0], true)).toEqual(storeyOpenings(layout[0], true))
+  })
+})
+
+describe('roof courses', () => {
+  const layout = pagodaLayout(TOWER_TIERS.length)
+
+  it('narrows toward the ridge', () => {
+    // Tile courses are concentric and stacked; if the radius did not shrink the
+    // roof would read as one flat plate again.
+    const courses = roofCourses(layout[1].roofHalfSpan)
+    expect(courses.length).toBeGreaterThan(2)
+    for (let i = 1; i < courses.length; i += 1) {
+      expect(courses[i].radius).toBeLessThan(courses[i - 1].radius)
+      expect(courses[i].y).toBeGreaterThan(courses[i - 1].y)
+    }
+  })
+
+  it('keeps every course inside the roof it tiles', () => {
+    for (const t of layout) {
+      for (const c of roofCourses(t.roofHalfSpan)) {
+        expect(c.radius).toBeLessThanOrEqual(t.roofHalfSpan + 1e-9)
+        expect(c.y).toBeGreaterThanOrEqual(0)
+        expect(c.y).toBeLessThanOrEqual(t.roofRise + 1e-9)
+      }
+    }
+  })
+
+  it('is deterministic', () => {
+    expect(roofCourses(0.9)).toEqual(roofCourses(0.9))
+  })
+})
+
+describe('hanging lanterns', () => {
+  const layout = pagodaLayout(TOWER_TIERS.length)
+
+  it('hangs each lantern from a cord attached at the eave', () => {
+    // The reference detail: the lanterns dangle on visible strings from the
+    // corner tips. A cord with no top, or a lantern above its own cord, is the
+    // failure this pins.
+    for (const h of hangingLanterns(layout[1])) {
+      expect(h.cordTop.y).toBeGreaterThan(h.cordBottom.y)
+      expect(h.body.y).toBeLessThanOrEqual(h.cordBottom.y)
+      // anchored out at the eave, not tucked in under the roof
+      expect(Math.max(Math.abs(h.cordTop.x), Math.abs(h.cordTop.z))).toBeGreaterThan(
+        layout[1].bodyWidth / 2,
+      )
+    }
+  })
+
+  it('hangs them below the roof and above the deck', () => {
+    for (const tier of layout) {
+      for (const h of hangingLanterns(tier)) {
+        expect(h.body.y).toBeGreaterThan(tier.bodyHeight * 0.2)
+        expect(h.cordTop.y).toBeLessThan(tier.bodyHeight + tier.roofRise)
+      }
+    }
+  })
+
+  it('caps the number of real point lights per storey', () => {
+    // The cost control: many lanterns, few actual lights. The cap is what keeps
+    // the scene inside a frame budget.
+    for (const tier of layout) {
+      const h = hangingLanterns(tier)
+      expect(h.length).toBeGreaterThan(0)
+      expect(h.length).toBeLessThanOrEqual(LANTERN_LIMIT)
+      const lit = h.filter((l) => l.lit)
+      expect(lit.length).toBeLessThanOrEqual(MAX_LANTERN_LIGHTS)
+      expect(lit.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('gives every lantern a distinct sway phase', () => {
+    // Identical phases make the whole row swing as one rigid block, which is
+    // the giveaway that it is a loop rather than a building.
+    const h = hangingLanterns(layout[1])
+    expect(new Set(h.map((l) => l.phase.toFixed(4))).size).toBe(h.length)
+    for (const l of h) {
+      expect(l.phase).toBeGreaterThanOrEqual(0)
+      expect(l.phase).toBeLessThan(2 * Math.PI)
+    }
+  })
+
+  it('is deterministic', () => {
+    expect(hangingLanterns(layout[1])).toEqual(hangingLanterns(layout[1]))
+  })
+})
+
+describe('base and finial detail', () => {
+  const layout = pagodaLayout(TOWER_TIERS.length)
+
+  it('balustrades the plinth and flanks it with two stone lanterns', () => {
+    const base = baseDetail(layout)
+    expect(base.balusters.length).toBeGreaterThan(2)
+    expect(base.stoneLanterns).toHaveLength(2)
+    for (const s of base.stoneLanterns) {
+      // On the plinth, not floating: below the first storey's mid-wall.
+      expect(s[1]).toBeLessThan(layout[0].bodyHeight / 2)
+      expect(s[1]).toBeLessThan(layout[0].bodyHeight)
+    }
+    // one either side of the entrance
+    expect(Math.sign(base.stoneLanterns[0][0])).toBe(-Math.sign(base.stoneLanterns[1][0]))
+  })
+
+  it('hangs a wind-bell under the finial tip', () => {
+    const f = finialLayout()
+    expect(f.bellY).toBeLessThan(f.tipY)
+    expect(f.bellY).toBeGreaterThan(0)
+  })
+})
+
+describe('open-storey reveal', () => {
+  const n = TOWER_TIERS.length
+
+  it('tilt the open storey, and only the open one', () => {
+    // Lifting without tilting reads as a roof sliding up a rail. Exactly one
+    // storey may tilt, or the tower looks like it is coming apart.
+    for (let i = 0; i < n; i += 1) {
+      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
+      const tilted = pose.tiers.filter((t) => Math.abs(t.tilt) > 0.01)
+      expect(tilted).toHaveLength(1)
+      expect(Math.abs(pose.tiers[i].tilt)).toBeGreaterThan(0)
+    }
+  })
+
+  it('swings the open storey lanterns harder than the closed ones', () => {
+    const pose = towerPose(tierStage(2) / SCROLL_SPAN)
+    expect(pose.swayGain).toBeGreaterThan(1)
+    const closed = towerPose(1 / SCROLL_SPAN)
+    expect(closed.swayGain).toBeCloseTo(1, 5)
+  })
+
+  it('ripples the water when a storey opens, and calms it at rest', () => {
+    const open = towerPose(tierStage(1) / SCROLL_SPAN)
+    const rest = towerPose(0)
+    expect(open.ripple).toBeGreaterThan(rest.ripple)
+    expect(rest.ripple).toBeGreaterThanOrEqual(0)
+  })
+
+  it('keeps every new pose value finite across the whole scroll', () => {
+    for (let step = 0; step <= 400; step += 1) {
+      const pose = towerPose(step / 400)
+      expect(Number.isFinite(pose.ripple)).toBe(true)
+      expect(Number.isFinite(pose.swayGain)).toBe(true)
+      for (const t of pose.tiers) expect(Number.isFinite(t.tilt)).toBe(true)
+    }
   })
 })
 
