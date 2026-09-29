@@ -85,7 +85,12 @@ def run_screen(user: dict = Depends(current_user)) -> dict:
     init_db()
     stored = service.get_criteria(SessionLocal, user["id"])
     return service.run_screen(
-        get_provider(), SessionLocal, user, stored["criteria"], stored["shortlist_size"]
+        get_provider(),
+        SessionLocal,
+        user,
+        stored["criteria"],
+        stored["shortlist_size"],
+        stored["id"],
     )
 
 

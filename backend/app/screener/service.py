@@ -108,6 +108,7 @@ def run_screen(
     user: dict,
     criteria: list[dict],
     shortlist_size: int = 10,
+    set_id: int | None = None,
 ) -> dict:
     """Run the staged fundamental screen for one user and persist it.
 
@@ -202,6 +203,7 @@ def run_screen(
         run = ScreenRun(
             run_date=today,
             user_id=user["id"],
+            set_id=set_id,
             criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )
@@ -390,11 +392,13 @@ def activate_set(session_factory, user_id: int, set_id: int) -> dict:
 
 
 def latest_screen(session_factory, user_id: int) -> dict | None:
-    """Caller's latest stored run joined with stock name/sector/market_cap."""
+    """The active screen's latest stored run joined with stock meta."""
     with session_factory() as session:
+        active = _seed_active_set(session, user_id)
+        session.commit()
         run = (
             session.query(ScreenRun)
-            .filter(ScreenRun.user_id == user_id)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.set_id == active.id)
             .order_by(ScreenRun.id.desc())
             .first()
         )

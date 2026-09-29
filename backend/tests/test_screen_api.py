@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.api import screen as screen_api
-from app.db.models import CompanyProfile, Fundamental, ScreenRun, Stock, UserCriteria
+from app.db.models import CompanyProfile, Fundamental, ScreeningSet, ScreenRun, Stock
 from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
@@ -138,11 +138,13 @@ def test_tampered_shortlist_size_still_clamps(client, sign_in, provider, test_db
     user = sign_in()
     with test_db() as session:
         session.add(
-            UserCriteria(
+            ScreeningSet(
                 user_id=user["id"],
+                name="Tampered",
                 criteria_json=json.dumps(default_criteria()),
                 thesis=None,
                 shortlist_size=50,
+                is_active=True,
                 updated_at="now",
             )
         )
@@ -161,11 +163,13 @@ def test_disabled_criteria_and_raw_catalog_are_honored(client, sign_in, provider
     ]
     with test_db() as session:
         session.add(
-            UserCriteria(
+            ScreeningSet(
                 user_id=user["id"],
+                name="Raw",
                 criteria_json=json.dumps(criteria),
                 thesis=None,
                 shortlist_size=10,
+                is_active=True,
                 updated_at="now",
             )
         )
@@ -353,6 +357,50 @@ def test_refreshed_values_override_stored_snapshot(client, sign_in, provider, te
     assert body["shortlisted"] == []
     assert {"symbol": "AAA", "failed": ["pe"]} in body["failed_details"]
     assert body["stale"] is False  # fetch succeeded; nothing stale is shown
+
+
+def test_run_stores_active_set_id(client, sign_in, provider, test_db):
+    sign_in()
+    provider(FakeProvider())
+    active = client.get("/screen/sets").json()[0]
+
+    client.post("/screen/run")
+
+    with test_db() as session:
+        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+    assert run.set_id == active["id"]
+
+
+def test_latest_scoped_to_active_set(client, sign_in, provider):
+    sign_in()
+    provider(FakeProvider())
+    first = client.post("/screen/run").json()
+
+    client.post("/screen/sets", json={"name": "Momentum"})  # becomes active, no run yet
+    assert client.get("/screen/latest").status_code == 404
+
+    second = client.post("/screen/run").json()
+    latest = client.get("/screen/latest").json()
+    assert latest["run_id"] == second["run_id"]
+    assert latest["run_id"] != first["run_id"]
+
+
+def test_delete_screen_keeps_runs_unstamped(client, sign_in, provider, test_db):
+    sign_in()
+    provider(FakeProvider())
+    client.post("/screen/sets", json={"name": "Momentum"})  # active
+    client.post("/screen/run")
+    with test_db() as session:
+        momentum = session.query(ScreeningSet).filter_by(name="Momentum").one()
+        run = session.query(ScreenRun).order_by(ScreenRun.id.desc()).first()
+        assert run.set_id == momentum.id
+        momentum_id = momentum.id
+
+    assert client.delete(f"/screen/sets/{momentum_id}").status_code == 204
+
+    with test_db() as session:
+        runs = session.query(ScreenRun).all()
+    assert runs and all(r.set_id is None for r in runs)
 
 
 
