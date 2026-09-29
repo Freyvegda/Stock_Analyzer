@@ -335,6 +335,100 @@ git commit -m "feat: always-visible 3D glass navbar search bar"
 
 ---
 
+### Task F6: Criterion bookmarks — ribbon toggle, pinning, filter (addendum)
+
+**Files:**
+- Modify: `frontend/src/api/types.ts`, `frontend/src/components/CriteriaEditor.tsx`,
+  `frontend/src/components/CriteriaPanel.tsx`
+- Modify: `frontend/src/components/__tests__/CriteriaEditor.test.tsx`,
+  `frontend/src/components/__tests__/CriteriaPanel.test.tsx`
+
+**Interfaces:**
+- `Criterion` gains `bookmarked?: boolean`.
+- Draft rows gain `bookmarked`; the dirty snapshot and the Save payload include it
+  (`bookmarked: false` when absent). Row ribbon: `IconButton` labelled `Bookmark <label>` /
+  `Remove bookmark <label>` (lucide `Bookmark`, `fill="currentColor"` when active).
+- Within a category, bookmarked rows pin above unbookmarked ones (stable otherwise).
+- Filter chip `Bookmarked only` (`aria-pressed`) renders only bookmarked rows and hides
+  categories with none; category headers keep counting the full set.
+- `CriteriaPanel` badges for bookmarked criteria show a small decorative ribbon marker
+  (`Bookmark` icon, `aria-hidden`, 14px).
+
+- [ ] **Step 1: Write the failing tests**
+
+```tsx
+it('pins a bookmarked criterion to the top of its category')   // bookmark PB -> first row in Valuation
+it('saves the bookmarked flag in the payload')                 // onSave contains bookmarked: true
+it('filters to bookmarked criteria only')                      // chip on -> only PB row visible
+it('shows a ribbon marker on bookmarked badges')               // CriteriaPanel
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `npx vitest run src/components/__tests__/CriteriaEditor.test.tsx src/components/__tests__/CriteriaPanel.test.tsx`
+Expected: FAIL — no ribbon/toggle/filter.
+
+- [ ] **Step 3: Implement** per interfaces; keep the row order change purely presentational
+  (draft array order stays canonical; render sorts a copy). Save persists the flag via
+  `onSave`; docs (`FRONTEND.md`) updated in F5.
+
+- [ ] **Step 4: Run to verify pass; commit**
+
+Run: `npx vitest run src/components/__tests__/CriteriaEditor.test.tsx src/components/__tests__/CriteriaPanel.test.tsx && npm run build`
+
+```bash
+git add frontend/src/api/types.ts frontend/src/components/CriteriaEditor.tsx frontend/src/components/CriteriaPanel.tsx frontend/src/components/__tests__/CriteriaEditor.test.tsx frontend/src/components/__tests__/CriteriaPanel.test.tsx
+git commit -m "feat: criterion bookmarks — ribbon toggle, pinned rows, bookmarked-only filter"
+```
+
+---
+
+### Task F7: Ribbon Rail — shared 3D bookmark rail (addendum)
+
+**Files:**
+- Create: `frontend/src/components/three/RibbonRail.tsx`,
+  `frontend/src/components/three/__tests__/RibbonRail.test.tsx`
+- Modify: `frontend/src/components/CriteriaEditor.tsx`, `frontend/DESIGN.md`,
+  `frontend/src/index.css` (only if the rail needs a fallback surface)
+
+**Interfaces:**
+- `RibbonRail({ items, onSelect }: { items: Array<{ key: string; label: string }>;
+  onSelect?: (key: string) => void })` — default export, lazy chunk. One shared canvas: a
+  thin glass rail holding one low-poly sakura ribbon per item, label on each ribbon
+  (canvas-texture text is acceptable). Bookmark add = ribbon slides in; remove = ribbon
+  withdraws — one-shot animation only (no loop; DESIGN.md loop whitelist unchanged); static
+  under reduced motion; absent when WebGL is unavailable (no CSS fallback required); hidden
+  below `md`. Clicking a ribbon calls `onSelect(key)`.
+- `CriteriaEditor` renders it inside `Suspense` at the top of the editor body only while
+  open and `items.length > 0`; `onSelect` toggles that row's category open and scrolls the
+  row into view.
+
+- [ ] **Step 1: Read the existing 3D pattern first** — `components/three/SakuraLeafLoader.tsx`,
+  `lib/webgl.ts`, its test — and mirror gating/static/reduced-motion handling and test hooks.
+
+- [ ] **Step 2: Write the failing tests** — mirror `SakuraLeafLoader.test.tsx`:
+
+```tsx
+it('renders nothing without WebGL support')
+it('renders one ribbon per item')                        // data-testid="ribbon-rail" + item count hook
+it('is static under reduced motion')                     // data-motion="static"
+it('calls onSelect when a ribbon is activated')          // click/keyboard fallback button list for a11y
+```
+
+- [ ] **Step 3: Implement; run tests; add the DESIGN.md bullet + FRONTEND.md entry (F5 confirms)**
+
+Run: `npx vitest run src/components/three/__tests__/RibbonRail.test.tsx src/components/__tests__/CriteriaEditor.test.tsx && npm run build`
+Expected: PASS; build clean; three.js still only in lazy chunks.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/src/components/three/RibbonRail.tsx frontend/src/components/three/__tests__/RibbonRail.test.tsx frontend/src/components/CriteriaEditor.tsx frontend/DESIGN.md frontend/src/index.css
+git commit -m "feat: 3D ribbon rail for bookmarked criteria"
+```
+
+---
+
 ### Task F5: Docs + full verification
 
 **Files:**
@@ -379,6 +473,10 @@ git commit -m "docs: frontend context for Phase 1.7 saved screens and navbar sea
 ## Acceptance
 
 - `npm run test` green offline; `npm run build` clean; vault-rules green.
+- Criteria bookmarks: ribbon toggle per row, bookmarked rows pinned to the top of their
+  category, "Bookmarked only" filter, saved/run payloads carry `bookmarked`; read-only
+  badges mark bookmarked criteria; the 3D ribbon rail shows one ribbon per bookmark, is
+  WebGL-gated, reduced-motion static and never loops.
 - No dialog opens in the criteria flow; categories expand/collapse; add/remove/toggle/threshold
   all work; validation blocks bad saves with inline errors.
 - Screen CRUD + activate work inline; unsaved drafts never vanish silently; Run executes the
