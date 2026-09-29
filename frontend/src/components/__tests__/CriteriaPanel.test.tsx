@@ -38,6 +38,7 @@ describe('CriteriaPanel', () => {
     expect(screen.getByText('ROE ≥ 15%')).toBeInTheDocument()
     expect(screen.getByText('Market Cap ≥ 1000 ₹ cr')).toBeInTheDocument()
     expect(screen.getByText('Top 10')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-summary')).toHaveTextContent('4 enabled · 1 bookmarked')
   })
 
   it('never renders disabled criteria and falls back for unknown keys', () => {
@@ -64,12 +65,21 @@ describe('CriteriaPanel', () => {
     expect(screen.getByText('ROE ≥ 15%').querySelector('svg')).toBeNull()
   })
 
-  it('shows loading and error states instead of stale badges', () => {
+  it('shows loading and error states instead of stale badges', async () => {
+    const onRetry = vi.fn()
     renderPanel(
-      <CriteriaPanel set={null} ratios={catalog} onEdit={() => {}} error="Could not load screens" />,
+      <CriteriaPanel
+        set={null}
+        ratios={catalog}
+        onEdit={() => {}}
+        onRetry={onRetry}
+        error="Could not load screens"
+      />,
     )
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load screens')
     expect(screen.getByText(/loading criteria/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reload config/i })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /retry/i }))
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 })

@@ -10,7 +10,7 @@ import { Button, Flex, Text } from '@chakra-ui/react'
 import { useOutletContext } from 'react-router-dom'
 import { CriteriaEditor, type CriteriaEditorHandle } from '@/components/CriteriaEditor'
 import { CriteriaPanel } from '@/components/CriteriaPanel'
-import { ScreenSetPicker } from '@/components/ScreenSetPicker'
+import { ScreenTabs } from '@/components/ScreenTabs'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { NumberTicker } from '@/components/ui/NumberTicker'
 import { Num } from '@/components/ui/Num'
@@ -32,6 +32,7 @@ export default function ScreeningCriteria() {
     running,
     elapsed,
     runError,
+    reloadSets,
     activateSet,
     createSet,
     updateSet,
@@ -115,9 +116,10 @@ export default function ScreeningCriteria() {
         Screening Criteria
       </Text>
 
-      <ScreenSetPicker
+      <ScreenTabs
         sets={sets}
         active={activeSet}
+        dirty={dirty}
         busy={switching}
         onSelect={requestSwitch}
         onCreate={async (name) => {
@@ -175,6 +177,8 @@ export default function ScreeningCriteria() {
         set={activeSet}
         ratios={ratios}
         onEdit={() => setEditorOpen(true)}
+        connected
+        onRetry={() => void reloadSets()}
         error={setsError}
       />
 

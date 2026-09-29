@@ -144,7 +144,7 @@ describe('FundamentalsLayout', () => {
       </Provider>,
     )
     await screen.findByText('PE ≤ 25×')
-    await userEvent.click(screen.getByRole('button', { name: 'Quality' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Quality' }))
     await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/screen/sets/2/activate', {}))
     await waitFor(() =>
       expect(mockedApi.get.mock.calls.filter(([path]) => path === '/screen/latest').length).toBe(2),

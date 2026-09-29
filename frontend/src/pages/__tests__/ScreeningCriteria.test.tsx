@@ -105,11 +105,15 @@ describe('ScreeningCriteria', () => {
   it('renders the picker and the active screen badges', async () => {
     mockLoads()
     renderFundamentals()
-    expect(await screen.findByRole('button', { name: 'Default' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Quality' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Default' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByRole('tab', { name: 'Quality' })).toBeInTheDocument()
     expect(screen.getByText('PE ≤ 25×')).toBeInTheDocument()
     expect(screen.getByText('ROE ≥ 15%')).toBeInTheDocument()
     expect(screen.getByText('Top 10')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-summary')).toHaveTextContent('2 enabled · 0 bookmarked')
   })
 
   it('keeps run feedback inline: disabled button, leaf loader and elapsed timer', async () => {
@@ -256,8 +260,9 @@ describe('ScreeningCriteria', () => {
     const peInput = await screen.findByLabelText('PE value')
     await userEvent.clear(peInput)
     await userEvent.type(peInput, '18')
+    expect(screen.getByRole('tab', { name: 'Default' })).toHaveAttribute('data-dirty', 'true')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Quality' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Quality' }))
     const bar = await screen.findByRole('alert')
     expect(bar).toHaveTextContent(/unsaved changes/i)
 
@@ -285,7 +290,7 @@ describe('ScreeningCriteria', () => {
     await userEvent.clear(peInput)
     await userEvent.type(peInput, '18')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Quality' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Quality' }))
     await screen.findByRole('alert')
     await userEvent.click(screen.getByRole('button', { name: /discard & switch/i }))
     await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/screen/sets/2/activate', {}))
@@ -342,11 +347,11 @@ describe('ScreeningCriteria', () => {
         : Promise.reject(new Error(`unexpected POST ${path}`)),
     )
     renderFundamentals()
-    await screen.findByRole('button', { name: 'Quality' })
+    await screen.findByRole('tab', { name: 'Quality' })
     await userEvent.click(screen.getByRole('button', { name: /new screen/i }))
     await userEvent.type(screen.getByLabelText(/screen name/i), 'Momentum')
     await userEvent.click(screen.getByRole('button', { name: /^create$/i }))
     await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/screen/sets', { name: 'Momentum' }))
-    expect(await screen.findByRole('button', { name: 'Momentum' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'Momentum' })).toBeInTheDocument()
   })
 })

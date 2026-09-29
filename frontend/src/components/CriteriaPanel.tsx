@@ -18,22 +18,42 @@ export function CriteriaPanel({
   set,
   ratios,
   onEdit,
+  connected = false,
+  onRetry,
   error = null,
 }: {
   set: ScreeningSet | null
   ratios: RatioSpec[]
   onEdit: () => void
+  connected?: boolean
+  onRetry?: () => void
   error?: string | null
 }) {
   const catalog = new Map(ratios.map((ratio) => [ratio.key, ratio]))
   const enabled = set?.criteria.filter((criterion) => criterion.enabled) ?? []
+  const bookmarked = enabled.filter((criterion) => criterion.bookmarked).length
 
   return (
-    <Box borderWidth="1px" borderColor="border" rounded="lg" p={4} bg="bg.panel">
+    <Box
+      borderWidth="1px"
+      borderColor="border"
+      rounded="lg"
+      borderTopWidth={connected ? '0px' : '1px'}
+      borderTopRadius={connected ? 'none' : 'lg'}
+      p={4}
+      bg="bg.panel"
+    >
       <Flex justify="space-between" align="center" mb={2} gap={4}>
-        <Text fontWeight="semibold" fontSize="sm">
-          {set !== null ? set.name : 'Screening Criteria'}
-        </Text>
+        <Box>
+          <Text fontWeight="semibold" fontSize="sm">
+            {set !== null ? set.name : 'Screening Criteria'}
+          </Text>
+          {set !== null ? (
+            <Text fontSize="xs" color="fg.muted" data-testid="panel-summary">
+              {enabled.length} enabled · {bookmarked} bookmarked
+            </Text>
+          ) : null}
+        </Box>
         <Button size="sm" colorPalette="sakura" onClick={onEdit} disabled={set === null}>
           Edit Criteria
         </Button>
@@ -72,9 +92,16 @@ export function CriteriaPanel({
         </Wrap>
       )}
       {error ? (
-        <Text mt={2} fontSize="sm" color="fg.error" role="alert">
-          {error}
-        </Text>
+        <Flex align="center" gap={3} mt={2} wrap="wrap">
+          <Text fontSize="sm" color="fg.error" role="alert">
+            {error}
+          </Text>
+          {onRetry !== undefined ? (
+            <Button size="xs" variant="outline" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </Flex>
       ) : null}
     </Box>
   )

@@ -38,6 +38,7 @@ export interface FundamentalsOutletContext {
   running: boolean
   elapsed: number
   runError: string | null
+  reloadSets: () => Promise<void>
   activateSet: (id: number) => Promise<void>
   createSet: (name: string) => Promise<ScreeningSet>
   updateSet: (id: number, changes: ScreeningSetChanges) => Promise<ScreeningSet>
@@ -131,6 +132,10 @@ export default function FundamentalsLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  async function reloadSets() {
+    await loadSets()
+  }
+
   async function activateSet(id: number) {
     const activated = await api.post<ScreeningSet>(`/screen/sets/${id}/activate`, {})
     setSets((prev) =>
@@ -223,6 +228,7 @@ export default function FundamentalsLayout() {
     running,
     elapsed,
     runError: error,
+    reloadSets,
     activateSet,
     createSet,
     updateSet,

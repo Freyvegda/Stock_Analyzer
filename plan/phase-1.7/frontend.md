@@ -471,6 +471,49 @@ git add frontend/FRONTEND.md
 git commit -m "docs: frontend context for Phase 1.7 saved screens and navbar search"
 ```
 
+### Task F8: Chrome-style glass tabs for screens (post-review addendum, 2026-09-29)
+
+**Files:**
+- Create: `frontend/src/components/ScreenTabs.tsx`,
+  `frontend/src/components/__tests__/ScreenTabs.test.tsx`
+- Delete: `frontend/src/components/ScreenSetPicker.tsx`,
+  `frontend/src/components/__tests__/ScreenSetPicker.test.tsx`
+- Modify: `frontend/src/pages/fundamentals/ScreeningCriteria.tsx`,
+  `frontend/src/components/CriteriaPanel.tsx`, `frontend/src/pages/fundamentals/FundamentalsLayout.tsx`,
+  `frontend/src/index.css`, `frontend/DESIGN.md`
+- Tests: `frontend/src/pages/__tests__/ScreeningCriteria.test.tsx`,
+  `frontend/src/pages/__tests__/FundamentalsLayout.test.tsx` (updated)
+
+**Interfaces:**
+- `ScreenTabs({ sets, active, dirty, busy, onSelect, onCreate, onRename, onDelete })` —
+  role=`tablist` "Screening screens"; one `role="tab"` per set (`aria-selected`); active tab
+  glass + sakura glow and merges into the panel below (`rounded-b-none`, `-mb-px`); active
+  tab carries `data-dirty` + a sakura dot when the editor draft is dirty; `Close <name>` ×
+  opens an inline confirm row under the strip (`Delete <name>?` + Delete/Cancel); pencil
+  `Rename <name>` opens an inline input row (`Save name`); `New screen` grows into an inline
+  field (`Screen name` + Create); ←/→ move tab focus (roving tabindex), Enter/Space selects;
+  horizontal scroll with edge fade (`.tab-strip`).
+- `CriteriaPanel` gains `connected?: boolean` (drops top rounding/border to sit under the
+  strip) and a `n enabled · n bookmarked` summary; error state gains a `Retry` button wired
+  to a new context action `reloadSets`.
+- `FundamentalsLayout` context gains `reloadSets: () => Promise<void>` (calls `loadSets`).
+
+- [ ] **Step 1: Write failing tests** — ScreenTabs (render/activate/create/rename/delete
+  confirm/keyboard/dirty/error) and update ScreeningCriteria tests (`tab` roles, dirty dot).
+- [ ] **Step 2: Run to verify failure.**
+- [ ] **Step 3: Implement** the component + CSS (token-derived `.glass-tab`/`.tab-strip`) and
+  rewire the page; delete `ScreenSetPicker`.
+- [ ] **Step 4: Full checks + commit**
+
+```powershell
+npm run test
+npm run build
+```
+
+```bash
+git commit -m "feat: Chrome-style glass screen tabs; criteria page polish"
+```
+
 ## Acceptance
 
 - `npm run test` green offline; `npm run build` clean; vault-rules green.

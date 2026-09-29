@@ -133,6 +133,12 @@ and the theme toggle.
 - Entrance: one-shot 320ms fade + 8px rise + blur clear. Not a loop.
 - Gates: sheen off for coarse pointers (`(pointer: fine)` only) and under reduced motion
   (`data-sheen="on|off"` for tests); `aria-label="Primary"` landmark; pills are decorative.
+- Screen tabs (criteria page): `.glass-tab`/`.tab-strip` in `index.css` continue the glass
+  family — glass tab shapes; the active tab takes a 12% sakura tint, 35% border and a soft
+  under-glow and merges into the connected panel below (no bottom border; the panel drops its
+  top rounding). The strip scrolls horizontally with an edge mask; tabs are focus-visible
+  ringed; an unsaved draft marks the active tab with a sakura dot (colour only). No new
+  colours, no loops.
 - Nav stock search: `.glass-field` in `index.css` extends the same recipe — translucent
   `color-mix` gradient over `backdrop-filter: blur(10px) saturate(1.2)`, 1px mixed border,
   inset top highlight; `:hover`/`:focus-within` brighten the border toward sakura (colour
