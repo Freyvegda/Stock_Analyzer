@@ -92,8 +92,8 @@ D:\CODES\Projects\stock-analyzer\
 - `stocks(symbol PK, name, sector, market_cap)`
 - `fundamentals(symbol, date, pe, pb, roe, roce, debt_to_equity, raw_json, PK(symbol,date))`
 - `users(id PK, username unique, password_hash, created_at)` — Phase 1.5
-- `user_criteria(user_id PK/FK, criteria_json, thesis, shortlist_size, updated_at)` — Phase 1.5
-- `screen_runs(id PK, run_date, user_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5
+- `screening_sets(id PK, user_id FK, name, criteria_json, thesis, shortlist_size, is_active, updated_at)` — Phase 1.7 (retires `user_criteria`)
+- `screen_runs(id PK, run_date, user_id FK, set_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5, per-screen since Phase 1.7
 - `documents(id PK, symbol, type[concall|results|presentation|audit], period, url, local_path, parse_status)`
 - `doc_analysis(document_id PK, method[gemini|fallback], sentiment, guidance, red_flags_json, summary)`
 - `prices(symbol, date, open, high, low, close, volume, PK(symbol,date))`
@@ -140,6 +140,12 @@ D:\CODES\Projects\stock-analyzer\
 - Navbar stock search (`components/NavSearch.tsx`): Ctrl/Cmd+K glass combobox, lazy `GET /stocks`, client-side filter, top 8 with per-user verdict chips; keyboard-complete; opens `/stock/{symbol}`
 - Stock detail layout: description | verdict equal-height halves (description clipped, "More" opens the full profile dialog) → price chart → main ratios → "What it has" (market cap first) → "What it's done" → all other ratios
 - Candle Ridge 3D hero retired: component, pure helpers and tests removed; `DESIGN.md` loop whitelist and 3D sections updated
+
+### Phase 1.7 — Saved screens + inline criteria editor + navbar search
+- Multiple named screening criteria per user in `screening_sets`; exactly one active; runs and Top 10 are per active screen (`screen_runs.set_id`)
+- Criteria page: screen picker + dialog-free inline editor (category sub-accordions); Edit Criteria expands it; Run saves the draft first
+- Navbar search: always-visible 3D-glass bar ≥ md (icon fallback < md), Ctrl/Cmd+K focuses
+- Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

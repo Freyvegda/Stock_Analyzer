@@ -64,7 +64,7 @@ per symbol to every user (shared data); first view of a symbol with no row lazil
 fetches and `merge`s a `(symbol, today)` snapshot, and Refresh does the same on
 demand. A failed fetch writes a `failed` row **only when no `ok` row exists for
 that symbol+day** — a good same-day snapshot is never clobbered. The report/verdict
-on top is computed per request from `user_criteria` and is **never persisted**.
+on top is computed per request from the active `screening_sets` row and is **never persisted**.
 Daily bars are **never stored**: `/stock/{symbol}/ohlc` fetches 5y of daily bars
 through a process-memory TTL cache (900 s) and slices/aggregates on the way out
 (no `prices` writes in Phase 1.6).

@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from app.api import stocks as stocks_api
-from app.db.models import Fundamental, Stock, UserCriteria
+from app.db.models import Fundamental, ScreeningSet, Stock
 
 STORED_DATE = "2026-09-26"
 OLDER_DATE = "2026-09-24"
@@ -59,12 +59,14 @@ def seed_fundamental(test_db, symbol: str, data: dict, date_iso: str = STORED_DA
 
 def seed_criteria(test_db, user_id: int, criteria: list[dict]) -> None:
     with test_db() as session:
-        session.merge(
-            UserCriteria(
+        session.add(
+            ScreeningSet(
                 user_id=user_id,
+                name="Default",
                 criteria_json=json.dumps(criteria),
                 thesis=None,
                 shortlist_size=10,
+                is_active=True,
                 updated_at="now",
             )
         )

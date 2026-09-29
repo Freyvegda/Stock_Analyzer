@@ -1,7 +1,7 @@
 """Per-user screening criteria: pydantic models, defaults, JSON serialization.
 
-Criteria live in ``user_criteria.criteria_json`` (list of
-``{"key", "enabled", "value"}``). Valid keys are owned by ``catalog.py``.
+Criteria live in ``screening_sets.criteria_json`` (one named screen per
+row; the active one is used). Valid keys are owned by ``catalog.py``.
 ``ConfigError`` is the shared 422 vehicle (registered as an exception handler
 in ``app.main``).
 """
