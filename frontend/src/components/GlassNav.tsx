@@ -1,5 +1,5 @@
 import { useRef, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { IconButton, Text } from '@chakra-ui/react'
 import { LogOut, TrendingUp } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -70,10 +70,15 @@ export function GlassNav() {
         onPointerLeave={onPointerLeave}
       >
         <nav aria-label="Primary" className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="flex items-center gap-2 pl-1 pr-2 text-sm font-semibold tracking-[0.08em]">
+          {/* The brand mark goes back to the landing page. */}
+          <Link
+            to="/"
+            aria-label="Stock Analyzer home"
+            className="flex items-center gap-2 rounded-lg pl-1 pr-2 text-sm font-semibold tracking-[0.08em]"
+          >
             <TrendingUp size={18} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
             STOCK ANALYZER
-          </span>
+          </Link>
           {navItems.map((item) => (
             <NavLink
               key={item.to}

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Backtest from './pages/Backtest'
 import Documents from './pages/Documents'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import StockDetail from './pages/StockDetail'
 import Stocks from './pages/Stocks'
@@ -24,7 +25,8 @@ function AppShell() {
         <StatusRail />
         <main className="p-6">
           <Routes>
-            <Route path="/" element={<Navigate to="/fundamentals/criteria" replace />} />
+            {/* `/` is the public landing page (a top-level route below), so the
+                app's own entry is /fundamentals/criteria. */}
             <Route path="/fundamentals" element={<FundamentalsLayout />}>
               <Route index element={<Navigate to="criteria" replace />} />
               <Route path="criteria" element={<ScreeningCriteria />} />
@@ -43,18 +45,22 @@ function AppShell() {
 }
 
 export default function App() {
-  const onLogin = useLocation().pathname === '/login'
+  const pathname = useLocation().pathname
+  // One decorative loop per viewport zone. The landing page draws the pagoda
+  // instead, and login draws the Sakura Garden.
+  const onLanding = pathname === '/'
+  const onLogin = pathname === '/login'
 
   return (
     <>
       <Backdrop />
-      {/* Login draws its own Sakura Garden scene; one decorative loop per viewport zone. */}
-      {onLogin ? null : (
+      {onLanding || onLogin ? null : (
         <Suspense fallback={null}>
           <Bonfire />
         </Suspense>
       )}
       <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route
           path="/*"

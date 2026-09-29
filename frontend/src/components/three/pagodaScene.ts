@@ -228,8 +228,7 @@ export function towerPose(p: number): TowerPose {
   }
 
   // The cta owns the far end: by p=1 the last tier's window has closed again,
-  // so the tower returns to whole. `raw` is -1 whenever nothing is open.
-  const raw = n === 0 ? -1 : clamp(Math.round(s - 2), -1, n - 1)
+  // so the tower returns to whole. -1 whenever nothing is open.
   const openIndex = tiers.findIndex((t) => t.emphasis > 0.001)
   const activeTier = shift > 0.02 && openIndex !== -1 ? openIndex : -1
 

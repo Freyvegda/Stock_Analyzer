@@ -292,6 +292,37 @@ export function bonfirePaletteFor(colorMode: string | undefined): BonfirePalette
   return colorMode === 'dark' ? bonfirePalette.dark : bonfirePalette.light
 }
 
+export interface PagodaPalette {
+  /** Storey body — the plastered wall between roofs. */
+  body: string
+  /** Roof tile. */
+  roof: string
+  /** Eave trim, column and the finial. */
+  trim: string
+}
+
+/**
+ * The landing pagoda. A sibling of `bonfirePalette`, deliberately outside
+ * `ThemeTokens`: `components/three/**` is hex-free by rule, and this keeps it
+ * that way without giving the vault-rules test an exception to make.
+ *
+ * The pagoda carries no data, so it uses brand sakura for its lit surfaces and
+ * the site's own plum-ink neutrals for the rest. It never encodes gain or loss —
+ * a roof tinted by "did this stock pass" would break the site's core rule.
+ */
+export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
+  dark: {
+    body: '#2A1F27',
+    roof: '#6E3350',
+    trim: '#FFA9C6',
+  },
+  light: {
+    body: '#F0DDE5',
+    roof: '#B0336A',
+    trim: '#8C2753',
+  },
+}
+
 export const CSS_VAR_BY_KEY: Record<keyof ThemeTokens, string> = {
   background: '--background',
   foreground: '--foreground',

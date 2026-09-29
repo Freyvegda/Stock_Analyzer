@@ -136,7 +136,7 @@ describe('401 refresh and replay', () => {
   /** Route by URL suffix. Handlers are per-call, so they can answer differently each time. */
   function routeFetch(handlers: Record<string, (call: number) => Response>) {
     const counts: Record<string, number> = {}
-    return vi.fn((input: RequestInfo | URL) => {
+    return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input)
       const key = Object.keys(handlers).find((k) => url.endsWith(k))
       if (!key) throw new Error(`unexpected fetch: ${url}`)

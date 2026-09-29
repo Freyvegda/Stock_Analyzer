@@ -1,5 +1,3 @@
-import type { Card, TowerTier } from './tower'
-
 /**
  * The one place the tower's shape is decided.
  *
