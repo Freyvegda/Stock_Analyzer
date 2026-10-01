@@ -108,12 +108,55 @@ because they are the class of bug the pure-module tests cannot catch.
       into the storey above. It now lifts a fraction of that, and leans.
 - [x] The water plane's near edge cut across the foreground.
 
+## Revision 5 — user feedback after the rendered v1 build
+
+The visitor's walk, rebuilt from user direction: the pagoda is the far thing you approach, one
+gate per feature, and the sign-up presents it whole.
+
+- [x] **Fewer night particles.** Fireflies 18 → 8, birds 7 → 4, clamped by `WORLD_LIMITS`, and
+      fireflies pulled in to a ≤ 2.8-unit radius around the base. Tests pin both ceilings and the
+      clustering.
+- [x] **The moon is never painted over.** The disc writes no depth and opaque ridges behind it in
+      the queue drew straight over it. `WORLD_LAYER_ORDER` puts the celestial body after the
+      scenery; a test pins sky < scenery < celestial.
+- [x] **The river flows sideways and meanders.** It was a straight strip under the gates — and,
+      by day, a near-black slab (metalness 0.6 with no environment map). Now: `riverBand` +
+      `riverRibbon`, a band across the frame behind the pagoda, meandering on one sine and
+      drifting with the clock, rewritten at the shared 8 Hz tick on a geometry built once, with a
+      ≤ 200-vertex cap and no reflections (diffuse material plus a faint night emissive).
+- [x] **A walkway, and the gates stand on it.** `pathPlan` / `pathCentre` / `pathRibbon` (in
+      `pagodaScene.ts`, because the camera is the walker): one static ribbon from the viewer to
+      the plinth, bowing out and back to the building's axis. `toriiPath` places each gate on
+      that centre line, so the camera passes *through* every gate rather than beside it; the row
+      sits well away from the pagoda (z 5.5 → 2.8), matching "the gates are a bit far away".
+- [x] **One gate per feature, felt as a softening.** `towerPose` walks one rest point per stage
+      (5.05, 4.15, 3.25, 2.35 — each just past its gate) and the sign-up steps back out to 5.1,
+      off the path onto the building's axis, framing the whole pagoda. `gateSoftness` peaks at
+      each crossing and is zero at every rest, weighted by distance; the renderer maps it to a few
+      pixels of CSS blur on the canvas, only while walking inward, and only on medium/high tiers
+      and outside reduced motion (`gateBlur`).
+- [x] **The building never comes apart.** The roof lift and lean are gone: storeys stay in their
+      stack, only their light changes, and the dim floor rose to 0.58 so a closed storey never
+      reads as a silhouette. Tests pin the pose's exact per-storey fields, the walk, the gate
+      passage and the rest-point clearances.
+- [x] **Rail ticks, one size.** The old pills were sized by their own hidden labels — four
+      different "bookmarks" — and the inactive dot was `bg-border`, invisible in dark. Now one
+      fixed-size dot button per storey with an absolutely positioned label, muted-foreground dots,
+      tested for identical classes and the marker colour.
+- [x] **Copy is legible in both themes.** Feature copy, the overview list and the sign-up panel
+      sit on token-derived translucent surfaces (`bg-background/70` + blur + hairline border); a
+      test pins the scrim on every storey's copy.
+- [x] **Budgets held.** River ≤ 200 vertices, walkway ≤ 80, all rewritten at the existing tick or
+      not at all; the gate blur is a gated full-screen pass; no new materials beyond one bank, one
+      water, one path; nothing else per frame changed. Low tier and reduced motion stay
+      sharp-and-cheap.
+
 ### Still outstanding
 
-- The reveal, the lantern sway and the atmosphere have not been watched at speed;
-  they read correctly frame by frame but their *feel* is unverified.
-- The storey rail's clearance from the copy column is pinned by reasoning and a
-  max-width, not by a placement test (unlike `treePlacement` for the login scene).
+- The walk's feel — the damping, the blur pulse and the arrival framing — has been watched at
+  rest points and mid-crossing, not yet at full scroll speed on a slow device.
+- The rail's clearance from the copy column is still pinned by reasoning and max-widths, not by a
+  placement test (unlike `treePlacement` for the login scene).
 
 ## Revision 4 — the interactive pass
 

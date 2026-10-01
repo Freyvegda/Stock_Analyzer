@@ -95,6 +95,7 @@ describe('pagodaPalette', () => {
       'ridgeFar',
       'mist',
       'water',
+      'bank',
       'foliage',
       'bark',
       'star',
@@ -141,6 +142,22 @@ describe('pagodaPalette', () => {
     // And both are actually bright enough to read as a light source.
     expect(luminance(pagodaPalette.dark.moon)).toBeGreaterThan(0.4)
     expect(luminance(pagodaPalette.light.sun)).toBeGreaterThan(0.4)
+  })
+
+  it('keeps the river brighter than its banks in both modes', () => {
+    // The water has to read as water from the first frame; the original pool
+    // rendered near-black at night and as a dark slab by day. Lighter than the
+    // ground it runs through, in both modes, is the floor.
+    const lum = (hex: string) => {
+      const v = hex.replace('#', '')
+      const ch = (i: number) => parseInt(v.slice(i, i + 2), 16) / 255
+      const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+      return 0.2126 * lin(ch(0)) + 0.7152 * lin(ch(2)) + 0.0722 * lin(ch(4))
+    }
+    for (const mode of ['dark', 'light'] as const) {
+      const p = pagodaPalette[mode]
+      expect(lum(p.water), `${mode} water/bank`).toBeGreaterThan(lum(p.bank))
+    }
   })
 
   it('recedes the ridges toward the sky', () => {

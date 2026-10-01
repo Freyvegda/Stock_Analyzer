@@ -9,26 +9,43 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { pagodaLayout } from '../pagodaScene'
+import {
+  PATH_AMPL,
+  SCROLL_SPAN,
+  pathCentre,
+  pathPlan,
+  pathRibbon,
+  tierStage,
+  towerPose,
+} from '../pagodaScene'
+import { TOWER_TIERS } from '@/content/tower'
 import {
   QUALITY_PROFILES,
   WORLD_LIMITS,
+  WORLD_LAYER_ORDER,
+  GATE_BLUR_PX,
+  RIVER_MEANDER,
   birdFlock,
   celestialBody,
   fireflyPose,
   fireflySeeds,
+  gateBlur,
+  gateSoftness,
   grove,
+  groundSheet,
   mountainRidges,
   petalPose,
   petalSeeds,
   pickQuality,
   ridgeReach,
+  riverBand,
+  riverCentre,
+  riverRibbon,
   skyGradient,
   starField,
   toriiPath,
   CAMERA_Z,
   visibleHalfHeight,
-  waterPlane,
   worldPlan,
 } from '../pagodaWorld'
 
@@ -193,33 +210,248 @@ describe('grove', () => {
     }
   })
 
+  it('stands the trees on the banks, never in the river', () => {
+    // The river is a band across the scene now; a tree in it would float.
+    const band = riverBand()
+    for (const t of trees) {
+      const edge = riverCentre(t.position.x, 0)
+      const clearance = Math.abs(t.position.z - edge) - band.width / 2
+      // outside the band, on either bank
+      expect(clearance, `tree at z=${t.position.z}`).toBeGreaterThan(0.5)
+    }
+  })
+
   it('is deterministic', () => {
     expect(grove()).toEqual(trees)
   })
 })
 
-describe('waterPlane', () => {
-  const layout = pagodaLayout(4)
-  const water = waterPlane(layout)
+describe('the river band', () => {
+  const band = riverBand()
 
-  it('sits below the plinth, so the tower is founded in it', () => {
-    // Above the plinth and the water cuts the building in half.
-    expect(water.y).toBeLessThan(0)
+  it('flows sideways, in the distance behind the pagoda', () => {
+    // User direction: the gates and the walkway stand on dry ground. The river
+    // crosses the frame as scenery — it is never the path.
+    expect(band.centreZ).toBeLessThan(-2)
+    expect(band.centreZ + band.width / 2).toBeLessThan(0)
   })
 
-  it('is wide enough to read as water, not a puddle', () => {
-    expect(water.width).toBeGreaterThan(layout[0].bodyWidth * 4)
-    expect(water.depth).toBeGreaterThan(0)
+  it('reaches past the widest frame at its own depth', () => {
+    // Its ends must never show inside the frustum, or the river stops mid-screen.
+    expect(band.length / 2).toBeGreaterThan(ridgeReach(band.centreZ))
   })
 
-  it('keeps its own near edge behind the camera, so it can never show', () => {
-    // A plane sized just around the tower ends inside the frustum, and the hard
-    // horizontal edge reads as a clipped sprite rather than ground.
-    expect(water.edgeZ).toBeGreaterThan(CAMERA_Z)
+  it('keeps the water diffuse, not metal, so it reads without an environment map', () => {
+    // The invisibility bug: metalness 0.6 with no env map renders the surface
+    // close to black, whatever its colour. A river has to be lit diffusely.
+    expect(band.metalness).toBeGreaterThanOrEqual(0)
+    expect(band.metalness).toBeLessThan(0.35)
+    expect(band.roughness).toBeGreaterThan(0.2)
+    expect(band.roughness).toBeLessThan(0.8)
   })
 
   it('is deterministic', () => {
-    expect(waterPlane(layout)).toEqual(water)
+    expect(riverBand()).toEqual(band)
+  })
+})
+
+describe('groundSheet', () => {
+  const ground = groundSheet()
+
+  it('sits under the river and reaches past the widest frame', () => {
+    expect(ground.y).toBeLessThan(riverBand().y)
+    expect(ground.edgeZ).toBeGreaterThan(CAMERA_Z)
+    expect(ground.width / 2).toBeGreaterThan(ridgeReach(ground.farZ))
+  })
+
+  it('is deterministic', () => {
+    expect(groundSheet()).toEqual(ground)
+  })
+})
+
+describe('the river meander', () => {
+  const band = riverBand()
+
+  it('never brings the water near the pagoda or the walkway', () => {
+    // The nearside water edge has to stay well behind the tower footprint.
+    for (let x = -50; x <= 50; x += 0.5) {
+      for (const t of [0, 3.1, 7.7]) {
+        expect(riverCentre(x, t) + band.width / 2, `x=${x} t=${t}`).toBeLessThan(-1)
+      }
+    }
+  })
+
+  it('wanders across the frame rather than running as a ruled line', () => {
+    let reach = 0
+    for (let x = -40; x <= 40; x += 0.25) {
+      reach = Math.max(reach, Math.abs(riverCentre(x, 0) - band.centreZ))
+    }
+    expect(reach).toBeGreaterThan(RIVER_MEANDER * 0.6)
+    expect(reach).toBeLessThanOrEqual(RIVER_MEANDER + 1e-9)
+  })
+
+  it('drifts over time, so the river reads as moving water', () => {
+    expect(Math.abs(riverCentre(5, 0) - riverCentre(5, 6))).toBeGreaterThan(0.1)
+  })
+
+  it('keeps the water surface continuous — no step between stations', () => {
+    for (let x = -20; x <= 30; x += 0.25) {
+      const step = Math.abs(riverCentre(x + 0.25, 0) - riverCentre(x, 0))
+      expect(step).toBeLessThan(0.1)
+    }
+  })
+})
+
+describe('riverRibbon', () => {
+  const band = riverBand()
+  const ribbon = riverRibbon(band, 0)
+
+  it('lays two edge vertices per station, ordered across the frame', () => {
+    expect(ribbon.length % 6).toBe(0)
+    const stations = ribbon.length / 6
+    expect(stations).toBeGreaterThan(8)
+    for (let s = 1; s < stations; s += 1) {
+      expect(ribbon[s * 6], `station ${s}`).toBeGreaterThan(ribbon[(s - 1) * 6])
+    }
+  })
+
+  it('keeps the full width at every station and sits on the water line', () => {
+    for (let s = 0; s < ribbon.length / 6; s += 1) {
+      const near = ribbon[s * 6 + 2]
+      const far = ribbon[s * 6 + 5]
+      expect(far - near).toBeCloseTo(band.width, 6)
+      expect(ribbon[s * 6 + 1]).toBeCloseTo(band.y, 6)
+      expect(ribbon[s * 6 + 4]).toBeCloseTo(band.y, 6)
+    }
+  })
+
+  it('animates without re-cutting the mesh — same stations, different water', () => {
+    const later = riverRibbon(band, 5)
+    expect(later).toHaveLength(ribbon.length)
+    expect(later).not.toEqual(ribbon)
+    // x is untouched, so callers can index the same vertices every frame.
+    for (let s = 0; s < ribbon.length / 6; s += 1) {
+      expect(later[s * 6]).toBeCloseTo(ribbon[s * 6], 6)
+    }
+  })
+
+  it('stays inside a vertex budget a low-end device can carry', () => {
+    // The whole animation is a rewrite of these positions at the shared tick,
+    // so the cap is what keeps it cheap. Raising it is a decision, not a tweak.
+    expect(ribbon.length / 3).toBeLessThanOrEqual(200)
+  })
+
+  it('is deterministic', () => {
+    expect(riverRibbon(band, 0)).toEqual(ribbon)
+  })
+})
+
+describe('the gate path', () => {
+  const plan = pathPlan()
+  const ribbon = pathRibbon(plan)
+
+  it('runs from the viewer to the pagoda steps and arrives on the centre line', () => {
+    // The walk ends at the plinth, straight on axis, so the last steps line up
+    // with the building.
+    expect(plan.nearZ).toBeGreaterThan(CAMERA_Z)
+    expect(plan.farZ).toBeLessThan(2)
+    expect(pathCentre(plan.farZ)).toBeCloseTo(0, 6)
+    for (let z = plan.farZ; z >= 0; z -= 0.2) expect(pathCentre(z)).toBe(0)
+  })
+
+  it('bows out over the walk, so the path is a path and not a ruler', () => {
+    let reach = 0
+    for (let z = plan.farZ; z <= plan.nearZ; z += 0.1) {
+      reach = Math.max(reach, Math.abs(pathCentre(z)))
+    }
+    expect(reach).toBeGreaterThan(0.25)
+    expect(reach).toBeLessThanOrEqual(PATH_AMPL + 1e-9)
+  })
+
+  it('is continuous — no kink between stations', () => {
+    for (let z = plan.farZ; z <= plan.nearZ; z += 0.1) {
+      expect(Math.abs(pathCentre(z + 0.1) - pathCentre(z))).toBeLessThan(0.05)
+    }
+  })
+
+  it('lays the walkway with a full width at every station', () => {
+    expect(ribbon.length % 6).toBe(0)
+    const stations = ribbon.length / 6
+    expect(stations).toBeGreaterThan(4)
+    for (let s = 0; s < stations; s += 1) {
+      expect(ribbon[s * 6 + 3] - ribbon[s * 6]).toBeCloseTo(plan.halfWidth * 2, 6)
+      expect(ribbon[s * 6 + 1]).toBeCloseTo(plan.y, 6)
+    }
+    for (let s = 1; s < stations; s += 1) {
+      expect(ribbon[s * 6 + 2], `station ${s}`).toBeLessThan(ribbon[(s - 1) * 6 + 2])
+    }
+  })
+
+  it('stays inside a vertex budget a low-end device can carry', () => {
+    expect(ribbon.length / 3).toBeLessThanOrEqual(80)
+  })
+
+  it('is deterministic', () => {
+    expect(pathRibbon(pathPlan())).toEqual(ribbon)
+  })
+})
+
+describe('gateSoftness and gateBlur', () => {
+  const gates = toriiPath().map((g) => g.position.z)
+
+  it('peaks as the camera passes a gate', () => {
+    for (const z of gates) expect(gateSoftness(z), `gate at ${z}`).toBeGreaterThan(0.25)
+  })
+
+  it('softens the far gates more than the ones near the tower', () => {
+    // The pagoda is further away when you walk through the outer gates, so the
+    // vista through them is softer. The weight is that distance.
+    for (let i = 1; i < gates.length; i += 1) {
+      expect(gateSoftness(gates[i]), `gate ${i}`).toBeLessThan(gateSoftness(gates[i - 1]))
+    }
+  })
+
+  it('leaves every section rest point in focus', () => {
+    // Each feature section has a camera rest; a rest has to be sharp, or the
+    // blur never resolves and the effect reads as a smear.
+    for (const z of [CAMERA_Z, ...TOWER_TIERS_Z()]) {
+      expect(gateSoftness(z), `rest at ${z}`).toBeLessThan(0.06)
+    }
+  })
+
+  it('is bounded and finite along the whole path', () => {
+    for (let z = 0.5; z <= 7; z += 0.05) {
+      const v = gateSoftness(z)
+      expect(Number.isFinite(v)).toBe(true)
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('costs nothing on a low-end device or under reduced motion', () => {
+    // The blur is a full-screen pass on the canvas. Low tier and reduced motion
+    // get the scene sharp rather than an effect they cannot afford.
+    expect(gateBlur(1, 'low', false)).toBe(0)
+    expect(gateBlur(1, 'high', true)).toBe(0)
+    expect(gateBlur(1, 'medium', false)).toBeGreaterThan(0)
+    expect(gateBlur(1, 'high', false)).toBeGreaterThan(gateBlur(0.5, 'high', false))
+    expect(gateBlur(1, 'high', false)).toBeLessThanOrEqual(GATE_BLUR_PX)
+  })
+})
+
+/** The camera rest depth at each feature section, straight from the scroll story. */
+function TOWER_TIERS_Z(): number[] {
+  return TOWER_TIERS.map((_, i) => towerPose(tierStage(i) / SCROLL_SPAN).cameraZ)
+}
+
+describe('WORLD_LAYER_ORDER', () => {
+  it('draws the sky behind the scenery and the celestial body in front of it', () => {
+    // The obstruction bug: the moon disc drew before the opaque ridges and
+    // wrote no depth, so a nearer mountain painted straight over it. The fix is
+    // an explicit order — the moon is nearer than every ridge, so it must draw
+    // over them.
+    expect(WORLD_LAYER_ORDER.sky).toBeLessThan(WORLD_LAYER_ORDER.scenery)
+    expect(WORLD_LAYER_ORDER.celestial).toBeGreaterThan(WORLD_LAYER_ORDER.scenery)
   })
 })
 
@@ -238,15 +470,47 @@ describe('toriiPath', () => {
     }
   })
 
-  it('keeps clear of the camera and of the tower', () => {
-    // The camera sits at z = 6.4. The first version ran the path to z = 6.2,
-    // which put a gate at the lens: eight storey-height bars across the frame.
-    // The far end must also stop short of the plinth, or a gate stands inside
-    // the building.
+  it('keeps clear of the hero camera and of the tower', () => {
+    // The camera sits at z = 6.4 on the hero. The first version ran the path to
+    // z = 6.2, which put a gate at the lens: eight storey-height bars across the
+    // frame. The far end must also stay well short of the plinth: the user's
+    // picture is gates that stand a little way off, with the pagoda seen at
+    // distance through them.
     for (const g of gates) {
-      expect(g.position.z, `gate at z=${g.position.z} is at the camera`).toBeLessThan(4.4)
-      expect(g.position.z, `gate at z=${g.position.z} is inside the tower`).toBeGreaterThan(0.5)
+      expect(g.position.z, `gate at z=${g.position.z} is too near the hero camera`).toBeLessThanOrEqual(5.6)
+      expect(g.position.z, `gate at z=${g.position.z} is too near the pagoda`).toBeGreaterThan(2.5)
     }
+  })
+
+  it('stands every gate on the walkway, not beside it', () => {
+    // The gates are the path's milestone markers: the camera walks the path and
+    // has to pass *through* each gate, so each gate sits on the centre line of
+    // the walk at its own z.
+    for (const g of gates) {
+      expect(g.position.x, `gate at z=${g.position.z}`).toBeCloseTo(pathCentre(g.position.z), 6)
+    }
+  })
+
+  it('keeps every gate and the walkway out of the river', () => {
+    const band = riverBand()
+    for (const g of gates) {
+      const waterEdge = riverCentre(g.position.x, 0) + band.width / 2
+      expect(g.position.z - waterEdge, `gate at z=${g.position.z} stands in water`).toBeGreaterThan(1)
+    }
+  })
+
+  it('spaces the gates for a fly-through, not a picket fence', () => {
+    // The camera advances one rest point per storey; a gate has to sit between
+    // each pair of rests or the scroll never passes through one. Even spacing
+    // keeps that true for every storey, not just the last.
+    const gaps: number[] = []
+    for (let i = 1; i < gates.length; i += 1) {
+      gaps.push(gates[i - 1].position.z - gates[i].position.z)
+    }
+    const first = gaps[0]
+    for (const gap of gaps) expect(gap).toBeCloseTo(first, 5)
+    expect(first).toBeGreaterThan(0.8)
+    expect(first).toBeLessThan(1.6)
   })
 
   it('is deterministic', () => {
@@ -385,6 +649,17 @@ describe('fireflies', () => {
     for (const seed of seeds) expect(seed.home.y).toBeLessThan(3)
   })
 
+  it('crowds the tower base instead of dotting the whole frame', () => {
+    // The first build scattered eighteen of them out to a radius of nearly
+    // five units; on screen that read as dirt on the lens, not fireflies.
+    for (const seed of seeds) {
+      expect(Math.hypot(seed.home.x, seed.home.z)).toBeLessThanOrEqual(2.8)
+      expect(seed.home.y).toBeLessThanOrEqual(2.2)
+    }
+    // Still a field, not one lamp: the furthest home has real distance on it.
+    expect(Math.max(...seeds.map((s) => Math.hypot(s.home.x, s.home.z)))).toBeGreaterThan(1.4)
+  })
+
   it('is deterministic', () => {
     expect(fireflySeeds()).toEqual(seeds)
   })
@@ -418,6 +693,13 @@ describe('WORLD_LIMITS', () => {
       expect(Number.isInteger(cap), `${key} is not a whole number`).toBe(true)
       expect(cap, `${key} is not positive`).toBeGreaterThan(0)
     }
+  })
+
+  it('keeps the night-only atmospheres sparse enough to read as life', () => {
+    // User feedback: both fields were dense enough to read as noise. These are
+    // ceilings, not targets — raising them is a decision, not a tweak.
+    expect(WORLD_LIMITS.fireflies).toBeLessThanOrEqual(10)
+    expect(WORLD_LIMITS.birds).toBeLessThanOrEqual(5)
   })
 })
 

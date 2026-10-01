@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BoxGeometry } from 'three'
 
 import { mountainRidges, toriiPath } from '../pagodaWorld'
-import { mergePlaced, ridgeStrip, toriiParts } from '../worldGeometry'
+import { mergePlaced, ribbonStrip, ridgeStrip, toriiParts } from '../worldGeometry'
 
 /**
  * The world's geometry assembly.
@@ -96,6 +96,52 @@ describe('ridgeStrip', () => {
       const visibleHalfHeight = 0.414 * (6.4 - ridge.z)
       expect(Math.abs(base), `ridge at z=${ridge.z}`).toBeGreaterThan(visibleHalfHeight + 4)
     }
+  })
+})
+
+/** A two-station ribbon: one quad, four vertices. */
+const quad = [
+  -1, 0, 1, 1, 0, 1,
+  -1, 0, -1, 1, 0, -1,
+]
+
+describe('ribbonStrip', () => {
+  it('turns a pair of vertices per station into a closed quad', () => {
+    const geometry = ribbonStrip(quad)
+    const position = geometry.getAttribute('position')
+    expect(position.count).toBe(4)
+    const index = geometry.getIndex()!
+    expect(index.count).toBe(6)
+    for (let i = 0; i < index.count; i += 1) {
+      expect(index.getX(i)).toBeLessThan(position.count)
+    }
+  })
+
+  it('faces the surface up in both orientations', () => {
+    // Cross product of the first triangle must point at +y: a ribbon wound the
+    // wrong way is invisible from above, which reads as the water missing.
+    // One ribbon runs along the walk (stations in -z), one along the river
+    // (stations in +x); the index pattern has to suit both.
+    const pathQuad = [-1, 0, 1, 1, 0, 1, -1, 0, -1, 1, 0, -1]
+    const riverQuad = [-1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0, 1]
+    for (const positions of [pathQuad, riverQuad]) {
+      const geometry = ribbonStrip(positions)
+      const position = geometry.getAttribute('position')
+      const index = geometry.getIndex()!
+      const a = index.getX(0)
+      const b = index.getX(1)
+      const c = index.getX(2)
+      const ax = position.getX(b) - position.getX(a)
+      const az = position.getZ(b) - position.getZ(a)
+      const bx = position.getX(c) - position.getX(a)
+      const bz = position.getZ(c) - position.getZ(a)
+      // y of cross(AB, AC) with both vectors flat: az * bx - ax * bz
+      expect(az * bx - ax * bz).toBeGreaterThan(0)
+    }
+  })
+
+  it('refuses a vertex list that is not station pairs', () => {
+    expect(() => ribbonStrip([0, 0, 0])).toThrow()
   })
 })
 

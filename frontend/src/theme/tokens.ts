@@ -326,8 +326,12 @@ export interface PagodaPalette {
   ridgeFar: string
   /** Drifting haze between the ranges. */
   mist: string
-  /** The pool at the tower's foot. */
+  /** The river at the tower's foot. */
   water: string
+  /** The banks the river runs through. */
+  bank: string
+  /** The walkway between the gates. */
+  path: string
   /** Blossom canopy. */
   foliage: string
   /** Trunk and branches. */
@@ -377,7 +381,13 @@ export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
     ridgeMid: '#201726',
     ridgeFar: '#332336',
     mist: '#6E5A7A',
-    water: '#120E19',
+    // Water lifted off the bank so the river reads at night, when there is no
+    // environment map to give it a highlight. The bank stays near-black.
+    water: '#26304A',
+    /** The banks the river runs through. */
+    bank: '#160F16',
+    /** The walkway between the gates. */
+    path: '#2A2029',
     foliage: '#6B3352',
     bark: '#241A22',
     star: '#E8DCF0',
@@ -407,7 +417,13 @@ export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
     ridgeMid: '#A8B4C6',
     ridgeFar: '#EAEEF4',
     mist: '#FFFFFF',
-    water: '#A8C4D6',
+    // Bright enough to read as sky-reflecting water against the warm bank; the
+    // original pool rendered as a dark slab because it was metal and unlit.
+    water: '#B9D6E6',
+    /** The banks the river runs through. */
+    bank: '#CBB1BE',
+    /** The walkway between the gates. */
+    path: '#E8D7DE',
     foliage: '#F0A8C4',
     bark: '#6B4A52',
     star: '#FFFFFF',

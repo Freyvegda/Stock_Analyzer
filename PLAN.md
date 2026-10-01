@@ -143,8 +143,8 @@ D:\CODES\Projects\stock-analyzer\
 - Candle Ridge 3D hero retired: component, pure helpers and tests removed; `DESIGN.md` loop whitelist and 3D sections updated
 
 ### Phase 1.8 — Pagoda landing page + JWT authorization
-- Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven pagoda whose four storeys open one at a time, each with real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does
-- Tier content lives in one place (`src/content/tower.ts`); geometry, the scroll story and the roof mesh are pure and three-free (`three/pagodaScene.ts`), so the tower cannot drift from the page's sections and none of it needs WebGL to test
+- Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven walk to a distant pagoda - one torii gate per feature section on a meandering walkway, the river flowing sideways in the distance, and the sign-up stepping back to present the pagoda whole. Each section has real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does
+- Tier content lives in one place (`src/content/tower.ts`); geometry, the scroll story, the walkway and the roof mesh are pure and three-free (`three/pagodaScene.ts`), so the tower cannot drift from the page's sections and none of it needs WebGL to test
 - Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256 and *is* the revocation mechanism. Client single-flights refreshes (rotation would otherwise invalidate them in parallel); 3h sliding idle logout with a server-side backstop
 - `SessionMiddleware` and the `sa_session` cookie are gone; `logout`/`refresh` no longer depend on `current_user` so a logout after token expiry still revokes
 - `DESIGN.md` loop whitelist amended to admit the pagoda; "not a marketing site" amended to note the one exception

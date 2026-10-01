@@ -71,6 +71,18 @@ describe('Landing content', () => {
     expect(screen.getAllByText('In progress')).toHaveLength(2)
   })
 
+  it('scrims every feature block, so its copy stays readable over the scene', () => {
+    // User feedback: by day the scene is bright and the copy sat straight on
+    // the sky, mountains and river — muted text on a pale sky is the failure.
+    // Every storey's copy lives on a translucent panel rather than on the 3D.
+    renderLanding()
+    for (const tier of TOWER_TIERS) {
+      const copy = screen.getByTestId(`tier-copy-${tier.id}`)
+      expect(copy.className).toContain('bg-background/70')
+      expect(copy.className).toContain('backdrop-blur')
+    }
+  })
+
   it('opens on the hero, with no storey yet expanded', () => {
     renderLanding()
     for (const tier of TOWER_TIERS) {
@@ -166,6 +178,32 @@ describe('the storey rail', () => {
     fireEvent.click(within(rail).getByRole('button', { name: TOWER_TIERS[1].heading }))
     expect(scrollTo).toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it('keeps every tick the same size, whatever its label', () => {
+    // User feedback: the old rail pills were sized by their own hidden labels,
+    // so the four ticks were four different widths and read as four different
+    // bookmarks. The label must not be in the button's layout at all.
+    renderLanding()
+    const rail = screen.getByTestId('tower-rail')
+    const buttons = within(rail).getAllByRole('button')
+    expect(buttons).toHaveLength(TOWER_TIERS.length)
+    const classes = buttons.map((b) => b.className)
+    for (const c of classes) expect(c).toBe(classes[0])
+    for (const label of within(rail).getAllByTestId('rail-label')) {
+      expect(label.className).toContain('absolute')
+    }
+  })
+
+  it('gives every tick a visible marker, not a border-coloured dot', () => {
+    // The dark theme rendered the tick dots in `bg-border`, which is the same
+    // near-black as the panel behind them: the rail was invisible.
+    renderLanding()
+    const rail = screen.getByTestId('tower-rail')
+    for (const dot of within(rail).getAllByTestId('rail-dot')) {
+      expect(dot.className).toContain('bg-')
+      expect(dot.className).not.toContain('bg-border')
+    }
   })
 
   it('does not render when the scene does not', () => {

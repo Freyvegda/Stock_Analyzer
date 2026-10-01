@@ -116,7 +116,8 @@ export function Landing() {
         {/* Overview — the whole tower, all four storeys named. This doubles as a
             table of contents: every row jumps to its storey. */}
         <section className={cn(STAGE_H, 'flex items-center px-6')}>
-          <ol className="mx-auto w-full max-w-2xl space-y-3">
+          <div className="mx-auto w-full max-w-2xl rounded-[--radius-lg] border border-border/60 bg-background/70 p-6 backdrop-blur-md">
+            <ol className="space-y-3">
             {TOWER_TIERS.map((t, i) => {
               const current = activeStage >= tierStage(i)
               return (
@@ -144,7 +145,8 @@ export function Landing() {
                 </li>
               )
             })}
-          </ol>
+            </ol>
+          </div>
         </section>
 
         {/* One stage per storey. The wrapper is the containing block for the
@@ -160,10 +162,13 @@ export function Landing() {
                 className={cn(STAGE_H, 'sticky top-0 flex items-center px-6')}
               >
                 <div
+                  data-testid={'tier-copy-' + tier.id}
                   className={cn(
                     // Narrower than before so the rail, which sits outside it,
-                    // can never overlap the copy at any width.
-                    'ml-auto w-full transition-opacity duration-200',
+                    // can never overlap the copy at any width. The translucent
+                    // panel keeps the copy legible over the day scene, where a
+                    // pale sky sits directly behind every line.
+                    'ml-auto w-full rounded-[--radius-lg] border border-border/60 bg-background/70 p-6 backdrop-blur-md transition-opacity duration-200',
                     showTower ? 'md:max-w-[42%] lg:max-w-[40%]' : 'mx-auto max-w-2xl',
                     open ? 'opacity-100' : 'opacity-70',
                   )}
@@ -220,7 +225,7 @@ export function Landing() {
         <section className={cn(STAGE_H, 'flex items-center justify-center px-6')}>
           <motion.div
             style={reduced ? undefined : { opacity: ctaOpacity, y: ctaY }}
-            className="text-center"
+            className="rounded-[--radius-lg] border border-border/60 bg-background/70 px-8 py-6 text-center backdrop-blur-md"
           >
             <h2 className="text-3xl font-semibold tracking-tight">Start with your own criteria.</h2>
             <p className="mx-auto mt-3 max-w-md text-muted-foreground">

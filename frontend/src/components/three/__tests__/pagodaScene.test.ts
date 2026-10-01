@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { TOWER_TIERS } from '@/content/tower'
+import { GATE_SOFT_REACH, toriiPath } from '../pagodaWorld'
 import {
   LANTERN_LIMIT,
   MAX_LANTERN_LIGHTS,
@@ -19,6 +20,7 @@ import {
   lightingRig,
   pagodaLayout,
   pagodaRoofVertices,
+  pathCentre,
   plinthLayout,
   roofCourses,
   smoothstep,
@@ -267,25 +269,26 @@ describe('towerPose', () => {
     expect(pose.scale).toBeGreaterThan(0.5)
   })
 
-  it('slides left and opens exactly one storey per tier stage', () => {
+  it('slides left and hands the camera to exactly one storey per tier stage', () => {
+    const layout = pagodaLayout(n)
     for (let i = 0; i < n; i += 1) {
-      const p = tierStage(i) / SCROLL_SPAN
-      const pose = towerPose(p)
-      expect(pose.x).toBeLessThan(-1)
+      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
+      expect(pose.x).toBeLessThan(-0.4)
       expect(pose.activeTier).toBe(i)
       expect(pose.tiers[i].emphasis).toBeCloseTo(1, 5)
-      // Opened, not cleared: the size of the lift is pinned by its own test
-      // below, and is deliberately a fraction of the storey height.
-      expect(pose.tiers[i].lift).toBeGreaterThan(0.1)
+      // The open storey is framed, not merely scrolled past: the camera rises to
+      // its centre in the tower's own scaled space.
+      const centre = (layout[i].y + layout[i].bodyHeight / 2) * pose.scale + pose.y
+      expect(pose.cameraY, `tier ${i} is centred`).toBeCloseTo(centre, 1)
     }
   })
 
   it('never opens two storeys at once', () => {
-    // The one storey lifts off to reveal what is inside it; two at once would
-    // read as the whole tower coming apart.
+    // One storey at a time is the whole reveal. Two emphasises at once would
+    // read as the tower coming apart.
     for (let step = 0; step <= 200; step += 1) {
       const pose = towerPose(step / 200)
-      const open = pose.tiers.filter((t) => t.lift > 0.01).length
+      const open = pose.tiers.filter((t) => t.emphasis > 0.01).length
       expect(open).toBeLessThanOrEqual(1)
     }
   })
@@ -318,38 +321,114 @@ describe('towerPose', () => {
     for (let i = 0; i < n; i += 1) {
       if (i === 1) continue
       expect(pose.tiers[i].brightness).toBeLessThan(open)
-      expect(pose.tiers[i].brightness).toBeGreaterThan(0.35)
+      expect(pose.tiers[i].brightness).toBeGreaterThan(0.5)
     }
   })
 
-  it('lifts only far enough to read as opening, not as detaching', () => {
-    // A lift on the order of a whole storey height clears the wall and floats
-    // the roof into the storey above, which reads as the tower coming apart.
-    const tier = pagodaLayout(4)[0]
-    const pose = towerPose(tierStage(0) / SCROLL_SPAN)
-    expect(pose.tiers[0].lift).toBeGreaterThan(0.1)
-    expect(pose.tiers[0].lift).toBeLessThan(tier.bodyHeight * 0.5)
+  it('never dims a closed storey into a silhouette', () => {
+    // The first build multiplied the body colour down to 0.35, which read as
+    // the roof being swallowed by the storey below. The floor is a lighting
+    // change, not a shadow: the building must stay a building.
+    for (let i = 0; i < n; i += 1) {
+      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
+      for (const t of pose.tiers) expect(t.brightness).toBeGreaterThanOrEqual(0.55)
+    }
   })
 
-  it('returns to centre and closes up for the call to action', () => {
+  it('keeps every storey fixed in the stack — roofs never detach', () => {
+    // The reveal is the camera moving, not the building coming apart. A pose
+    // that carries any per-storey displacement is the old bug back again.
+    const pose = towerPose(tierStage(0) / SCROLL_SPAN)
+    for (const t of pose.tiers) {
+      expect(Object.keys(t).sort()).toEqual(['brightness', 'emphasis'])
+    }
+  })
+
+  it('steers the walk: deeper with every storey, then frames the pagoda', () => {
+    const rests = TOWER_TIERS.map((_, i) => towerPose(tierStage(i) / SCROLL_SPAN).cameraZ)
+    for (let i = 1; i < rests.length; i += 1) {
+      expect(rests[i], `tier ${i} is not deeper than tier ${i - 1}`).toBeLessThan(rests[i - 1])
+    }
+    // The sign-up steps back to present the building whole, on its axis.
+    const cta = towerPose(1)
+    expect(cta.cameraZ).toBeGreaterThan(3.5)
+    expect(cta.cameraZ).toBeLessThan(5.5)
+    expect(cta.cameraY).toBeGreaterThan(0.3)
+    expect(Math.abs(cta.cameraX)).toBeLessThan(0.1)
+  })
+
+  it('walks the walkway centre line, so every gate is passed through', () => {
+    // Until the sign-up's step-back, the camera is on the walk's own line.
+    for (const stage of [0, 1, ...TOWER_TIERS.map((_, i) => tierStage(i))]) {
+      const pose = towerPose(stage / SCROLL_SPAN)
+      expect(pose.cameraX, `stage ${stage}`).toBeCloseTo(pathCentre(pose.cameraZ), 6)
+    }
+    // Arrival: off the path and onto the building's axis.
+    expect(Math.abs(towerPose(1).cameraX)).toBeLessThan(0.1)
+  })
+
+  it('parks the camera past a gate on every move between storeys', () => {
+    // The fly-through, as a scroll property: between one storey's rest point
+    // and the next, at least one torii must have gone by the lens.
+    const gates = toriiPath().map((g) => g.position.z)
+    const rests = TOWER_TIERS.map((_, i) => towerPose(tierStage(i) / SCROLL_SPAN))
+    for (let i = 1; i < rests.length; i += 1) {
+      const passed = gates.filter((z) => z < rests[i - 1].cameraZ && z > rests[i].cameraZ)
+      expect(passed.length, `no gate on the way to storey ${i}`).toBeGreaterThanOrEqual(1)
+    }
+    // and the deepest rest is past the last gate: the walk gets all the way in
+    const lastGate = Math.min(...gates)
+    expect(rests[rests.length - 1].cameraZ).toBeLessThan(lastGate)
+  })
+
+  it('never rests within a gate’s blur reach, or inside the tower', () => {
+    const gates = toriiPath().map((g) => g.position.z)
+    const plinth = plinthLayout(pagodaLayout(n))
+    const front = plinth.width / 2
+    const stages = [1, ...TOWER_TIERS.map((_, i) => tierStage(i)), SCROLL_SPAN]
+    for (const stage of stages) {
+      const pose = towerPose(stage / SCROLL_SPAN)
+      const nearestAhead = Math.max(...gates.filter((z) => z < pose.cameraZ), -Infinity)
+      if (Number.isFinite(nearestAhead)) {
+        expect(
+          pose.cameraZ - nearestAhead,
+          `gate within blur reach at stage ${stage}`,
+        ).toBeGreaterThanOrEqual(GATE_SOFT_REACH)
+      }
+      expect(pose.cameraZ - front, `camera inside the plinth on stage ${stage}`).toBeGreaterThan(0.55)
+    }
+  })
+
+  it('holds the hero camera wide, low and on the path line', () => {
+    const pose = towerPose(0)
+    expect(pose.cameraZ).toBeCloseTo(6.4, 1)
+    expect(pose.cameraY).toBeCloseTo(0, 3)
+    // At the top of the page the walk has barely started, so the camera is
+    // near the centre line even though the path bows out further down.
+    expect(Math.abs(pose.cameraX)).toBeLessThan(0.45)
+  })
+
+  it('returns to centre and frames the whole pagoda for the call to action', () => {
     const pose = towerPose(1)
     expect(pose.activeTier).toBe(-1)
     expect(pose.x).toBeCloseTo(0, 5)
-    for (const t of pose.tiers) expect(t.lift).toBe(0)
+    // Stepped back from the walk: the pagoda centred, in frame, sharp.
+    expect(pose.cameraZ).toBeGreaterThan(3.5)
+    expect(Math.abs(pose.cameraX)).toBeLessThan(0.1)
   })
 
   it('keeps every pose value finite across the whole scroll', () => {
     for (let step = 0; step <= 400; step += 1) {
       const pose = towerPose(step / 400)
-      expect(Number.isFinite(pose.scale)).toBe(true)
-      expect(Number.isFinite(pose.x)).toBe(true)
-      expect(Number.isFinite(pose.y)).toBe(true)
-      expect(Number.isFinite(pose.cameraZ)).toBe(true)
+      for (const v of [pose.scale, pose.x, pose.y, pose.cameraZ, pose.cameraX, pose.cameraY]) {
+        expect(Number.isFinite(v)).toBe(true)
+      }
       for (const t of pose.tiers) {
         expect(Number.isFinite(t.emphasis)).toBe(true)
-        expect(Number.isFinite(t.lift)).toBe(true)
         expect(t.emphasis).toBeGreaterThanOrEqual(0)
         expect(t.emphasis).toBeLessThanOrEqual(1)
+        expect(t.brightness).toBeGreaterThan(0)
+        expect(t.brightness).toBeLessThanOrEqual(1)
       }
     }
   })
@@ -579,20 +658,7 @@ describe('base and finial detail', () => {
   })
 })
 
-describe('open-storey reveal', () => {
-  const n = TOWER_TIERS.length
-
-  it('tilt the open storey, and only the open one', () => {
-    // Lifting without tilting reads as a roof sliding up a rail. Exactly one
-    // storey may tilt, or the tower looks like it is coming apart.
-    for (let i = 0; i < n; i += 1) {
-      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
-      const tilted = pose.tiers.filter((t) => Math.abs(t.tilt) > 0.01)
-      expect(tilted).toHaveLength(1)
-      expect(Math.abs(pose.tiers[i].tilt)).toBeGreaterThan(0)
-    }
-  })
-
+describe('camera fly-through', () => {
   it('swings the open storey lanterns harder than the closed ones', () => {
     const pose = towerPose(tierStage(2) / SCROLL_SPAN)
     expect(pose.swayGain).toBeGreaterThan(1)
@@ -612,7 +678,8 @@ describe('open-storey reveal', () => {
       const pose = towerPose(step / 400)
       expect(Number.isFinite(pose.ripple)).toBe(true)
       expect(Number.isFinite(pose.swayGain)).toBe(true)
-      for (const t of pose.tiers) expect(Number.isFinite(t.tilt)).toBe(true)
+      expect(Number.isFinite(pose.cameraX)).toBe(true)
+      expect(Number.isFinite(pose.cameraY)).toBe(true)
     }
   })
 })

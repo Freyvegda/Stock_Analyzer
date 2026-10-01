@@ -575,17 +575,71 @@ export function lightingRig(mode: LightMode): LightingRig {
   }
 }
 
+// --- the walkway ------------------------------------------------------------
+
+export interface PathPlan {
+  y: number
+  halfWidth: number
+  /** Where the walk starts, behind the camera. */
+  nearZ: number
+  /** Where it meets the plinth steps. */
+  farZ: number
+  /** Station spacing along the walk. */
+  step: number
+}
+
+/** The most the walkway may bow away from the centre line. */
+export const PATH_AMPL = 0.5
+/** The bow's wavelength along the walk. */
+const PATH_WAVE = 15
+
+/**
+ * The walk the camera takes, from the viewer's side to the pagoda's steps.
+ *
+ * It lives here rather than in `pagodaWorld.ts` because the camera *is* the
+ * walker: `towerPose` follows this centre line, and the gates stand on it. One
+ * direction of import keeps the two from drifting apart.
+ */
+export function pathPlan(): PathPlan {
+  return { y: -0.16, halfWidth: 0.55, nearZ: 6.8, farZ: 1, step: 0.35 }
+}
+
+/**
+ * The walkway's centre line at `z`.
+ *
+ * Straight on the centre line from the plinth out to `farZ` — so the last steps
+ * line up with the building — then bowing out and back over the walk.
+ */
+export function pathCentre(z: number): number {
+  const plan = pathPlan()
+  if (z <= plan.farZ) return 0
+  const ramp = smoothstep((z - plan.farZ) / 5.5)
+  const wave = Math.sin(((z - plan.farZ) / PATH_WAVE) * Math.PI * 2)
+  return PATH_AMPL * ramp * wave
+}
+
+/**
+ * The walkway as a ribbon, near to far, as flat (x, y, z) triples: two vertices
+ * per station. Static: the walk does not animate, so this is built once.
+ */
+export function pathRibbon(plan: PathPlan): number[] {
+  const stations = Math.floor((plan.nearZ - plan.farZ) / plan.step) + 1
+  const out: number[] = []
+  for (let s = 0; s < stations; s += 1) {
+    const z = plan.nearZ - s * plan.step
+    const centre = pathCentre(z)
+    out.push(centre - plan.halfWidth, plan.y, z, centre + plan.halfWidth, plan.y, z)
+  }
+  return out
+}
+
 // --- the scroll pose -------------------------------------------------------
 
 export interface TierPose {
   /** 1 when this is the storey being shown. */
   emphasis: number
-  /** How far its roof has lifted off the stack, in world units. */
-  lift: number
   /** 0 dimmed, 1 full. */
   brightness: number
-  /** Radians of lean on the roof as it opens. Lifting alone reads as a rail. */
-  tilt: number
 }
 
 export interface TowerPose {
@@ -593,6 +647,9 @@ export interface TowerPose {
   /** -1 left, 0 centred. */
   x: number
   y: number
+  /** Where the camera stands while a storey is shown. */
+  cameraX: number
+  cameraY: number
   cameraZ: number
   tiers: TierPose[]
   activeTier: number
@@ -602,33 +659,56 @@ export interface TowerPose {
   ripple: number
 }
 
-const DIMMED = 0.35
-/** The open storey's roof leans this far, in radians. */
-const OPEN_TILT = 0.105
+const DIMMED = 0.58
+
 /**
- * How far the open storey's roof rises.
+ * The camera's rest points: one just past each gate, then the pagoda itself.
  *
- * Small on purpose. At a full storey height the roof clears the wall entirely
- * and floats into the storey above, which reads as the tower coming apart rather
- * than opening. A short lift plus the lean is what sells the reveal.
+ * The gates stand a little way off the building (user direction), so the walk
+ * reads as approaching it; the call to action is the last step, at the steps.
  */
-const OPEN_LIFT = 0.2
+const FIRST_REST = 5.05
+const LAST_REST = 2.35
+/**
+ * The sign-up's view: back out past the first gate, where the pagoda reads
+ * whole with air around it. Chosen off every gate so the frame stays sharp.
+ */
+const CTA_REST = 5.1
+/** Where the camera looks on arrival: the pagoda's middle, as a whole shape. */
+const CTA_CAMERA_Y = 0.45
+
+/** Sample a value across integer stage anchors, eased between them. */
+function sampleStages(keys: number[], values: number[], s: number): number {
+  if (s <= keys[0]) return values[0]
+  for (let i = 1; i < keys.length; i += 1) {
+    if (s <= keys[i]) {
+      const t = smoothstep((s - keys[i - 1]) / (keys[i] - keys[i - 1]))
+      return values[i - 1] + (values[i] - values[i - 1]) * t
+    }
+  }
+  return values[values.length - 1]
+}
 
 /**
  * The whole scroll story, as one function of progress.
  *
- * hero -> tower small and low; overview -> full size, centred; tier i -> the
- * tower slides left and that storey's roof lifts off the stack to reveal it;
- * cta -> closed and re-centred.
+ * hero -> tower small and low, camera wide; overview -> full size, centred;
+ * tier i -> the camera walks one more rest point along the gate path toward the
+ * pagoda, passing through the torii on the way and rising to the storey's
+ * centre; cta -> the last step: the camera arrives at the pagoda's steps and
+ * looks up at it as a whole.
+ *
+ * The building never moves within itself: the storeys stay in their stack and
+ * only their light changes. The journey is the camera's, which is why the pose
+ * carries a camera rest point per storey rather than any per-storey offset.
  */
 export function towerPose(p: number): TowerPose {
   const s = stageProgress(p)
   const n = TOWER_TIERS.length
+  const layout = pagodaLayout(n)
   const tiers: TierPose[] = Array.from({ length: n }, () => ({
     emphasis: 0,
-    lift: 0,
-    brightness: DIMMED,
-    tilt: 0,
+    brightness: 1,
   }))
 
   const hero = smoothstep(s / 1.2)
@@ -637,7 +717,6 @@ export function towerPose(p: number): TowerPose {
   const scale = 0.32 + 0.24 * hero
   // Hero sits the tower low in the frame, under the headline, as the brief asks.
   const y = -1.5 + 0.45 * hero
-  const cameraZ = 6.4 - 0.25 * hero
 
   // Overview (stage 1) hands over to tier 0 (stage 2).
   // Centre again once the last tier's window closes, so the cta reads as a
@@ -646,10 +725,12 @@ export function towerPose(p: number): TowerPose {
   const ctaStart = 2 + n - 1 + 0.5
   const shiftOut = smoothstep((s - ctaStart) / 0.45)
   const shift = shiftIn * (1 - shiftOut)
-  const x = -1.55 * shift
+  // A modest slide: the camera walks the path beside the building, so the copy
+  // column keeps its air without the storey leaving the frame.
+  const x = -0.55 * shift
 
   // Windows must not overlap: the falloff has to reach zero before the next
-  // tier's window opens, or two storeys lift at once and the tower comes apart.
+  // tier's window opens, or two storeys light at once and the tower reads wrong.
   const SPAN = 0.5
   for (let i = 0; i < n; i += 1) {
     const centre = tierStage(i)
@@ -659,13 +740,9 @@ export function towerPose(p: number): TowerPose {
     const e = smoothstep(near)
     tiers[i] = {
       emphasis: e,
-      lift: OPEN_LIFT * e,
       // Placeholder: brightness needs `openStrength`, which is only known once
       // every storey's emphasis has been computed. Set below.
       brightness: 1,
-      // Lean away from the tower's own side, so the open roof tips toward the
-      // viewer rather than back into the building behind it.
-      tilt: OPEN_TILT * e,
     }
   }
 
@@ -685,10 +762,35 @@ export function towerPose(p: number): TowerPose {
     tiers[i].brightness = 1 - dim * (1 - tiers[i].emphasis)
   }
 
+  // The camera. One rest point per stage, walked in order: the stage anchors are
+  // the gates' milestones and the last one is the pagoda's steps. `sampleStages`
+  // eases between them, so the walk never kicks.
+  const ctaStage = 2 + n
+  const restZ = (i: number) =>
+    n <= 1 ? LAST_REST : FIRST_REST - (FIRST_REST - LAST_REST) * (i / (n - 1))
+  const stageKeys = [0, 1, ...Array.from({ length: n }, (_, i) => 2 + i), ctaStage]
+  const stageY = (i: number) => (layout[i].y + layout[i].bodyHeight / 2) * scale + y
+  const cameraZ = sampleStages(
+    stageKeys,
+    [6.4, 6.15, ...Array.from({ length: n }, (_, i) => restZ(i)), CTA_REST],
+    s,
+  )
+  const cameraY = sampleStages(
+    stageKeys,
+    [0, 0, ...Array.from({ length: n }, (_, i) => stageY(i)), CTA_CAMERA_Y],
+    s,
+  )
+  // The camera walks the walkway's centre line, so it passes *through* every
+  // gate rather than beside it; the gates stand on that same line. At the very
+  // end it steps off the path onto the building's axis, so the sign-up presents
+  // the pagoda dead centre rather than a few degrees off.
+  const arrival = smoothstep((s - (ctaStage - 0.9)) / 0.9)
+  const cameraX = pathCentre(cameraZ) * (1 - arrival)
+
   // How hard the lanterns swing, and how much the water moves. Both key off the
   // strongest open storey, so they rise together and fall together.
   const swayGain = 1 + 0.85 * openStrength
   const ripple = 0.35 + 1.15 * openStrength
 
-  return { scale, x, y, cameraZ, tiers, activeTier, swayGain, ripple }
+  return { scale, x, y, cameraX, cameraY, cameraZ, tiers, activeTier, swayGain, ripple }
 }

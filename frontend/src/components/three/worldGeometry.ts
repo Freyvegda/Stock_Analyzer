@@ -105,13 +105,39 @@ export function mergePlaced(parts: PlacedPart[]): BufferGeometry {
 }
 
 /**
+ * A horizontal ribbon from flat (x, y, z) triples: two vertices per station,
+ * the station's two edges in order. Used for the walkway and the river.
+ *
+ * Wound so the surface faces +y whichever way the stations run: a ribbon wound
+ * the wrong way is invisible from above, which reads as the ground missing.
+ * Normals are exactly up because these ribbons are horizontal — no computing
+ * pass needed.
+ */
+export function ribbonStrip(positions: number[]): BufferGeometry {
+  if (positions.length % 6 !== 0) throw new Error('ribbon vertices must come in station pairs')
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
+  const normals = new Float32Array(positions.length)
+  for (let i = 1; i < normals.length; i += 3) normals[i] = 1
+  geometry.setAttribute('normal', new BufferAttribute(normals, 3))
+  const stations = positions.length / 6
+  const index: number[] = []
+  for (let s = 0; s < stations - 1; s += 1) {
+    const a = s * 2
+    index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+  }
+  geometry.setIndex(index)
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+/**
  * A torii gate: two uprights, a tie beam, and the lintel that oversails them.
  *
  * Four boxes rather than a torus, because a half-torus is a horseshoe and a gate
  * is not.
  */
-export function toriiParts(gate: {
-  position: { x: number; y: number; z: number }
+export function toriiParts(gate: {  position: { x: number; y: number; z: number }
   scale: number
 }): PlacedPart[] {
   const s = gate.scale

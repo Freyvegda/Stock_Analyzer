@@ -11,7 +11,7 @@
  * the one thing that would silently break that.
  */
 
-import { PAGODA_SEED, type TierGeometry } from './pagodaScene'
+import { PAGODA_SEED, clamp, pathCentre, smoothstep } from './pagodaScene'
 
 /**
  * Hard caps on every population in the scene.
@@ -22,11 +22,11 @@ import { PAGODA_SEED, type TierGeometry } from './pagodaScene'
 export const WORLD_LIMITS = {
   ridges: 3,
   trees: 4,
-  torii: 5,
+  torii: 4,
   stars: 90,
   petals: 40,
-  fireflies: 18,
-  birds: 7,
+  fireflies: 8,
+  birds: 4,
 } as const
 
 /**
@@ -262,11 +262,12 @@ export interface Tree {
 }
 
 /**
- * Blossom trees, off to the sides.
+ * Blossom trees on the river's banks.
  *
  * Never within 1.15 units of the centre line: a tree directly behind the tower
  * hides the thing the page is about, and the centre of frame is where the storey
- * copy sits.
+ * copy sits. Two stand on the near bank, two beyond the water, so the river has
+ * depth on both sides.
  */
 export function grove(): Tree[] {
   const rand = rng(PAGODA_SEED ^ 0x33b7)
@@ -276,12 +277,15 @@ export function grove(): Tree[] {
     const side = i % 2 === 0 ? -1 : 1
     const rank = Math.floor(i / 2)
     const height = 1.5 + rand() * 0.8
+    // First pair on the near bank, between the walk and the water; second pair
+    // on the far bank, beyond it.
+    const nearBank = i < 2
     trees.push({
       index: i,
       position: {
         x: side * (1.9 + rank * 1.5 + rand() * 0.4),
         y: 0,
-        z: -3.4 - rand() * 4.5,
+        z: nearBank ? -2.2 - rand() * 0.8 : -9.2 - rand(),
       },
       height,
       // Wider than tall, the way the login tree is: a canopy, not a spike.
@@ -294,34 +298,129 @@ export function grove(): Tree[] {
 
 // --- water ------------------------------------------------------------------
 
-export interface WaterPlane {
+export interface RiverBand {
   y: number
-  z: number
+  /** Along the river, across the frame. */
+  length: number
+  /** Across the river, along the walk. */
   width: number
-  depth: number
-  /** The near edge, which is the one that can show inside the frame. */
-  edgeZ: number
+  /** The centre line's z with the meander at zero. */
+  centreZ: number
+  /** Surface dials for the renderer. Kept here so the tests can pin them. */
+  roughness: number
+  metalness: number
 }
 
 /**
- * The pool the tower is founded in.
+ * The river: a band running across the frame behind the pagoda.
  *
- * The y is negative on purpose: above the plinth and the water cuts the building
- * in half.
+ * User direction: the river flows sideways, well away from the gate path and
+ * the building, and is scenery seen at a distance rather than the ground the
+ * walk happens on. Its length reaches past the widest supported frame at its
+ * own depth, so its ends can never show.
  */
-export function waterPlane(tiers: TierGeometry[]): WaterPlane {
-  const base = tiers[0]?.bodyWidth ?? 1.34
+export function riverBand(): RiverBand {
   return {
     y: -0.18,
-    z: 0,
-    // Large enough that its own edge is never inside the frame. A plane sized
-    // just around the tower shows a hard horizontal line across the foreground
-    // where it ends, which reads as a clipped sprite rather than ground.
-    width: base * 40,
-    depth: 90,
-    edgeZ: 0 + 90 / 2,
+    length: 120,
+    width: 2.8,
+    centreZ: -6,
+    // Diffuse-dominant: the scene has no environment map, and a metal surface
+    // with nothing to reflect renders near-black whatever its colour.
+    roughness: 0.32,
+    metalness: 0.12,
   }
 }
+
+export interface GroundSheet {
+  y: number
+  width: number
+  depth: number
+  centreZ: number
+  edgeZ: number
+  farZ: number
+}
+
+/**
+ * The ground under everything.
+ *
+ * One sheet rather than two banks beside the water: adjacent planes at
+ * different heights leave a seam that reads as a wall at grazing angles, and a
+ * sheet *under* the river cannot fight with it. Wide enough that its lateral
+ * edge never enters the frame at the horizon.
+ */
+export function groundSheet(): GroundSheet {
+  const depth = 90
+  return {
+    y: -0.24,
+    width: 170,
+    depth,
+    centreZ: 0,
+    edgeZ: depth / 2,
+    farZ: -depth / 2,
+  }
+}
+
+/**
+ * How far the river may wander from its centre line, in world units.
+ */
+export const RIVER_MEANDER = 0.7
+/** Distance between ribbon stations along the flow. */
+export const RIVER_STEP = 1.5
+
+/**
+ * The river's centre line at `x`, at time `t`.
+ *
+ * One slow sine along the flow, drifting with `t`: the water snakes across the
+ * frame and moves along it. The near edge is kept well clear of the pagoda and
+ * the walkway by construction (see the tests), so no amount of meander puts
+ * water under the gate path.
+ */
+export function riverCentre(x: number, t: number): number {
+  const band = riverBand()
+  const wave = Math.sin((x / 16) * Math.PI * 2 + t * 0.5)
+  return band.centreZ + RIVER_MEANDER * wave
+}
+
+/**
+ * The water as a ribbon, left to right, as flat (x, y, z) triples: two vertices
+ * per station, near edge then far. Meant to be turned into one `BufferGeometry`
+ * whose *positions* are rewritten as `t` advances — the station xs never change,
+ * so the index buffer is built once and the whole animation is a small array
+ * write at the shared tick, which is what keeps it affordable on a weak device.
+ */
+export function riverRibbon(band: RiverBand, t: number): number[] {
+  const stations = Math.floor(band.length / RIVER_STEP) + 1
+  const out: number[] = []
+  for (let s = 0; s < stations; s += 1) {
+    const x = -band.length / 2 + s * RIVER_STEP
+    const centre = riverCentre(x, t)
+    out.push(x, band.y, centre - band.width / 2, x, band.y, centre + band.width / 2)
+  }
+  return out
+}
+
+// --- the walkway lives in pagodaScene.ts -------------------------------------
+//
+// `pathPlan`, `pathCentre` and `pathRibbon` are exported from `pagodaScene.ts`
+// with the scroll story: the camera *is* the walker, and the gates below stand
+// on that line. They are not re-declared here — one definition, one direction
+// of import.
+
+/**
+ * Draw order for the world layers.
+ *
+ * The sky is behind everything; the scattered scenery (ridges, grove, gates,
+ * river) is the opaque middle; the celestial body is drawn last and on top.
+ * That last point is the fix for the moon being painted over by a ridge: the
+ * disc writes no depth (it is a transparent-ish light), and without an explicit
+ * order the opaque ridge behind it in the queue simply overdraws it.
+ */
+export const WORLD_LAYER_ORDER = {
+  sky: -2,
+  scenery: 0,
+  celestial: 2,
+} as const
 
 // --- torii path -------------------------------------------------------------
 
@@ -333,27 +432,69 @@ export interface Torii {
 }
 
 /**
- * A row of gates running from the middle distance up to the tower's steps.
+ * A row of gates running down the centre line, spaced for the camera fly-through.
  *
- * The near end is deliberately kept well clear of the camera (which sits at
- * z = 6.4): the first version ran the path to z = 6.2, which put a gate at the
- * lens — eight storey-height bars across the whole frame.
+ * The row is finite by design: the camera advances one rest point per storey
+ * (see `towerPose`), and each gate sits between two rests so every move passes
+ * through one. A gate closer than the nearest rest (z > 5) would loom at the
+ * hero; one beyond the last rest would never be passed. The far end stops short
+ * of the plinth so no gate stands inside the building.
  */
 export function toriiPath(): Torii[] {
   const rand = rng(PAGODA_SEED ^ 0x5c4d)
   const gates: Torii[] = []
+  const near = 5.5
+  const far = 2.8
   for (let i = 0; i < WORLD_LIMITS.torii; i += 1) {
     const at = i / (WORLD_LIMITS.torii - 1)
+    const z = near - at * (near - far)
     gates.push({
       index: i,
-      // Dead on the centre line: this is a path, and it has to read as one. The
-      // far end stops short of the plinth so no gate stands inside the tower.
-      position: { x: 0, y: -0.16, z: 3.2 - at * 2.2 },
+      // On the walkway's own centre line, so walking the path walks through
+      // every gate. The gates are the path's milestones, not a fence.
+      position: { x: pathCentre(z), y: -0.16, z },
       scale: 0.5 - at * 0.24 + (rand() - 0.5) * 0.03,
       lit: true,
     })
   }
   return gates
+}
+
+/** How far along the path a gate's softness reaches. Under half a gate gap. */
+export const GATE_SOFT_REACH = 0.4
+
+/**
+ * How soft the vista is as the camera crosses a gate, 0..1.
+ *
+ * A pulse centred on each gate — zero at every section rest point — scaled by
+ * how far the gate is from the pagoda, because the building is further away
+ * when you walk through the outer gates. The renderer turns this into a small
+ * CSS blur; see `gateBlur`.
+ */
+export function gateSoftness(cameraZ: number): number {
+  if (!Number.isFinite(cameraZ)) return 0
+  let pulse = 0
+  for (const gate of toriiPath()) {
+    const near = 1 - clamp(Math.abs(cameraZ - gate.position.z) / GATE_SOFT_REACH, 0, 1)
+    pulse = Math.max(pulse, smoothstep(near))
+  }
+  return pulse * clamp(cameraZ / CAMERA_Z, 0, 1)
+}
+
+/** The most the canvas may be blurred, in CSS pixels. */
+export const GATE_BLUR_PX = 3
+
+/**
+ * The blur to put on the canvas for a given softness, 0 when the device or the
+ * visitor should not pay for it.
+ *
+ * This is a full-screen pass over the WebGL canvas, so it is deliberately the
+ * first thing dropped: the `low` tier and `prefers-reduced-motion` get the
+ * scene sharp rather than an effect their device cannot carry.
+ */
+export function gateBlur(softness: number, quality: Quality, reduced: boolean): number {
+  if (reduced || quality === 'low') return 0
+  return clamp(softness, 0, 1) * GATE_BLUR_PX
 }
 
 // --- stars ------------------------------------------------------------------
@@ -475,13 +616,15 @@ export function fireflySeeds(): FireflySeed[] {
   const rand = rng(PAGODA_SEED ^ 0x4a19)
   return Array.from({ length: WORLD_LIMITS.fireflies }, (_, index) => {
     const angle = rand() * Math.PI * 2
-    const reach = 1.4 + rand() * 3.2
+    // Kept close to the base on purpose. The first build scattered them to a
+    // radius of nearly five units, which on screen read as dust on the lens.
+    const reach = 0.9 + rand() * 1.6
     return {
       index,
       // Around the tower's base, never out in the sky.
       home: {
         x: Math.cos(angle) * reach,
-        y: 0.2 + rand() * 2.4,
+        y: 0.2 + rand() * 1.6,
         z: Math.sin(angle) * reach * 0.6,
       },
       radius: 0.3 + rand() * 0.7,

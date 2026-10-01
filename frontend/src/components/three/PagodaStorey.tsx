@@ -1,15 +1,18 @@
 import { useEffect, useMemo } from 'react'
-import { Color, type Group, type MeshStandardMaterial, type Object3D } from 'three'
+import { Color, type Group, type MeshStandardMaterial } from 'three'
 
 import { buildStorey, disposeStorey } from './storeyGeometry'
 import type { TierGeometry } from './pagodaScene'
 
 /**
- * One storey of the pagoda: its body, its veranda, its lanterns, and its roof as
- * a separate group so the roof can lift and lean on its own.
+ * One storey of the pagoda: its body, its veranda, its lanterns and its roof.
  *
  * A thin renderer over `storeyGeometry.ts` — every part is built and merged
  * there, and this file only draws the resulting buffers.
+ *
+ * The roof is a group of its own so it *could* move; it deliberately does not.
+ * The reveal is the camera's (see `towerPose`), and a roof that lifted off the
+ * stack read as the building coming apart, which was the bug this replaced.
  *
  * Materials are shared per storey rather than per mesh. A storey used to create
  * one material per mesh, ninety-odd of them across the tower; six per storey is
@@ -41,7 +44,6 @@ export function PagodaStorey({
   ground,
   materials,
   lanternRefs,
-  roofRef,
   lanternIntensity,
 }: {
   tier: TierGeometry
@@ -50,8 +52,6 @@ export function PagodaStorey({
   ground: boolean
   materials: StoreyMaterials
   lanternRefs: Array<Group | null>
-  /** The roof group, so the frame loop can lift and lean it. */
-  roofRef: (node: Object3D | null) => void
   lanternIntensity: number
 }) {
   const storey = useMemo(() => buildStorey(tier, ground), [tier, ground])
@@ -100,10 +100,9 @@ export function PagodaStorey({
         </group>
       ))}
 
-      {/* The roof, on its own group. Lifting the *whole storey* left a gap in the
-          stack and read as the tower coming apart; lifting only the roof reads
-          as the storey opening, which is what the metaphor is for. */}
-      <group ref={roofRef} position={[0, tier.bodyHeight, 0]} name={`roof-${index}`}>
+      {/* The roof, fixed at the top of its storey. It never lifts: see the
+          `towerPose` note — the camera does the revealing. */}
+      <group position={[0, tier.bodyHeight, 0]} name={`roof-${index}`}>
         <mesh geometry={storey.roof} material={materials.roof} castShadow receiveShadow />
         <mesh geometry={storey.eave} material={materials.soffit} receiveShadow />
         {/* Courses and ridges travel with the roof, not with the body. */}

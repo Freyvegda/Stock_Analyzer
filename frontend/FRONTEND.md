@@ -89,10 +89,11 @@ frontend/src/
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
     ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene + Pagoda - lazy, WebGL-gated
-    │                   #   pagodaScene.ts / pagodaWorld.ts / storeyGeometry.ts are pure and
-    │                   #   unit-tested; Pagoda.tsx / PagodaStorey.tsx / PagodaEnvironment.tsx render
+    │                   #   pagodaScene.ts / pagodaWorld.ts / storeyGeometry.ts / worldGeometry.ts
+    │                   #   are pure and unit-tested; Pagoda.tsx / PagodaStorey.tsx /
+    │                   #   PagodaEnvironment.tsx render
     ├── TowerAccordion.tsx   # one row per storey card, hover-open, one at a time
-    ├── TowerRail.tsx        # the right-edge storey rail (jump to a storey)
+    ├── TowerRail.tsx        # the right-edge storey rail: one fixed-size dot per storey
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
     ├── FundamentalNav.tsx   # floating glass side rail (Screen Criteria · Top 10 Results · Stocks)
@@ -149,7 +150,7 @@ frontend/src/
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |
-| 1.8 | Public landing page at `/` (auth re-bootstrap, refresh rotation, 3h idle logout): a four-storey pagoda in a full scene - sky, sun by day / moon by night, mountain ranges, a pool, a blossom grove, a torii path, stars, petals, fireflies and birds. Storey detail from the reference illustration (door with ring pulls, lattice screens, tiled roofs, lanterns on cords), merged geometry and instanced fields for cost, `pickQuality` per device, a theme selector, a storey rail, a clickable overview, a hover-open accordion, honest routes for the two unbuilt storeys and scroll memory. No mist |
+| 1.8 | Public landing page at `/` (auth re-bootstrap, refresh rotation, 3h idle logout): a four-storey pagoda in a full scene - sky, sun by day / moon by night, mountain ranges, a blossom grove on the river banks, stars, petals, fireflies and birds. The visitor walks a gate path to the pagoda: one torii per feature section, placed on a meandering walkway, the river flowing sideways in the distance; crossing a gate softens the vista (cheap CSS blur, off on the low tier and under reduced motion) and the sign-up steps back to present the pagoda whole. Storey detail from the reference illustration (door with ring pulls, lattice screens, tiled roofs, lanterns on cords), merged geometry and instanced fields for cost, river and walkway as vertex-budgeted ribbons on one shared 8 Hz tick, `pickQuality` per device, a theme selector, a fixed-size-dot storey rail, a clickable overview, a hover-open accordion on glass copy panels, honest routes for the two unbuilt storeys and scroll memory. No mist |
 | 2 | Documents page: stock sub-nav -> doc list + summary cards; badge shows `analysis_method` (gemini/fallback) and parse status ("n/m parsed") |
 | 3 | Signals chart: lightweight-charts candles + buy/sell markers from `/model/signals` |
 | 4 | Backtest report: metric cards (CAGR/Sharpe/drawdown) + equity-curve chart (recharts) vs Nifty line |

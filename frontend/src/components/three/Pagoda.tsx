@@ -4,7 +4,6 @@ import {
   Color,
   MeshStandardMaterial,
   type Group,
-  type Object3D,
 } from 'three'
 import type { MotionValue } from 'motion/react'
 
@@ -16,11 +15,14 @@ import { useFinePointer } from '@/lib/useFinePointer'
 import { useColorMode } from '@/components/ui/color-mode'
 import {
   QUALITY_PROFILES,
+  gateBlur,
+  gateSoftness,
   pickQuality,
   type Quality,
 } from './pagodaWorld'
 import {
   baseDetail,
+  clamp,
   finialLayout,
   hangingLanterns,
   lightingRig,
@@ -46,8 +48,9 @@ import { cn } from '@/lib/utils'
  * written straight from raw scroll, which is what made the tower choppy — every
  * scroll jitter became tower jitter, one frame later. And the *whole storey*
  * lifted to reveal itself, which opened a gap in the stack and read as the tower
- * coming apart. Now every pose value is damped toward its target, and only the
- * roof lifts and leans, so a storey opens rather than detaching.
+ * coming apart. Now every pose value is damped toward its target, and the reveal
+ * is the camera's: it advances down the torii path to the storey being shown
+ * (see `towerPose`), while the building itself never moves within its stack.
  *
  * **Cost.** One material set per storey instead of one per mesh, merged geometry
  * per material, instanced particle fields, and a quality tier picked from the
@@ -70,6 +73,8 @@ export function Pagoda({
   const finePointer = useFinePointer()
   const glSupported = useWebGLOnce()
   const quality = useQuality(isDesktop, finePointer)
+  /** The canvas host. The gate blur is written straight onto its style. */
+  const host = useRef<HTMLDivElement>(null)
 
   const night = colorMode === 'dark'
   // Below `md` there is no WebGL at all — the DOM story carries the content on
@@ -82,6 +87,7 @@ export function Pagoda({
 
   return (
     <div
+      ref={host}
       data-testid="pagoda"
       data-mode={night ? 'dark' : 'light'}
       data-quality={quality}
@@ -97,7 +103,13 @@ export function Pagoda({
         camera={{ position: [0, 0, 6.4], fov: 45 }}
         gl={{ antialias: false, powerPreference: 'low-power', alpha: true }}
       >
-        <Scene progress={progress} night={night} reduced={reduced} quality={quality} />
+        <Scene
+          progress={progress}
+          night={night}
+          reduced={reduced}
+          quality={quality}
+          blurHost={host}
+        />
       </Canvas>
     </div>
   )
@@ -135,15 +147,16 @@ function Scene({
   night,
   reduced,
   quality,
+  blurHost,
 }: {
   progress: MotionValue<number>
   night: boolean
   reduced: boolean
   quality: Quality
+  /** The canvas wrapper, whose `filter` carries the gate blur. */
+  blurHost: React.RefObject<HTMLDivElement | null>
 }) {
   const root = useRef<Group>(null)
-  const tierRefs = useRef<Array<Group | null>>([])
-  const roofRefs = useRef<Array<Object3D | null>>([])
   const lanternRefs = useRef<Array<Array<Group | null>>>([])
   const fillLight = useRef<Group>(null)
   const finialGlow = useRef<Group>(null)
@@ -193,18 +206,22 @@ function Scene({
   const palette = useMemo(() => buildPalettes(), [])
   const mix = useRef({ v: night ? 1 : 0 })
   // Damped pose. Everything the frame loop drives is eased toward its target, so
-  // a jittery scroll gesture cannot shake the tower.
+  // a jittery scroll gesture cannot shake the tower or kick the dolly.
   const damped = useRef({
     x: 0,
     y: -1.5,
     scale: 0.32,
-    camZ: 6.4,
+    camX: 0,
     camY: 0,
-    tierLift: layout.map(() => 0),
-    tierTilt: layout.map(() => 0),
-    tierBright: layout.map(() => 0.35),
+    camZ: 6.4,
+    softness: 0,
+    tierBright: layout.map(() => 1),
   })
   const clock = useRef(0)
+  /** The last `filter` written, so the DOM is touched only when it changes. */
+  const lastFilter = useRef('')
+  /** The previous frame's camera depth, for the one-way gate blur. */
+  const lastCamZ = useRef(6.4)
 
   useFrame((_, delta) => {
     // One gate for the whole frame: pose, crossfade and weather all stop when
@@ -228,45 +245,49 @@ function Scene({
     d.x += (pose.x - d.x) * ease
     d.y += (pose.y - d.y) * ease
     d.scale += (pose.scale - d.scale) * ease
+    // The camera glides: `towerPose` supplies the rest point per storey, and
+    // the dolly is the same damping as everything else, so passing through a
+    // gate is a sweep rather than a cut.
+    d.camX += (pose.cameraX - d.camX) * ease
+    d.camY += (pose.cameraY - d.camY) * ease
     d.camZ += (pose.cameraZ - d.camZ) * ease
-
-    // The camera follows the open storey's height, so a storey is *shown* rather
-    // than merely scrolled past.
-    const openTier = pose.activeTier
-    const focusY =
-      openTier >= 0 && layout[openTier]
-        ? (layout[openTier].y + layout[openTier].bodyHeight) * d.scale + d.y
-        : 0
-    d.camY += (focusY * 0.45 - d.camY) * ease
 
     clock.current += reduced ? 0 : step
     const now = clock.current
 
+    // The closer the camera stands, the less the tower sways: at arm's length
+    // the same milliradians read as a wobble.
+    const closeness = clamp((6.4 - d.camZ) / 4.4, 0, 1)
     if (root.current) {
       root.current.position.set(d.x, d.y, 0)
       root.current.scale.setScalar(d.scale)
-      root.current.rotation.z = Math.sin(now * 0.55) * 0.012
-      root.current.rotation.y = Math.sin(now * 0.18) * 0.05
+      root.current.rotation.z = Math.sin(now * 0.55) * 0.012 * (1 - 0.5 * closeness)
+      root.current.rotation.y = Math.sin(now * 0.18) * 0.05 * (1 - 0.5 * closeness)
     }
-    camera.position.set(0, d.camY, d.camZ)
-    camera.lookAt(0, d.camY * 0.8, 0)
+    camera.position.set(d.camX, d.camY, d.camZ)
+    camera.lookAt(d.camX, d.camY, 0)
 
-    layout.forEach((tier, i) => {
+    // The gate blur: the vista softens as the camera crosses a torii and comes
+    // back sharp at every section rest. Only while walking *in* — the journey is
+    // one-way, and pulses on a backward nudge would read as stumbling. `gateBlur`
+    // is zero on the low tier and under reduced motion, and the DOM is only
+    // touched when the value actually changes.
+    const inward = pose.cameraZ <= lastCamZ.current + 1e-4
+    lastCamZ.current = pose.cameraZ
+    d.softness += ((inward ? gateSoftness(pose.cameraZ) : 0) - d.softness) * ease
+    const blur = gateBlur(d.softness, quality, reduced)
+    const filter = blur < 0.05 ? '' : `blur(${blur.toFixed(2)}px)`
+    if (blurHost.current && filter !== lastFilter.current) {
+      lastFilter.current = filter
+      blurHost.current.style.filter = filter
+    }
+
+    layout.forEach((_tier, i) => {
       const tp = pose.tiers[i]
-      d.tierLift[i] += (tp.lift - d.tierLift[i]) * ease
-      d.tierTilt[i] += (tp.tilt - d.tierTilt[i]) * ease
       d.tierBright[i] += (tp.brightness - d.tierBright[i]) * ease
 
-      // Only the roof moves. The body stays in the stack, so the tower never
-      // opens a gap.
-      const roof = roofRefs.current[i]
-      if (roof) {
-        roof.position.y = tier.bodyHeight + d.tierLift[i]
-        roof.rotation.z = d.tierTilt[i]
-      }
-
       // Lanterns swing on their own phase, and harder on the open storey — the
-      // storey being pulled open disturbs the air around it.
+      // storey being shown disturbs the air around it.
       const lamps = lanternRefs.current[i]
       const specs = lanternsPerTier[i]
       if (lamps && specs) {
@@ -341,7 +362,6 @@ function Scene({
         night={night}
         reduced={reduced}
         quality={quality}
-        tiers={layout}
         clockRef={clock}
       />
 
@@ -378,9 +398,6 @@ function Scene({
           // The storey's own place in the stack. Without this every storey sits
           // at y=0 and the tower renders as one overlapping heap.
           position={[0, tier.y, 0]}
-          ref={(node) => {
-            tierRefs.current[i] = node
-          }}
         >
           <PagodaStorey
             tier={tier}
@@ -388,9 +405,6 @@ function Scene({
             ground={i === 0}
             materials={materialSets[i]}
             lanternRefs={lanternRefs.current[i] ?? (lanternRefs.current[i] = [])}
-            roofRef={(node) => {
-              roofRefs.current[i] = node
-            }}
             lanternIntensity={rig.lanternIntensity}
           />
         </group>
@@ -424,14 +438,12 @@ function WorldLayer({
   night,
   reduced,
   quality,
-  tiers,
   clockRef,
 }: {
   progress: MotionValue<number>
   night: boolean
   reduced: boolean
   quality: Quality
-  tiers: ReturnType<typeof pagodaLayout>
   /** The scene's single clock. The world reads it; it never advances its own. */
   clockRef: React.RefObject<number>
 }) {
@@ -458,7 +470,6 @@ function WorldLayer({
       clock={clockRef.current}
       ripple={ripple.current}
       quality={quality}
-      tiers={tiers}
     />
   )
 }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   AdditiveBlending,
   BackSide,
@@ -13,20 +13,23 @@ import {
 } from 'three'
 
 import { pagodaPalette } from '@/theme/tokens'
-import { TOWER_TIERS } from '@/content/tower'
 import {
+  WORLD_LAYER_ORDER,
   grove,
+  groundSheet,
   mountainRidges,
   petalPose,
   fireflyPose,
+  riverBand,
+  riverRibbon,
   skyGradient,
   toriiPath,
-  waterPlane,
   worldPlan,
   type Quality,
+  type RiverBand,
 } from './pagodaWorld'
-import { pagodaLayout, type TierGeometry } from './pagodaScene'
-import { mergePlaced, ridgeStrip, toriiParts } from './worldGeometry'
+import { pathPlan, pathRibbon } from './pagodaScene'
+import { mergePlaced, ribbonStrip, ridgeStrip, toriiParts } from './worldGeometry'
 
 /**
  * The world the pagoda stands in.
@@ -54,7 +57,6 @@ export function PagodaEnvironment({
   clock,
   ripple = 0.35,
   quality = 'high',
-  tiers,
 }: {
   night: boolean
   reduced: boolean
@@ -63,16 +65,16 @@ export function PagodaEnvironment({
   /** Water motion, from `towerPose.ripple`. */
   ripple?: number
   quality?: Quality
-  tiers?: TierGeometry[]
 }) {
-  const layout = useMemo(() => tiers ?? pagodaLayout(TOWER_TIERS.length), [tiers])
   const plan = useMemo(() => worldPlan(night, reduced, quality), [night, reduced, quality])
 
   const sky = useMemo(() => skyGradient(), [])
   const ridges = useMemo(() => mountainRidges(), [])
   const trees = useMemo(() => grove(), [])
   const gates = useMemo(() => toriiPath(), [])
-  const water = useMemo(() => waterPlane(layout), [layout])
+  const river = useMemo(() => riverBand(), [])
+  const ground = useMemo(() => groundSheet(), [])
+  const walk = useMemo(() => pathPlan(), [])
 
   const dark = pagodaPalette.dark
   const light = pagodaPalette.light
@@ -180,7 +182,24 @@ export function PagodaEnvironment({
         </group>
       ) : null}
 
-      <Water plane={water} colour={mix(light.water, dark.water)} ripple={ripple} />
+      {/* The ground, then the walkway and the river on top of it. One ground
+          sheet rather than two banks beside the water: adjacent planes at
+          different heights leave a seam that reads as a wall at grazing
+          angles, and a sheet *under* the river cannot fight with it. */}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, ground.y, ground.centreZ]}
+        receiveShadow
+      >
+        <planeGeometry args={[ground.width, ground.depth, 1, 1]} />
+        <meshStandardMaterial color={mix(light.bank, dark.bank)} roughness={0.95} />
+      </mesh>
+
+      {/* The walk the gates stand on. Static — built once, never rewritten. */}
+      <PathStrip plan={walk} colour={mix(light.path, dark.path)} />
+
+      {/* The river, flowing across the frame behind the pagoda. */}
+      <River band={river} colour={mix(light.water, dark.water)} t={t} ripple={ripple} night={night} />
 
       {gateGeometry ? (
         <mesh geometry={gateGeometry}>
@@ -328,8 +347,11 @@ function Celestial({
   const drift = body.kind === 'moon' && !plan.still ? 0.5 + 0.5 * Math.sin(clock * 0.06) : 0
 
   return (
+    // Drawn after all opaque scenery: the moon and sun stand in front of every
+    // ridge, and without the explicit order a nearer-in-depth mountain was
+    // painting straight over the disc (the disc writes no depth).
     <group position={[body.position.x, body.position.y, body.position.z]}>
-      <mesh>
+      <mesh renderOrder={WORLD_LAYER_ORDER.celestial}>
         <circleGeometry args={[body.radius * body.halo, 24]} />
         <meshBasicMaterial
           color={halo}
@@ -340,7 +362,7 @@ function Celestial({
           toneMapped={false}
         />
       </mesh>
-      <mesh position={[0, 0, 0.02]}>
+      <mesh position={[0, 0, 0.02]} renderOrder={WORLD_LAYER_ORDER.celestial}>
         <circleGeometry args={[body.radius, 24]} />
         <meshBasicMaterial
           color={pagodaPalette[night ? 'dark' : 'light'][night ? 'moon' : 'sun']}
@@ -391,27 +413,72 @@ function SkyDome({ night, sky }: { night: boolean; sky: ReturnType<typeof skyGra
   )
 }
 
-/** The pool. Low roughness and some metalness, so it catches the sky. */
-function Water({
-  plane,
-  colour,
-  ripple,
-}: {
-  plane: { y: number; z: number; width: number; depth: number }
-  colour: Color
-  ripple: number
-}) {
+/**
+ * The walkway, as one static ribbon from the plinth to the viewer.
+ *
+ * It carries the gates (they stand on its centre line) and it is what the
+ * camera walks. Built once: the walk does not animate, so it costs one draw
+ * call and ~70 vertices for the whole journey.
+ */
+function PathStrip({ plan, colour }: { plan: ReturnType<typeof pathPlan>; colour: Color }) {
+  const geometry = useMemo(() => ribbonStrip(pathRibbon(plan)), [plan])
+  useEffect(() => () => geometry.dispose(), [geometry])
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, plane.y, plane.z]}>
-      {/* Few segments: the ripple is carried by how the material answers the
-          light, so a dense grid here was vertex cost for nothing. */}
-      <planeGeometry args={[plane.width, plane.depth, 8, 8]} />
+    <mesh geometry={geometry} receiveShadow>
+      <meshStandardMaterial color={colour} roughness={0.9} />
+    </mesh>
+  )
+}
+
+/**
+ * The river, as one ribbon that meanders and drifts, flowing across the frame.
+ *
+ * The station xs never move, so the index buffer and the vertex count are built
+ * once and the "animation" is a small `Float32Array` write into the position
+ * attribute whenever `t` advances (the parent re-renders on the shared tick).
+ * That is the whole reason a weak device can carry it: no per-frame geometry
+ * rebuild, no shader work, one draw call, ~160 vertices.
+ *
+ * No reflections, deliberately. The surface answers the light diffusely and the
+ * meander plus the drift carry the read — a real reflection pass would be the
+ * one thing on this page that costs more than it shows.
+ */
+function River({
+  band,
+  colour,
+  t,
+  ripple,
+  night,
+}: {
+  band: RiverBand
+  colour: Color
+  /** Seconds since the scene started. Frozen under reduced motion. */
+  t: number
+  /** Water motion, from `towerPose.ripple`. */
+  ripple: number
+  night: boolean
+}) {
+  const geometry = useMemo(() => ribbonStrip(riverRibbon(band, 0)), [band])
+
+  useEffect(() => () => geometry.dispose(), [geometry])
+
+  useLayoutEffect(() => {
+    const attribute = geometry.getAttribute('position') as BufferAttribute
+    attribute.array.set(riverRibbon(band, t))
+    attribute.needsUpdate = true
+  }, [geometry, band, t])
+
+  return (
+    <mesh geometry={geometry} receiveShadow>
       <meshStandardMaterial
         color={colour}
-        roughness={0.12 + ripple * 0.06}
-        metalness={0.6}
-        transparent
-        opacity={0.86}
+        roughness={band.roughness + ripple * 0.06}
+        metalness={band.metalness}
+        // At night there is no sun for the water to answer, and the river sank
+        // into the black. A faint self-glow stands in for the moon it cannot
+        // reflect — it costs nothing and keeps the meander readable.
+        emissive={colour}
+        emissiveIntensity={night ? 0.22 : 0}
       />
     </mesh>
   )
