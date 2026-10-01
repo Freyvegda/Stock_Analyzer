@@ -112,7 +112,26 @@ because they are the class of bug the pure-module tests cannot catch.
 
 - The reveal, the lantern sway and the atmosphere have not been watched at speed;
   they read correctly frame by frame but their *feel* is unverified.
-- Light mode was checked once, at one scroll position.
 - The storey rail's clearance from the copy column is pinned by reasoning and a
   max-width, not by a placement test (unlike `treePlacement` for the login scene).
+
+## Revision 4 — the interactive pass
+
+Driven in a real browser: all seven stages, both themes, and 390x844.
+
+- [x] **Corrected an earlier mistake of mine.** I reported the hero as blank and
+      the 3D as not drawing. It was drawing. I had been screenshotting
+      immediately after navigation, before the lazy three.js chunk had landed.
+      The 3D is a lazy chunk by design, so the first frame after a cold load is
+      legitimately empty; the DOM content is there throughout.
+- [x] Found and fixed: every storey was dimmed to 0.35 whenever *no* storey was
+      open, so the tower was near-black on the hero, the overview and the cta —
+      the three screens with no open storey to contrast against.
+- [x] Found and fixed: the sky dome's gradient exponent put the zenith colour
+      over almost the whole dome, so the night sky was one flat near-black field
+      with the horizon glow pushed off the bottom of the screen.
+- [x] Verified: hero, overview, all four storeys and the cta render; the tower
+      slides left and the copy sits right with no overlap; the accordion opens
+      and closes; both themes render; the phone width gets no 3D chunk, complete
+      content, the accordion and no rail.
 
