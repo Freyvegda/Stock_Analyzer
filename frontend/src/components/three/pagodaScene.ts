@@ -660,7 +660,9 @@ export function towerPose(p: number): TowerPose {
     tiers[i] = {
       emphasis: e,
       lift: OPEN_LIFT * e,
-      brightness: DIMMED + (1 - DIMMED) * e,
+      // Placeholder: brightness needs `openStrength`, which is only known once
+      // every storey's emphasis has been computed. Set below.
+      brightness: 1,
       // Lean away from the tower's own side, so the open roof tips toward the
       // viewer rather than back into the building behind it.
       tilt: OPEN_TILT * e,
@@ -671,10 +673,20 @@ export function towerPose(p: number): TowerPose {
   // so the tower returns to whole. -1 whenever nothing is open.
   const openIndex = tiers.findIndex((t) => t.emphasis > 0.001)
   const activeTier = shift > 0.02 && openIndex !== -1 ? openIndex : -1
+  // Brightness is relative to whether anything is open at all. `DIMMED` marks
+  // the storeys that are *not* the one being shown — but with nothing open,
+  // which is the hero, the overview and the cta, there is nothing to contrast
+  // against and the whole tower must be at full strength. The first version
+  // applied `DIMMED` unconditionally, which made the tower almost black on the
+  // very first screen a visitor sees.
+  const openStrength = tiers.reduce((acc, t) => Math.max(acc, t.emphasis), 0)
+  const dim = (1 - DIMMED) * openStrength
+  for (let i = 0; i < n; i += 1) {
+    tiers[i].brightness = 1 - dim * (1 - tiers[i].emphasis)
+  }
 
   // How hard the lanterns swing, and how much the water moves. Both key off the
   // strongest open storey, so they rise together and fall together.
-  const openStrength = tiers.reduce((acc, t) => Math.max(acc, t.emphasis), 0)
   const swayGain = 1 + 0.85 * openStrength
   const ripple = 0.35 + 1.15 * openStrength
 

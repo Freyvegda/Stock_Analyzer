@@ -299,6 +299,29 @@ describe('towerPose', () => {
     }
   })
 
+  it('leaves the whole tower at full strength when nothing is open', () => {
+    // The hero, the overview and the cta have no open storey, so there is
+    // nothing to contrast against. Dimming unconditionally made the tower almost
+    // black on the very first screen a visitor sees.
+    for (const p of [0, 1 / SCROLL_SPAN, 1]) {
+      const pose = towerPose(p)
+      expect(pose.activeTier).toBe(-1)
+      for (const t of pose.tiers) expect(t.brightness).toBe(1)
+    }
+  })
+
+  it('dims only as much as the open storey demands', () => {
+    // Half-way into a storey, that storey is at full strength and the others are
+    // part-way down, not already at the floor.
+    const pose = towerPose((tierStage(1) + 0.25) / SCROLL_SPAN)
+    const open = pose.tiers[1].brightness
+    for (let i = 0; i < n; i += 1) {
+      if (i === 1) continue
+      expect(pose.tiers[i].brightness).toBeLessThan(open)
+      expect(pose.tiers[i].brightness).toBeGreaterThan(0.35)
+    }
+  })
+
   it('lifts only far enough to read as opening, not as detaching', () => {
     // A lift on the order of a whole storey height clears the wall and floats
     // the roof into the storey above, which reads as the tower coming apart.

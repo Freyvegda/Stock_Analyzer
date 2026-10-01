@@ -371,9 +371,10 @@ function SkyDome({ night, sky }: { night: boolean; sky: ReturnType<typeof skyGra
     const blend = new Color()
     const colours = new Float32Array(position.count * 3)
     for (let i = 0; i < position.count; i += 1) {
-      // 0 at the bottom of the dome, 1 at the top. The 0.6 exponent lifts the
-      // horizon glow up the dome, which is where a real sky is lightest.
-      const t = Math.pow(Math.max(0, (position.getY(i) + 1) / 2), 0.6)
+      // 0 at the bottom of the dome, 1 at the top, then biased so the horizon
+      // colour carries the lower half. A small exponent here leaves the whole
+      // dome at the zenith colour and the sky reads as flat black.
+      const t = Math.pow(Math.max(0, (position.getY(i) + 1) / 2), 2.4)
       blend.copy(bottom).lerp(top, t)
       colours[i * 3] = blend.r
       colours[i * 3 + 1] = blend.g
