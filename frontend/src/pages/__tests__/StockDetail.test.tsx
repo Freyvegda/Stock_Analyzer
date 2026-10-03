@@ -47,21 +47,45 @@ const detail: StockDetailData = {
     debt_to_equity: 0.09,
     data_status: 'ok',
   },
-  report: {
-    verdict: 'pass',
-    score: 12.3,
-    passed: 2,
-    enabled: 2,
-    criteria: [
-      { key: 'pe', label: 'P/E', unit: '×', direction: 'max', threshold: 25, value: 22.1, passed: true, delta: -2.9 },
-      { key: 'roe', label: 'ROE', unit: '%', direction: 'min', threshold: 15, value: 41, passed: true, delta: 26 },
-    ],
-    notes: [],
-    groups: [
-      { category: 'Valuation', metrics: [{ key: 'pe', label: 'P/E', unit: '×', value: 22.1 }] },
-      { category: 'Profitability', metrics: [{ key: 'roe', label: 'ROE', unit: '%', value: 41 }] },
-    ],
-  },
+  reports: [
+    {
+      set_id: 1,
+      name: 'Default',
+      is_active: true,
+      report: {
+        verdict: 'pass',
+        score: 12.3,
+        passed: 2,
+        enabled: 2,
+        criteria: [
+          { key: 'pe', label: 'P/E', unit: '×', direction: 'max', threshold: 25, value: 22.1, passed: true, delta: -2.9 },
+          { key: 'roe', label: 'ROE', unit: '%', direction: 'min', threshold: 15, value: 41, passed: true, delta: 26 },
+        ],
+        notes: [],
+        groups: [
+          { category: 'Valuation', metrics: [{ key: 'pe', label: 'P/E', unit: '×', value: 22.1 }] },
+          { category: 'Profitability', metrics: [{ key: 'roe', label: 'ROE', unit: '%', value: 41 }] },
+        ],
+      },
+    },
+    {
+      set_id: 2,
+      name: 'Quality',
+      is_active: false,
+      report: {
+        verdict: 'fail',
+        score: 8.1,
+        passed: 1,
+        enabled: 2,
+        criteria: [
+          { key: 'pe', label: 'P/E', unit: '×', direction: 'max', threshold: 15, value: 22.1, passed: false, delta: 7.1 },
+          { key: 'roe', label: 'ROE', unit: '%', direction: 'min', threshold: 15, value: 41, passed: true, delta: 26 },
+        ],
+        notes: ['P/E 22.1× is above your limit of 15×'],
+        groups: [],
+      },
+    },
+  ],
   data_date: '2026-09-26',
   stale: true,
   run: { run_id: 4, run_date: '2026-09-26', rank: 2, score: 12.3 },
@@ -129,6 +153,9 @@ describe('StockDetail', () => {
     expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
     expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getByText('Below your screen')).toBeInTheDocument()
+    expect(screen.getByText('Default')).toBeInTheDocument()
+    expect(screen.getByText('Quality')).toBeInTheDocument()
     expect(screen.getByText('Risk')).toBeInTheDocument()
     expect(screen.getAllByText('22.1').length).toBeGreaterThanOrEqual(2) // report row + metric tile
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
@@ -244,7 +271,7 @@ describe('StockDetail', () => {
 
     const halves = screen.getByTestId('detail-halves')
     expect(halves).toContainElement(screen.getByTestId('company-description'))
-    expect(halves).toContainElement(screen.getByTestId('stock-report'))
+    expect(halves).toContainElement(screen.getByTestId('stock-reports'))
     expect(halves.className).toContain('lg:grid-cols-2')
 
     const chart = screen.getByTestId('price-chart')

@@ -58,7 +58,7 @@ const row = {
   market_cap: 1200000,
 }
 
-function renderTopTen(latest: unknown) {
+function renderTopTen(latest: unknown, path = '/fundamentals/top10') {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/screen/sets') return Promise.resolve([setA])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
@@ -68,7 +68,7 @@ function renderTopTen(latest: unknown) {
   return render(
     <Provider>
       <StatusProvider>
-        <MemoryRouter initialEntries={['/fundamentals/top10']}>
+        <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/fundamentals" element={<FundamentalsLayout />}>
               <Route path="criteria" element={<ScreeningCriteria />} />
@@ -90,6 +90,27 @@ describe('TopTen', () => {
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
     expect(screen.getByText('1200000.0')).toBeInTheDocument()
+  })
+
+  it('names the extra screens a run evaluated, failures included', async () => {
+    renderTopTen({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] }, '/fundamentals/criteria')
+    mockedApi.post.mockResolvedValue({
+      run_id: 5,
+      shortlisted: [],
+      failed_count: 0,
+      total: 3,
+      extra_runs: [
+        { set_id: 2, name: 'Quality', run_id: 6, shortlisted: 7, error: null },
+        { set_id: 3, name: 'Value', run_id: null, shortlisted: null, error: 'boom' },
+      ],
+    })
+    await screen.findByText('PE ≤ 25×')
+
+    await userEvent.click(screen.getByRole('button', { name: /run screen/i }))
+
+    const line = await screen.findByTestId('extra-runs')
+    expect(line).toHaveTextContent('Quality (7)')
+    expect(line).toHaveTextContent('Value (failed)')
   })
 
   it('shows skeleton rows while the latest run loads', async () => {
