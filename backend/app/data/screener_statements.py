@@ -58,6 +58,32 @@ _LABEL_MAP = {
     "face value": "_face_value",
 }
 
+_ANNUAL_RE = re.compile(r"(mar|fy)?\s*20\d\d", re.IGNORECASE)
+_NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing", re.IGNORECASE)
+
+#: Money fields (Rs cr base) vs per-share/price fields (never unit-scaled).
+_MONEY_FIELDS = frozenset(
+    {
+        "revenue",
+        "net_income",
+        "ebit",
+        "ebitda",
+        "equity",
+        "total_assets",
+        "current_assets",
+        "current_liabilities",
+        "inventory",
+        "total_debt",
+        "cash",
+        "operating_cashflow",
+        "capex",
+        "dividends_paid",
+        "cogs",
+        "revenue_prev",
+        "earnings_prev",
+    }
+)
+
 STATEMENT_FIELDS: frozenset[str] = frozenset(
     {
         "revenue",
@@ -102,12 +128,79 @@ def _to_float(text: str | None) -> float | None:
         return None
 
 
+def _annual_indexes(header: list[str]) -> list[int]:
+    """Data-column indexes holding annual figures (skips TTM/quarterly).
+
+    Falls back to every data column when no header cell names a year.
+    """
+    annual = [
+        idx
+        for idx, cell in enumerate(header[1:], start=1)
+        if _ANNUAL_RE.search(cell or "") and not _NON_ANNUAL_RE.search(cell or "")
+    ]
+    if annual:
+        return annual
+    if any(_NON_ANNUAL_RE.search(cell or "") for cell in header[1:]):
+        return [
+            idx
+            for idx, cell in enumerate(header[1:], start=1)
+            if not _NON_ANNUAL_RE.search(cell or "")
+        ]
+    return list(range(1, len(header)))
+
+
+def _lakh_scale(soup: BeautifulSoup) -> float:
+    """1.0 for Rs-cr pages, 0.01 when the page states figures in lakh."""
+    text = soup.get_text(" ", strip=True)
+    if re.search(r"in\s*(rs\.?\s*)?(lakh|lac)", text, re.IGNORECASE):
+        return 0.01
+    return 1.0
+
+
+def _parse_price_mcap(text: str) -> tuple[float | None, float | None]:
+    """Tolerant price + market-cap (cr) extraction from page text."""
+    price = None
+    for pattern in (
+        r"Current Price\s*₹?\s*([\d,]+\.?\d*)",
+        r"Price\s*₹?\s*([\d,]+\.?\d*)",
+        r"₹\s*([\d,]+\.?\d*)",
+    ):
+        match = re.search(pattern, text)
+        if match:
+            price = _to_float(match.group(1))
+            if price is not None:
+                break
+    mcap = None
+    mcap_match = re.search(
+        r"(?:Mkt Cap|Market Cap)[^\d₹]*₹?\s*([\d,]+\.?\d*)\s*(Cr|Lac|Lakh)?",
+        text,
+        re.IGNORECASE,
+    )
+    if mcap_match:
+        mcap = _to_float(mcap_match.group(1))
+        unit = (mcap_match.group(2) or "").lower()
+        if mcap is not None and unit in ("lac", "lakh"):
+            mcap = mcap * 0.01
+    return price, mcap
+
+
+def _has_minimum(fields: dict) -> bool:
+    """A parse counts as statements only with core P&L + balance identity."""
+    return fields.get("revenue") is not None and fields.get("equity") is not None
+
+
 def parse_statements(html: str) -> dict:
     """Parse statements HTML to base fields (latest annual + prev for growth)."""
     soup = BeautifulSoup(html or "", "lxml")
+    scale = _lakh_scale(soup)
     found: dict[str, list[float]] = {}
     for table in soup.find_all("table"):
-        for row in table.find_all("tr"):
+        table_rows = table.find_all("tr")
+        if not table_rows:
+            continue
+        header = [c.get_text(" ", strip=True) for c in table_rows[0].find_all(["td", "th"])]
+        indexes = _annual_indexes(header) if len(header) > 1 else [1]
+        for row in table_rows[1:]:
             cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
             if len(cells) < 2:
                 continue
@@ -115,7 +208,7 @@ def parse_statements(html: str) -> dict:
             field = _LABEL_MAP.get(label)
             if field is None:
                 continue
-            values = [_to_float(c) for c in cells[1:]]
+            values = [_to_float(cells[i]) if i < len(cells) else None for i in indexes]
             values = [v for v in values if v is not None]
             if values:
                 found.setdefault(field, values)
@@ -132,38 +225,36 @@ def parse_statements(html: str) -> dict:
     face_value = latest("_face_value")
     shares = None
     if equity_capital and face_value and face_value > 0:
-        shares = equity_capital * 1e7 / face_value / 1e7  # cr shares
+        shares = equity_capital * scale * 1e7 / face_value / 1e7  # cr shares
 
-    price = None
-    market_text = soup.get_text(" ", strip=True)
-    price_match = re.search(r"Price\s+([\d,]+\.?\d*)", market_text)
-    mcap_match = re.search(r"MarketCap\s+([\d,]+\.?\d*)", market_text)
-    if price_match:
-        price = _to_float(price_match.group(1))
-    if shares is None and price_match and mcap_match:
-        mcap = _to_float(mcap_match.group(1))
-        if mcap and price and price > 0:
+    price, mcap = _parse_price_mcap(soup.get_text(" ", strip=True))
+    if shares is None and mcap is not None and price:
+        if price > 0:
             shares = mcap / price
 
+    def money(key: str) -> float | None:
+        value = latest(key)
+        return None if value is None else value * scale
+
     return {
-        "revenue": latest("revenue"),
-        "net_income": latest("net_income"),
-        "ebit": latest("ebit"),
-        "ebitda": latest("ebitda"),
-        "equity": latest("equity"),
-        "total_assets": latest("total_assets"),
-        "current_assets": latest("current_assets"),
-        "current_liabilities": latest("current_liabilities"),
-        "inventory": latest("inventory"),
-        "total_debt": latest("total_debt"),
-        "cash": latest("cash"),
+        "revenue": money("revenue"),
+        "net_income": money("net_income"),
+        "ebit": money("ebit"),
+        "ebitda": money("ebitda"),
+        "equity": money("equity"),
+        "total_assets": money("total_assets"),
+        "current_assets": money("current_assets"),
+        "current_liabilities": money("current_liabilities"),
+        "inventory": money("inventory"),
+        "total_debt": money("total_debt"),
+        "cash": money("cash"),
         "shares_outstanding": shares,
-        "operating_cashflow": latest("operating_cashflow"),
-        "capex": latest("capex"),
-        "dividends_paid": latest("dividends_paid"),
-        "revenue_prev": prev("revenue"),
-        "earnings_prev": prev("net_income"),
-        "cogs": latest("cogs"),
+        "operating_cashflow": money("operating_cashflow"),
+        "capex": money("capex"),
+        "dividends_paid": money("dividends_paid"),
+        "revenue_prev": (lambda v: None if v is None else v * scale)(prev("revenue")),
+        "earnings_prev": (lambda v: None if v is None else v * scale)(prev("net_income")),
+        "cogs": money("cogs"),
         "price": price,
     }
 
@@ -190,24 +281,48 @@ def _download(symbol: str) -> str:
     raise last_error  # type: ignore[misc]
 
 
+def _read_cache(path: str) -> dict | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001 — corrupt cache refetches
+        return None
+
+
 def fetch_statements(
     symbol: str, cache_dir: str, ttl_days: int = 30, client=None
 ) -> dict:
-    """Return base statement fields, serving file cache when fresh."""
+    """Return base statement fields, serving file cache when fresh.
+
+    A block (403/429) or a block page (parse without core fields) serves
+    the stale cache at any age; only a first-ever fetch with no cache
+    raises. Good cache is never overwritten by an empty parse.
+    """
     today = date.today().isoformat()
     path = _cache_path(symbol, cache_dir)
     if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as f:
-                payload = json.load(f)
-            as_of = payload.get("as_of", "")
-            age_days = (date.fromisoformat(today) - date.fromisoformat(as_of)).days
-            if age_days <= int(ttl_days):
-                return dict(payload.get("fields", {}))
-        except Exception:  # noqa: BLE001 — corrupt cache refetches
-            pass
-    html = client(symbol) if callable(client) else _download(symbol)
+        payload = _read_cache(path)
+        if payload:
+            try:
+                as_of = payload.get("as_of", "")
+                age_days = (date.fromisoformat(today) - date.fromisoformat(as_of)).days
+                if age_days <= int(ttl_days):
+                    return dict(payload.get("fields", {}))
+            except (TypeError, ValueError):
+                pass
+    try:
+        html = client(symbol) if callable(client) else _download(symbol)
+    except ScreenerBlockedError:
+        stale = _read_cache(path) if os.path.exists(path) else None
+        if stale and stale.get("fields"):
+            return dict(stale["fields"])
+        raise
     fields = parse_statements(html)
+    if not _has_minimum(fields):
+        stale = _read_cache(path) if os.path.exists(path) else None
+        if stale and stale.get("fields"):
+            return dict(stale["fields"])
+        raise ScreenerBlockedError(f"screener parse yielded no statements for {symbol}")
     os.makedirs(cache_dir, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

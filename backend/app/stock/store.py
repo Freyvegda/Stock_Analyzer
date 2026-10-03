@@ -56,10 +56,30 @@ def _hq(info: dict) -> str | None:
     return ", ".join(parts) or None
 
 
+_IDENTITY_KEYS = frozenset(
+    {
+        "industry",
+        "sector",
+        "longBusinessSummary",
+        "website",
+        "fullTimeEmployees",
+        "city",
+        "state",
+        "country",
+    }
+)
+
+
 def upsert_profile(session, symbol: str, info: dict, updated_at: str) -> None:
     """Queue a `company_profiles` upsert (no commit). Odd `.info` values degrade
-    to `None` instead of failing the fetch that carried them."""
+    to `None` instead of failing the fetch that carried them.
+
+    Skips math-only payloads (no identity keys): a fundamentals refresh must
+    never null a good profile row.
+    """
     info = info or {}
+    if not any(key in info for key in _IDENTITY_KEYS):
+        return
     session.merge(
         CompanyProfile(
             symbol=symbol,

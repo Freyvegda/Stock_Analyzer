@@ -19,16 +19,33 @@ _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 
 def stooq_symbol(symbol: str) -> str:
-    """Map bare NSE symbol to Stooq ticker (NSE = `.NS` suffix)."""
+    """Map bare NSE symbol to Stooq ticker (legacy `.NS` form)."""
     symbol = (symbol or "").strip().upper()
-    if symbol.endswith(".NS") or symbol.endswith(".BO"):
+    if symbol.endswith(".NS") or symbol.endswith(".BO") or symbol.endswith(".IN"):
         return symbol
     return f"{symbol}.NS"
 
 
+def stooq_candidates(symbol: str) -> list[str]:
+    """Suffixes to try in order: Stooq lists India as `.IN`, Yahoo as `.NS`."""
+    base = (symbol or "").strip().upper()
+    for suffix in (".IN", ".NS", ".BO"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return [f"{base}.IN", f"{base}.NS"]
+
+
 def parse_stooq_csv(text: str) -> list[dict]:
-    """Parse Stooq CSV to ascending clean daily rows."""
+    """Parse Stooq CSV to ascending clean daily rows.
+
+    Raises ValueError on non-CSV bodies (bot walls/HTML) so callers can
+    serve stale cache instead of mistaking them for "no data".
+    """
     reader = csv.DictReader(io.StringIO(text or ""))
+    fieldnames = reader.fieldnames or []
+    if "Date" not in fieldnames or "Close" not in fieldnames:
+        raise ValueError("Unexpected Stooq CSV shape: missing Date/Close header")
     rows: list[dict] = []
     for record in reader:
         day = (record.get("Date") or "").strip()
@@ -45,7 +62,7 @@ def parse_stooq_csv(text: str) -> list[dict]:
                 "high": float(record.get("High")),
                 "low": float(record.get("Low")),
                 "close": float(close),
-                "volume": float(record.get("Volume") or 0.0),
+                "volume": _volume(record.get("Volume")),
             }
         except (TypeError, ValueError):
             continue
@@ -56,6 +73,14 @@ def parse_stooq_csv(text: str) -> list[dict]:
     return rows
 
 
+def _volume(value) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if pd.isna(result) else result
+
+
 class StooqProvider(DataProvider):
     def list_stocks(self) -> list[dict]:
         raise NotImplementedError
@@ -64,24 +89,34 @@ class StooqProvider(DataProvider):
         raise NotImplementedError
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        """Daily bars ascending; empty list when Stooq has no data."""
+        """Daily bars ascending; tries `.IN` then `.NS`; empty when no data."""
         end = date.today()
         start = end - timedelta(days=int(years) * 365 + 30)
-        url = (
-            "https://stooq.com/q/d/l/?s="
-            f"{stooq_symbol(symbol).lower()}"
-            f"&d1={start.strftime('%Y%m%d')}&d2={end.strftime('%Y%m%d')}&i=d"
-        )
         last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
-                resp.raise_for_status()
-                return parse_stooq_csv(resp.text)
-            except Exception as e:  # noqa: BLE001 — retry then propagate
-                last_error = e
-                time.sleep(0.5 * (attempt + 1))
-        raise last_error  # type: ignore[misc]
+        rows: list[dict] = []
+        for candidate in stooq_candidates(symbol):
+            url = (
+                "https://stooq.com/q/d/l/?s="
+                f"{candidate.lower()}"
+                f"&d1={start.strftime('%Y%m%d')}&d2={end.strftime('%Y%m%d')}&i=d"
+            )
+            for attempt in range(2):
+                try:
+                    resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
+                    resp.raise_for_status()
+                    rows = parse_stooq_csv(resp.text)
+                    if rows:
+                        return rows
+                    break  # valid-but-empty for this suffix: try next suffix
+                except ValueError as e:
+                    last_error = e
+                    break  # bot wall shape: try next suffix, don't hammer
+                except Exception as e:  # noqa: BLE001 — retry then next suffix
+                    last_error = e
+                    time.sleep(0.5 * (attempt + 1))
+        if last_error is not None and not rows:
+            raise last_error
+        return []
 
     def filings(self, symbol: str) -> list[dict]:
         raise NotImplementedError("Phase 2")

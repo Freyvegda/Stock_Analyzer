@@ -34,24 +34,33 @@ def test_core_six():
     assert out["roe"] == round(15000.0 / 75000.0 * 100, 4)
     assert out["roce"] == round(20000.0 / (150000.0 - 25000.0) * 100, 4)
     assert out["debt_to_equity"] == round(15000.0 / 75000.0, 4)
-    assert out["market_cap"] == round(2500.0 * 300.0 / 1e7 * 1e7 / 1e7, 4) or out["market_cap"] is not None
+    assert out["market_cap"] == 750000.0
 
 
-def test_extended_ratios():
+def test_extended_ratios_yfinance_semantics():
+    # raw holds yfinance .info semantics: fractions for scale-100 keys,
+    # rupees for scale-1e-7 money keys. engine.resolve_value applies scale.
     out = compute_ratios(base())
     raw = out["raw"]
-    assert raw["returnOnAssets"] == round(15000.0 / 150000.0 * 100, 4)
-    assert raw["profitMargins"] == round(15000.0 / 100000.0 * 100, 4)
-    assert raw["operatingMargins"] == round(20000.0 / 100000.0 * 100, 4)
-    assert raw["ebitdaMargins"] == round(25000.0 / 100000.0 * 100, 4)
+    assert raw["returnOnAssets"] == round(15000.0 / 150000.0, 4)
+    assert raw["profitMargins"] == round(15000.0 / 100000.0, 4)
+    assert raw["operatingMargins"] == round(20000.0 / 100000.0, 4)
+    assert raw["ebitdaMargins"] == round(25000.0 / 100000.0, 4)
     assert raw["currentRatio"] == round(40000.0 / 25000.0, 4)
     assert raw["quickRatio"] == round((40000.0 - 5000.0) / 25000.0, 4)
     assert raw["trailingEps"] == round(15000.0 / 300.0, 4)
     assert raw["bookValue"] == round(75000.0 / 300.0, 4)
-    assert raw["revenueGrowth"] == round((100000.0 - 90000.0) / 90000.0 * 100, 4)
-    assert raw["earningsGrowth"] == round((15000.0 - 12000.0) / 12000.0 * 100, 4)
-    assert raw["payoutRatio"] == round(3000.0 / 15000.0 * 100, 4)
+    assert raw["revenueGrowth"] == round((100000.0 - 90000.0) / 90000.0, 4)
+    assert raw["earningsGrowth"] == round((15000.0 - 12000.0) / 12000.0, 4)
+    assert raw["payoutRatio"] == round(3000.0 / 15000.0, 4)
+    assert raw["totalRevenue"] == round(100000.0 * 1e7, 4)
+    assert raw["totalDebt"] == round(15000.0 * 1e7, 4)
     assert raw["priceToSalesTrailing12Months"] == round(out["market_cap"] / 100000.0, 4)
+
+
+def test_market_cap_exact_cr():
+    out = compute_ratios(base())
+    assert out["market_cap"] == 750000.0
 
 
 def test_zero_guards_yield_none():

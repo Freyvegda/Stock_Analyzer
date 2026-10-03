@@ -20,7 +20,7 @@ from app.data import price_cache
 from app.data.provider import DataProvider
 from app.data.ratios_math import compute_ratios
 from app.data.screener_statements import fetch_statements
-from app.data.stooq_impl import StooqProvider, stooq_symbol
+from app.data.stooq_impl import StooqProvider, stooq_candidates
 from app.data.yfinance_impl import YFinanceProvider
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -31,22 +31,45 @@ DEFAULT_STATEMENTS_DIR = os.path.join(_REPO_ROOT, "data", "statements")
 
 
 def _fetch_quote(symbol: str) -> float | None:
-    """Single-quote close from Stooq; None on any failure."""
-    url = f"https://stooq.com/q/l/?s={stooq_symbol(symbol).lower()}&f=sd2t2ohlcv&h&e=csv"
-    for attempt in range(2):
-        try:
-            resp = httpx.get(url, headers=_UA, timeout=15, follow_redirects=True)
-            resp.raise_for_status()
-            reader = csv.DictReader(io.StringIO(resp.text or ""))
-            for record in reader:
-                try:
-                    return float(record.get("Close"))
-                except (TypeError, ValueError):
-                    return None
-            return None
-        except Exception:  # noqa: BLE001 — quote is best-effort
-            time.sleep(0.5 * (attempt + 1))
+    """Single-quote close from Stooq; tries `.IN` then `.NS`; None on failure."""
+    for candidate in stooq_candidates(symbol):
+        url = f"https://stooq.com/q/l/?s={candidate.lower()}&f=sd2t2ohlcv&h&e=csv"
+        for attempt in range(2):
+            try:
+                resp = httpx.get(url, headers=_UA, timeout=15, follow_redirects=True)
+                resp.raise_for_status()
+                reader = csv.DictReader(io.StringIO(resp.text or ""))
+                for record in reader:
+                    try:
+                        return float(record.get("Close"))
+                    except (TypeError, ValueError):
+                        continue
+                break  # valid-but-empty for this suffix: try next
+            except Exception:  # noqa: BLE001 — quote is best-effort
+                time.sleep(0.5 * (attempt + 1))
     return None
+
+
+def _fresh_cached_close(symbol: str, price_dir: str, ttl_hours: int) -> float | None:
+    """Yesterday's close from the file cache when fresh, else None."""
+    import time as _time
+
+    path = os.path.join(price_dir, f"{symbol.strip().upper()}.csv")
+    if not os.path.exists(path):
+        return None
+    try:
+        age_hours = (_time.time() - os.path.getmtime(path)) / 3600.0
+    except OSError:
+        return None
+    if age_hours > float(ttl_hours):
+        return None
+    cached = price_cache.read_cached(symbol, price_dir)
+    if not cached:
+        return None
+    try:
+        return float(cached[-1].get("close"))
+    except (TypeError, ValueError):
+        return None
 
 
 class CompositeProvider(DataProvider):
@@ -78,7 +101,11 @@ class CompositeProvider(DataProvider):
         statements = fetch_statements(
             symbol, self.statements_dir, ttl_days=self.statements_ttl_days
         )
-        price = _fetch_quote(symbol)
+        # Fresh file cache already holds yesterday's close — reuse it before
+        # spending a quote call (I4: halves Stooq load on screen runs).
+        price = _fresh_cached_close(symbol, self.price_dir, self.price_ttl_hours)
+        if price is None:
+            price = _fetch_quote(symbol)
         if price is None:
             price = statements.get("price")
         if price is None:
@@ -106,15 +133,19 @@ class CompositeProvider(DataProvider):
         }
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        """File cache first; Stooq on miss/stale; stale cache on failure."""
+        """File cache first; Stooq on miss/stale; stale cache on failure/empty."""
         symbol = (symbol or "").strip().upper()
+        stale = price_cache.read_cached(symbol, self.price_dir)
         try:
-            return price_cache.get_or_fetch(
+            rows = price_cache.get_or_fetch(
                 symbol,
                 lambda: StooqProvider().ohlc(symbol, years=years),
                 self.price_dir,
                 ttl_hours=self.price_ttl_hours,
             )
+            if not rows and stale:
+                return stale
+            return rows
         except Exception:  # noqa: BLE001 — serve stale cache before failing
             cached = price_cache.read_cached(symbol, self.price_dir)
             if cached:

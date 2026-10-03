@@ -5,7 +5,7 @@
 ## Purpose
 
 Python + FastAPI service. Runs 4-stage pipeline for Indian-market (Nifty 500) analysis:
-1. **Screen** — gate the stored snapshot (newest ok row per symbol + `stocks.market_cap`) with the caller's DB-stored criteria, refresh only gate survivors from yfinance, filter to ~10 (YAML retired in Phase 1.5)
+1. **Screen** — gate the stored snapshot (newest ok row per symbol + `stocks.market_cap`) with the caller's DB-stored criteria, refresh only stale symbols via the composite provider (Stooq + screener + math), filter to ~10 (YAML retired in Phase 1.5)
 2. **Docs** — fetch + parse PDFs (concalls, quarterly results, investor presentations, audit reports) for shortlisted stocks only, analyze with Gemini Flash (free tier) with keyword fallback
 3. **Model** — XGBoost on 5yr daily OHLC features -> buy/sell/hold signals per shortlisted stock
 4. **Backtest** — walk-forward (3y train / 1q test, rolling 2019-2024), report CAGR/Sharpe/max-drawdown vs Nifty 500
@@ -132,7 +132,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 
 ## Error Handling
 
-- Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
+- Network calls: httpx with timeouts + retry w/ backoff; provider fetch wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
 - Batch runs: an extra most-used screen failing is caught and reported as `extra_runs[].error`; the active result and the other extras still persist
 - Stock detail: stored-first (zero network when a snapshot exists); refresh failure serves the stored row with `warning` + `refreshed=false`; a failed fetch never overwrites a same-day ok row; candles fall back to the in-memory cache and are never persisted
 - Universe: `GET /stocks` seeds `stocks` from the provider only when the table is empty; upstream seeding failures ride the global httpx → 502 handler; a stock with no stored row lists as `no_data`

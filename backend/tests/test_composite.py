@@ -88,6 +88,24 @@ def test_ohlc_falls_back_to_cache_on_stooq_fail(tmp_path, monkeypatch):
     assert rows[-1]["close"] == 11.5
 
 
+def test_ohlc_empty_fetch_serves_stale(tmp_path, monkeypatch):
+    import time as _time
+
+    from app.data import price_cache
+
+    price_cache.write_cached("AAA", ohlc_rows(), str(tmp_path / "prices"))
+    old = os.path.getmtime(tmp_path / "prices" / "AAA.csv")
+    os.utime(tmp_path / "prices" / "AAA.csv", (old - 48 * 3600, old - 48 * 3600))
+
+    class EmptyStooq:
+        def ohlc(self, symbol, years=5):
+            return []
+
+    monkeypatch.setattr(comp_mod, "StooqProvider", lambda: EmptyStooq())
+    rows = make_provider(tmp_path).ohlc("AAA")
+    assert rows[-1]["close"] == 11.5
+
+
 def test_yfinance_off_by_default(monkeypatch):
     monkeypatch.delenv("ENABLE_YFINANCE", raising=False)
     assert build_default_provider().enable_yfinance is False

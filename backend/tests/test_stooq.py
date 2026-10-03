@@ -9,6 +9,13 @@ def test_symbol_mapping():
     assert stooq_symbol("RELIANCE.NS") == "RELIANCE.NS"
 
 
+def test_candidates_try_in_before_ns():
+    from app.data.stooq_impl import stooq_candidates
+
+    assert stooq_candidates("RELIANCE") == ["RELIANCE.IN", "RELIANCE.NS"]
+    assert stooq_candidates("RELIANCE.NS") == ["RELIANCE.IN", "RELIANCE.NS"]
+
+
 def test_parse_drops_nan_and_sorts():
     text = (
         "Date,Open,High,Low,Close,Volume\n"
@@ -40,8 +47,33 @@ def test_ohlc_builds_url_and_parses(monkeypatch):
 
     monkeypatch.setattr(stooq_mod.httpx, "get", fake_get)
     rows = StooqProvider().ohlc("RELIANCE")
-    assert "stooq.com" in seen["url"] and "reliance.ns" in seen["url"].lower()
+    assert "stooq.com" in seen["url"] and "reliance." in seen["url"].lower()
     assert rows[0]["close"] == 10.5
+
+
+def test_ohlc_falls_back_to_second_suffix(monkeypatch):
+    calls = []
+
+    class EmptyResp:
+        text = "Date,Open,High,Low,Close,Volume\n"
+
+        def raise_for_status(self):
+            pass
+
+    class FullResp:
+        text = "Date,Open,High,Low,Close,Volume\n2026-01-05,10,11,9,10.5,100\n"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return EmptyResp() if len(calls) == 1 else FullResp()
+
+    monkeypatch.setattr(stooq_mod.httpx, "get", fake_get)
+    rows = StooqProvider().ohlc("RELIANCE")
+    assert rows and rows[0]["close"] == 10.5
+    assert len(calls) == 2
 
 
 def test_ohlc_http_error_propagates(monkeypatch):

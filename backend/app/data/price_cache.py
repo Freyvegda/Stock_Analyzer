@@ -1,6 +1,6 @@
 """Per-symbol OHLC file cache: keeps 5y daily bars out of SQLite.
 
-Layout: ``{cache_dir}/{SYMBOL}.csv`` with Date/Open/High/Low/Close/Volume.
+Layout: ``{cache_dir}/{SYMBOL}.csv`` with time/open/high/low/close/volume.
 Atomic writes (tmp + rename). TTL decides hit vs refetch; corrupt files
 read as misses so the loader refetches instead of crashing callers.
 """

@@ -96,12 +96,13 @@ def compute_ratios(base: dict) -> dict:
     raw["trailingEps"] = _round(eps)
     raw["bookValue"] = _round(bvps)
     raw["revenuePerShare"] = _round(rev_per_share)
-    raw["returnOnAssets"] = _round(_div(net_income, assets) * 100) if net_income is not None and assets else None
-    raw["profitMargins"] = _round(_div(net_income, revenue) * 100) if revenue else None
-    raw["operatingMargins"] = _round(_div(ebit, revenue) * 100) if revenue else None
-    raw["ebitdaMargins"] = _round(_div(ebitda, revenue) * 100) if revenue else None
+    # yfinance .info semantics: fractions here, engine.resolve_value ×100.
+    raw["returnOnAssets"] = _round(_div(net_income, assets)) if net_income is not None and assets else None
+    raw["profitMargins"] = _round(_div(net_income, revenue)) if revenue else None
+    raw["operatingMargins"] = _round(_div(ebit, revenue)) if revenue else None
+    raw["ebitdaMargins"] = _round(_div(ebitda, revenue)) if revenue else None
     raw["grossMargins"] = (
-        _round((revenue - cogs) / revenue * 100)
+        _round((revenue - cogs) / revenue)
         if revenue and cogs is not None and revenue > 0
         else None
     )
@@ -112,16 +113,17 @@ def compute_ratios(base: dict) -> dict:
         else None
     )
     raw["revenueGrowth"] = (
-        _round((revenue - revenue_prev) / revenue_prev * 100)
+        _round((revenue - revenue_prev) / revenue_prev)
         if revenue is not None and revenue_prev
         else None
     )
     raw["earningsGrowth"] = (
-        _round((net_income - earnings_prev) / earnings_prev * 100)
+        _round((net_income - earnings_prev) / earnings_prev)
         if net_income is not None and earnings_prev
         else None
     )
-    raw["payoutRatio"] = _round(_div(dividends, net_income) * 100) if net_income else None
+    # Fraction here, engine ×100. dividendYield stays % (catalog scale 1.0).
+    raw["payoutRatio"] = _round(_div(dividends, net_income)) if net_income else None
     raw["dividendYield"] = (
         _round(_div(dividends, market_cap) * 100) if market_cap else None
     )
@@ -136,15 +138,16 @@ def compute_ratios(base: dict) -> dict:
     free_cashflow = None
     if op_cf is not None:
         free_cashflow = op_cf - capex
-    raw["freeCashflow"] = _round(free_cashflow)
-    raw["operatingCashflow"] = _round(op_cf)
+    raw["freeCashflow"] = _round(None if free_cashflow is None else free_cashflow * 1e7)
+    raw["operatingCashflow"] = _round(None if op_cf is None else op_cf * 1e7)
     raw["priceToFreeCashflow"] = _round(_div(market_cap, free_cashflow)) if free_cashflow else None
 
-    raw["totalRevenue"] = _round(revenue)
-    raw["ebitda"] = _round(ebitda)
-    raw["netIncomeToCommon"] = _round(net_income)
-    raw["totalCash"] = _round(_num(base.get("cash")))
-    raw["totalDebt"] = _round(debt)
+    # yfinance money semantics: rupees here, digest facts ×1e-7 to cr.
+    raw["totalRevenue"] = _round(None if revenue is None else revenue * 1e7)
+    raw["ebitda"] = _round(None if ebitda is None else ebitda * 1e7)
+    raw["netIncomeToCommon"] = _round(None if net_income is None else net_income * 1e7)
+    raw["totalCash"] = _round(None if _num(base.get("cash")) is None else _num(base.get("cash")) * 1e7)
+    raw["totalDebt"] = _round(None if debt is None else debt * 1e7)
 
     return {
         "symbol": base.get("symbol"),
