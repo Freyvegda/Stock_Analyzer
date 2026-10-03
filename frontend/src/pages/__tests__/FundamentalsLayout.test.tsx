@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -137,7 +137,8 @@ const doneJob = job({
 /** Reads the outlet context into stable probes. F3 moved the real RunProgress
  * panel into TopTen, so the top10 route renders it next to these probes. */
 function RunProbe() {
-  const { busySetIds, stale, starting } = useOutletContext<FundamentalsOutletContext>()
+  const { busySetIds, stale, starting, runScreen } =
+    useOutletContext<FundamentalsOutletContext>()
   return (
     <div>
       <span data-testid="probe-starting">{String(starting)}</span>
@@ -145,6 +146,9 @@ function RunProbe() {
       <span data-testid="probe-busy">
         {[...busySetIds].sort((a, b) => a - b).join(',')}
       </span>
+      <button type="button" onClick={() => void runScreen()}>
+        probe-run
+      </button>
     </div>
   )
 }
@@ -383,6 +387,56 @@ describe('FundamentalsLayout', () => {
       expect(jobsCalls).toBe(2)
       expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
       expect(latestCalls).toBe(1)
+      expect(toaster.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Screen run failed', type: 'warning' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears the stale badge when the poll reports terminal failure', async () => {
+    vi.useFakeTimers()
+    try {
+      let jobsCalls = 0
+      mockedApi.get.mockImplementation((path: string) => {
+        if (path === '/screen/sets') return Promise.resolve([setA, setB])
+        if (path === '/screen/ratios') return Promise.resolve(catalog)
+        if (path === '/screen/latest') return Promise.resolve(run)
+        if (path === '/screen/jobs/latest') {
+          jobsCalls += 1
+          return Promise.resolve({
+            job:
+              jobsCalls === 1
+                ? null
+                : job({
+                    status: 'failed',
+                    error: 'job exploded',
+                    finished_at: '2026-10-03T10:05:00.000Z',
+                  }),
+          })
+        }
+        return Promise.reject(new Error(`unexpected GET ${path}`))
+      })
+      mockedApi.post.mockResolvedValue({
+        run: { run_id: 1, shortlisted: [row], failed_count: 0, total: 500, stale: true },
+        job: job(),
+      })
+      renderLayout('/fundamentals/top10')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      fireEvent.click(screen.getByText('probe-run'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(screen.getByTestId('probe-stale')).toHaveTextContent('true')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      expect(screen.getByTestId('probe-stale')).toHaveTextContent('false')
+      expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
       expect(toaster.create).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Screen run failed', type: 'warning' }),
       )

@@ -180,6 +180,8 @@ describe('ScreeningCriteria', () => {
     expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
   })
 
+  // The real sync path marks the active item done before returning, so a busy
+  // active item is a recovery net (reload/race) rather than the normal state.
   it('locks the active screen while its job runs: editor, rename and delete controls disabled', async () => {
     mockLoads(emptyRun, [setA, setB], runningJob)
     renderFundamentals()

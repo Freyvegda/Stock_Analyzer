@@ -173,11 +173,12 @@ export default function FundamentalsLayout() {
   }
 
   /** Best-effort: a page reload mid-job restores the progress panel; a failure
-   * just leaves the panel hidden. */
+   * just leaves the panel hidden. Never clobbers a job set by a just-started run
+   * (the mount fetch can resolve after `runScreen`). */
   async function loadJob() {
     try {
       const res = await api.get<JobsLatestResponse>('/screen/jobs/latest')
-      setJob(res.job)
+      setJob((prev) => prev ?? res.job)
     } catch {
       // Progress is not worth an error banner.
     }
@@ -195,6 +196,8 @@ export default function FundamentalsLayout() {
       void loadLatest()
       return
     }
+    // Terminal failure: the rows stay, but they are no longer "refreshing".
+    setStale(false)
     toaster.create({
       title: next.status === 'failed' ? 'Screen run failed' : 'Screen run interrupted',
       description:
