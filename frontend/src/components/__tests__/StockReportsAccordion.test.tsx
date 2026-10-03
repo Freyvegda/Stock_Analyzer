@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StockReportsAccordion } from '../StockReportsAccordion'
 import { Provider } from '../ui/provider'
@@ -86,5 +87,44 @@ describe('StockReportsAccordion', () => {
 
     expect(screen.getAllByTestId('report-item')).toHaveLength(1)
     expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+  })
+
+  it('lists every saved screen even without a prefetched report', () => {
+    render(
+      <Provider>
+        <StockReportsAccordion
+          reports={[{ set_id: 1, name: 'Default', is_active: true, report: makeReport('pass') }]}
+          sets={[
+            { id: 1, name: 'Default', is_active: true },
+            { id: 2, name: 'Quality', is_active: false },
+          ]}
+        />
+      </Provider>,
+    )
+
+    expect(screen.getAllByTestId('report-item')).toHaveLength(2)
+    expect(screen.getByText('Quality')).toBeInTheDocument()
+    expect(screen.getByText('Not checked yet')).toBeInTheDocument()
+  })
+
+  it('requests the report when an unchecked screen is expanded', async () => {
+    const onExpand = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <Provider>
+        <StockReportsAccordion
+          reports={[{ set_id: 1, name: 'Default', is_active: true, report: makeReport('pass') }]}
+          sets={[
+            { id: 1, name: 'Default', is_active: true },
+            { id: 2, name: 'Quality', is_active: false },
+          ]}
+          onExpand={onExpand}
+        />
+      </Provider>,
+    )
+
+    await user.click(screen.getByText('Quality'))
+
+    expect(onExpand).toHaveBeenCalledWith(2)
   })
 })

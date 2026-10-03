@@ -7,15 +7,26 @@ and raise NotImplementedError — the composite owns those paths.
 
 import csv
 import io
+import math
 import time
 from datetime import date, timedelta
 
 import httpx
-import pandas as pd
 
 from app.data.provider import DataProvider
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+#: Single-request timeout for the cold Stooq fetch (seconds). The file + memory
+#: caches serve warm symbols, so a slow upstream must fail fast, not hang the chart.
+_OHLC_TIMEOUT = 8
+
+
+def _is_nan(value: float) -> bool:
+    try:
+        return math.isnan(value)
+    except (TypeError, ValueError):
+        return False
 
 
 def stooq_symbol(symbol: str) -> str:
@@ -53,7 +64,7 @@ def parse_stooq_csv(text: str) -> list[dict]:
             close = float(record.get("Close"))
         except (TypeError, ValueError):
             continue
-        if pd.isna(close) or not day:
+        if _is_nan(close) or not day:
             continue
         try:
             row = {
@@ -66,7 +77,7 @@ def parse_stooq_csv(text: str) -> list[dict]:
             }
         except (TypeError, ValueError):
             continue
-        if any(pd.isna(row[key]) for key in ("open", "high", "low", "close")):
+        if any(_is_nan(row[key]) for key in ("open", "high", "low", "close")):
             continue
         rows.append(row)
     rows.sort(key=lambda r: r["time"])
@@ -78,7 +89,7 @@ def _volume(value) -> float:
         result = float(value)
     except (TypeError, ValueError):
         return 0.0
-    return 0.0 if pd.isna(result) else result
+    return 0.0 if _is_nan(result) else result
 
 
 class StooqProvider(DataProvider):
@@ -102,7 +113,7 @@ class StooqProvider(DataProvider):
             )
             for attempt in range(2):
                 try:
-                    resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
+                    resp = httpx.get(url, headers=_UA, timeout=_OHLC_TIMEOUT, follow_redirects=True)
                     resp.raise_for_status()
                     rows = parse_stooq_csv(resp.text)
                     if rows:

@@ -235,6 +235,23 @@ def test_ohlc_served_from_cache(client, sign_in, provider, test_db):
     assert p.ohlc_calls == [("AAA", 5)]
 
 
+def test_ohlc_sets_cache_headers_and_supports_etag(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    sign_in()
+    provider(FakeProvider(ohlc_rows=daily_rows(date(2026, 9, 25), 400)))
+
+    first = client.get("/stock/AAA/ohlc?range=5y&interval=1d")
+
+    assert first.status_code == 200
+    assert "max-age=" in first.headers["cache-control"]
+    etag = first.headers["etag"]
+    assert etag
+
+    second = client.get("/stock/AAA/ohlc?range=5y&interval=1d", headers={"if-none-match": etag})
+
+    assert second.status_code == 304
+
+
 DIGEST_RAW = {
     "longBusinessSummary": "Makes things",
     "industry": "Oil & Gas",
@@ -271,3 +288,64 @@ def test_refresh_keeps_sections_shape(client, sign_in, provider, test_db):
     assert body["refreshed"] is True
     assert body["profile"]["description"] == "Makes things"
     assert {"main_ratios", "has", "done", "other_groups"} <= set(body)
+
+
+def _seed_two_sets(test_db, user_id: int) -> tuple[int, int]:
+    with test_db() as session:
+        session.add(
+            ScreeningSet(
+                user_id=user_id,
+                name="Strict",
+                criteria_json=json.dumps([{"key": "pe", "enabled": True, "value": 5.0}]),
+                thesis=None,
+                shortlist_size=10,
+                is_active=True,
+                updated_at="now",
+            )
+        )
+        session.add(
+            ScreeningSet(
+                user_id=user_id,
+                name="Lenient",
+                criteria_json=json.dumps([{"key": "pe", "enabled": True, "value": 25.0}]),
+                thesis=None,
+                shortlist_size=10,
+                is_active=False,
+                updated_at="now",
+            )
+        )
+        session.commit()
+        rows = session.query(ScreeningSet).filter(ScreeningSet.user_id == user_id).all()
+        by_name = {row.name: row.id for row in rows}
+        return by_name["Strict"], by_name["Lenient"]
+
+
+def test_single_report_requires_auth(client, test_db):
+    assert client.get("/stock/AAA/report?set_id=1").status_code == 401
+
+
+def test_single_report_returns_named_screen_without_refetch(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    seed_stored(test_db)
+    user = sign_in()
+    _strict_id, lenient_id = _seed_two_sets(test_db, user["id"])
+    p = provider(FakeProvider())
+
+    body = client.get(f"/stock/AAA/report?set_id={lenient_id}").json()
+
+    assert body["set_id"] == lenient_id
+    assert body["name"] == "Lenient"
+    assert body["is_active"] is False
+    assert body["report"]["verdict"] == "pass"
+    assert p.fundamentals_calls == []
+
+
+def test_single_report_unknown_set_is_404(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    seed_stored(test_db)
+    sign_in()
+    provider(FakeProvider())
+
+    res = client.get("/stock/AAA/report?set_id=9999")
+
+    assert res.status_code == 404

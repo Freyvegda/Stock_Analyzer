@@ -9,7 +9,7 @@ vi.mock('@/components/ui/color-mode', () => ({
 }))
 
 const lw = vi.hoisted(() => {
-  const series = { setData: vi.fn() }
+  const series = { setData: vi.fn(), applyOptions: vi.fn() }
   const chart = {
     addSeries: vi.fn((..._args: unknown[]) => series),
     applyOptions: vi.fn(),
@@ -93,12 +93,26 @@ describe('StockChart', () => {
     state.colorMode = 'dark'
     rerender(<StockChart candles={CANDLES} />)
 
-    const lastCall = lw.createChart.mock.calls[lw.createChart.mock.calls.length - 1]
-    const options = lastCall[1] as { grid: { vertLines: { color: string } } }
-    expect(options.grid.vertLines.color).toBe(chartPalette.dark.grid)
-    const seriesOptions = lw.chart.addSeries.mock.calls[lw.chart.addSeries.mock.calls.length - 1][1] as {
-      upColor: string
-    }
-    expect(seriesOptions.upColor).toBe(chartPalette.dark.candleUp)
+    expect(lw.createChart).toHaveBeenCalledTimes(1)
+    expect(lw.chart.applyOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grid: {
+          vertLines: { color: chartPalette.dark.grid },
+          horzLines: { color: chartPalette.dark.grid },
+        },
+      }),
+    )
+    expect(lw.series.applyOptions).toHaveBeenCalledWith(
+      expect.objectContaining({ upColor: chartPalette.dark.candleUp }),
+    )
+  })
+
+  it('updates data without recreating the chart', () => {
+    const more = [...CANDLES, { ...CANDLES[1], time: '2026-01-04' }]
+    const { rerender } = render(<StockChart candles={CANDLES} />)
+    rerender(<StockChart candles={more} />)
+
+    expect(lw.createChart).toHaveBeenCalledTimes(1)
+    expect(lw.series.setData).toHaveBeenCalledTimes(2)
   })
 })

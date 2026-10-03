@@ -728,6 +728,12 @@ def get_active_set(session_factory, user_id: int) -> dict:
         return _projection(row)
 
 
+def get_set(session_factory, user_id: int, set_id: int) -> dict:
+    """One of the caller's screening sets; raises SetNotFoundError otherwise."""
+    with session_factory() as session:
+        return _projection(_require_set(session, user_id, set_id))
+
+
 def get_criteria(session_factory, user_id: int) -> dict:
     """Active-set projection; kept for the stock report/universe consumers."""
     return get_active_set(session_factory, user_id)

@@ -115,16 +115,41 @@ const detail: StockDetailData = {
 
 const ohlc: OhlcResponse = {
   symbol: 'TCS',
-  range: '1y',
+  range: '5y',
   interval: '1d',
   as_of: '2026-09-26',
-  candles: [{ time: '2026-09-25', open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }],
+  candles: Array.from({ length: 400 }, (_, i) => {
+    const time = new Date(Date.UTC(2025, 7, 1) + i * 86400000).toISOString().slice(0, 10)
+    return { time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
+  }),
 }
+
+const screeningSets = [
+  {
+    id: 1,
+    name: 'Default',
+    criteria: [],
+    thesis: null,
+    shortlist_size: 10,
+    is_active: true,
+    updated_at: 'now',
+  },
+  {
+    id: 2,
+    name: 'Quality',
+    criteria: [],
+    thesis: null,
+    shortlist_size: 10,
+    is_active: false,
+    updated_at: 'now',
+  },
+]
 
 function mockLoads() {
   mockedApi.get.mockImplementation((path: string) => {
     if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
     if (path === '/stock/TCS') return Promise.resolve(detail)
+    if (path === '/screen/sets') return Promise.resolve(screeningSets)
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -161,7 +186,7 @@ describe('StockDetail', () => {
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Data as of 2026-09-26')).toBeInTheDocument()
     expect(screen.getByText('#2')).toBeInTheDocument()
-    expect(await screen.findByTestId('stock-chart-stub')).toHaveTextContent('1 candles')
+    expect(await screen.findByTestId('stock-chart-stub')).toHaveTextContent('366 candles')
   })
 
   it('shows the unknown-symbol state on 404', async () => {
@@ -190,33 +215,56 @@ describe('StockDetail', () => {
     expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
   })
 
-  it('switching range refetches only the ohlc endpoint', async () => {
+  it('switching range derives locally without refetching ohlc', async () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
     await screen.findByText('Passes your screen')
-    mockedApi.get.mockClear()
+    const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: '6M' }))
 
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/ohlc?range=6m&interval=1d'),
+      expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('183 candles'),
     )
-    expect(mockedApi.get.mock.calls.every(([path]) => String(path).startsWith('/stock/TCS/ohlc'))).toBe(true)
+    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
   })
 
-  it('switching interval refetches with the monthly aggregation', async () => {
+  it('switching interval aggregates locally without refetching ohlc', async () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
     await screen.findByText('Passes your screen')
-    mockedApi.get.mockClear()
+    const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
 
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/ohlc?range=1y&interval=1mo'),
+      expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('13 candles'),
     )
+    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('lazy-loads another screen report on expand without refetching detail', async () => {
+    const user = userEvent.setup()
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
+      if (path === '/stock/TCS')
+        return Promise.resolve({ ...detail, reports: [detail.reports[0]] })
+      if (path === '/screen/sets') return Promise.resolve(screeningSets)
+      if (path === '/stock/TCS/report?set_id=2') return Promise.resolve(detail.reports[1])
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderPage()
+    await screen.findByText('Passes your screen')
+    expect(screen.getByText('Not checked yet')).toBeInTheDocument()
+
+    await user.click(screen.getByText('Quality'))
+
+    await waitFor(() =>
+      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/report?set_id=2'),
+    )
+    expect(await screen.findByText('P/E 22.1× is above your limit of 15×')).toBeInTheDocument()
   })
 
   it('refreshes the snapshot via POST and merges the response', async () => {
@@ -339,6 +387,7 @@ describe('StockDetail', () => {
   it('shows a description fallback when the profile and metrics are missing', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
+      if (path === '/screen/sets') return Promise.resolve([])
       return Promise.resolve({
         ...detail,
         profile: {

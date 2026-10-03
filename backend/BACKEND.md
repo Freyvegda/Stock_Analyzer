@@ -29,7 +29,7 @@ backend/
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
 │   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (snapshot batch active + 3 most-used, then background job), GET /screen/jobs/latest, GET /screen/latest
-│   │   ├── stock.py       # GET /stock/{symbol}, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
+│   │   ├── stock.py       # GET /stock/{symbol}, GET /stock/{symbol}/report?set_id=, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
 │   │   ├── stocks.py      # GET /stocks — universe list with per-user verdicts
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
 │   │   ├── signals.py     # POST /model/train, POST /model/predict, GET /model/signals
@@ -121,9 +121,11 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> GET /stocks: whole stored universe + caller's verdict (pass|fail|no_data), computed on read
   -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + reports for the
      active screen and the 3 most-used screens
-     + profile + digest sections (main_ratios | has | done | other_groups), computed per caller
+     + profile + digest sections (main_ratios | has | done | other_groups), computed per caller;
+     GET /stock/{symbol}/report?set_id= lazily computes any other saved screen's verdict
+     from the same stored snapshot (zero network when a snapshot exists)
   -> /stock/{symbol}/ohlc: 5y daily bars via provider -> file cache data/prices/{SYM}.csv -> memory TTL cache (900 s) -> slice + aggregate
-     (1d/15d/1mo). Daily bars are NEVER written to the DB.
+     (1d/15d/1mo) + Cache-Control public max-age=3600 + ETag/304. Daily bars are NEVER written to the DB.
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table

@@ -240,6 +240,38 @@ def refresh_stock(session_factory, provider: DataProvider, user_id: int, symbol:
         return _detail_payload(session, session_factory, user_id, stock, latest, True, None)
 
 
+def get_single_report(
+    session_factory, provider: DataProvider, user_id: int, symbol: str, set_id: int
+) -> dict:
+    """One screen's verdict for one stock, from the shared stored snapshot.
+
+    Lazy path for the detail accordion: no extra fundamentals fetch when a
+    snapshot exists (zero network); first view of a symbol with no row fetches
+    once exactly like the detail endpoint. Unknown sets raise the screener's
+    SetNotFoundError so the router answers 404.
+    """
+    with session_factory() as session:
+        stock = _load_stock(session, symbol)
+        latest = _latest_ok(session, symbol)
+        if latest is None:
+            try:
+                payload = _fetch_isolated(provider, symbol)
+            except Exception as e:  # noqa: BLE001 — per-stock isolation
+                logger.warning("stock snapshot fetch failed for %s: %s", symbol, e)
+                _store_failure(session, symbol, _today(), e)
+                raise StockDataUnavailable(f"Stock data unavailable: {e}") from e
+            _store_ok(session, stock, payload, _today())
+            latest = _latest_ok(session, symbol)
+        snapshot = _snapshot(latest, stock)
+    target = screener_service.get_set(session_factory, user_id, set_id)
+    return {
+        "set_id": target["id"],
+        "name": target["name"],
+        "is_active": bool(target["is_active"]),
+        "report": report_builder.build_report(snapshot, target["criteria"]),
+    }
+
+
 def get_ohlc(
     session_factory,
     provider: DataProvider,
