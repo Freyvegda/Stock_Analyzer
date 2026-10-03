@@ -16,7 +16,9 @@ Run flow (shared universe, one network stage, Phase 1.8):
    and persists one ``ScreenRun`` per screen.
 """
 
+import concurrent.futures
 import json
+import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy import and_, func
@@ -39,7 +41,15 @@ from app.screener.criteria import (
     default_criteria,
 )
 from app.screener.engine import rank_shortlist, screen_rows
-from app.stock.store import profile_values, trim_raw
+from app.stock.store import profile_values, trim_raw, upsert_profile
+
+logger = logging.getLogger(__name__)
+
+# yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
+WORKERS = 8
+
+#: The most-used measure looks at this many of the user's own (manual) runs.
+MANUAL_RUN_WINDOW = 10
 
 # Job history kept per user (older jobs + their items are pruned on create).
 KEEP_JOBS = 20
@@ -652,3 +662,310 @@ def mark_item(
         if error is not None:
             item.error = error
         session.commit()
+
+
+# --- Phase 1.8 multi-screen batch (synchronous prepare/evaluate) ---
+# Kept alongside the cached-first runner; covered by test_screen_batch.py.
+
+def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, dict | None, str | None]]:
+    """Fetch fundamentals per stock, isolating failures (BACKEND.md rule 4).
+
+    Returns [(stock, fundamentals | None, error_text | None)] in input order.
+    One failing stock never kills the batch.
+    """
+
+    def fetch_one(stock: dict) -> tuple[dict, dict | None, str | None]:
+        try:
+            return stock, provider.fundamentals(stock["symbol"]), None
+        except Exception as e:  # noqa: BLE001 — per-stock isolation, never re-raise
+            logger.warning("fundamentals fetch failed for %s: %s", stock["symbol"], e)
+            return stock, None, str(e)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        return list(pool.map(fetch_one, stocks))
+
+
+def _prepare(provider: DataProvider, session_factory) -> dict:
+    """Stages 1-2: refresh the shared snapshot and build the candidate rows.
+
+    Gate failures cost no network calls; only symbols whose snapshot is not from
+    today (plus symbols with no row) are refreshed. Returns everything the
+    evaluation stage needs, so a batch can evaluate many screens on one snapshot.
+    """
+    today = date.today().isoformat()
+    stocks = provider.list_stocks()
+
+    with session_factory() as session:
+        existing = {s.symbol: s for s in session.query(Stock).all()}
+        for stock_data in stocks:
+            stock = existing.get(stock_data["symbol"])
+            if stock is None:
+                stock = Stock(symbol=stock_data["symbol"], name=stock_data["name"], sector=stock_data["sector"])
+                session.add(stock)
+                existing[stock.symbol] = stock
+            stock.name = stock_data["name"]
+            stock.sector = stock_data["sector"]
+
+        symbols = [stock_data["symbol"] for stock_data in stocks]
+        latest = latest_ok_fundamentals(session, symbols)
+        stored_rows = {
+            symbol: stored_row(symbol, latest[symbol], existing[symbol].market_cap)
+            for symbol in symbols
+            if symbol in latest
+        }
+
+        # Refresh every symbol whose snapshot is not from today (plus symbols with
+        # no stored row), so one run fills the shared DB for all users. Rejections
+        # are computed once, on the best values (fresh where fetched, stored else).
+        refresh_symbols = [
+            symbol for symbol in symbols if symbol not in latest or latest[symbol].date != today
+        ]
+        stock_by_symbol = {stock_data["symbol"]: stock_data for stock_data in stocks}
+        results = _fetch_all(provider, [stock_by_symbol[symbol] for symbol in refresh_symbols])
+
+        fresh_rows: dict[str, dict] = {}
+        failed_symbols: list[str] = []
+        for stock_data, f, error in results:
+            symbol = stock_data["symbol"]
+            if f is None:
+                failed_symbols.append(symbol)
+                # A failed refresh must never clobber a good same-day snapshot
+                # (same rule as the stock detail path).
+                today_row = session.get(Fundamental, (symbol, today))
+                if today_row is None or today_row.data_status != "ok":
+                    session.merge(
+                        Fundamental(
+                            symbol=symbol,
+                            date=today,
+                            data_status="failed",
+                            raw_json=json.dumps({"error": error or "fetch failed"}),
+                        )
+                    )
+                continue
+
+            # Never null out a known market cap because a later fetch failed.
+            if f.get("market_cap") is not None:
+                existing[symbol].market_cap = f["market_cap"]
+            session.merge(
+                Fundamental(
+                    symbol=f["symbol"],
+                    date=today,
+                    pe=f["pe"],
+                    pb=f["pb"],
+                    roe=f["roe"],
+                    roce=f["roce"],
+                    debt_to_equity=f["debt_to_equity"],
+                    data_status="ok",
+                    raw_json=json.dumps(trim_raw(f["raw"]), default=str),
+                )
+            )
+            upsert_profile(session, symbol, f["raw"], today)
+            fresh_rows[symbol] = {**f, "market_cap": f.get("market_cap"), "data_date": today}
+
+        # Fresh values win; a failed refresh falls back to the stored row. Every
+        # symbol with data (today's or stored) is evaluated once on the best values.
+        candidates = [
+            fresh_rows.get(symbol) or stored_rows[symbol]
+            for symbol in symbols
+            if symbol in fresh_rows or symbol in stored_rows
+        ]
+        session.commit()
+        return {
+            "today": today,
+            "candidates": candidates,
+            "failed_symbols": failed_symbols,
+            "total": len(stocks),
+            "stale_provider": bool(getattr(provider, "stale", False)),
+        }
+
+
+
+def _evaluate_and_store(
+    session_factory,
+    user_id: int,
+    prepared: dict,
+    criteria: list[dict],
+    shortlist_size: int,
+    set_id: int | None,
+    triggered_by: str,
+) -> dict:
+    """Stages 3-4: gate the prepared rows, rank, persist one ScreenRun."""
+    with session_factory() as session:
+        survivors, rejected = screen_rows(prepared["candidates"], criteria)
+
+        shortlist = rank_shortlist(survivors, shortlist_size)
+        stale = prepared["stale_provider"] or any(
+            row.get("data_date") != prepared["today"] for row in shortlist
+        )
+
+        run = ScreenRun(
+            run_date=prepared["today"],
+            user_id=user_id,
+            set_id=set_id,
+            triggered_by=triggered_by,
+            criteria_json=json.dumps(criteria),
+            shortlisted_json=json.dumps(shortlist),
+        )
+        session.add(run)
+        session.commit()
+        session.refresh(run)
+        return {
+            "run_id": run.id,
+            "shortlisted": shortlist,
+            "failed_count": len(prepared["failed_symbols"]),
+            "failed_symbols": prepared["failed_symbols"],
+            "failed_details": rejected,
+            "stale": stale,
+            "total": prepared["total"],
+        }
+
+
+
+def run_screen(
+    provider: DataProvider,
+    session_factory,
+    user: dict,
+    criteria: list[dict],
+    shortlist_size: int = 10,
+    set_id: int | None = None,
+) -> dict:
+    """Run the staged fundamental screen for one user and persist it.
+
+    Public wrapper kept for direct callers: one prepare stage plus one manual
+    evaluation. The batch path reuses the same stages for the extra screens.
+    """
+    prepared = _prepare(provider, session_factory)
+    return _evaluate_and_store(
+        session_factory, user["id"], prepared, criteria, shortlist_size, set_id, "manual"
+    )
+
+
+
+def run_screen_batch(provider: DataProvider, session_factory, user: dict) -> dict:
+    """One Run Screen: the active set (manual) plus the 3 most-used others (auto).
+
+    All screens evaluate the same prepared candidates, so the batch costs one
+    network stage. An extra screen failing is caught and reported; the active
+    result always comes back.
+    """
+    active = get_active_set(session_factory, user["id"])
+    prepared = _prepare(provider, session_factory)
+    result = _evaluate_and_store(
+        session_factory,
+        user["id"],
+        prepared,
+        active["criteria"],
+        active["shortlist_size"],
+        active["id"],
+        "manual",
+    )
+    extras: list[dict] = []
+    for row in most_used_sets(session_factory, user["id"], limit=3, exclude_id=active["id"]):
+        try:
+            extra = _evaluate_and_store(
+                session_factory,
+                user["id"],
+                prepared,
+                row["criteria"],
+                row["shortlist_size"],
+                row["id"],
+                "auto",
+            )
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": extra["run_id"],
+                    "shortlisted": len(extra["shortlisted"]),
+                    "error": None,
+                }
+            )
+        except Exception as e:  # noqa: BLE001 — one extra never kills the batch
+            logger.warning("extra screen run failed for set %s: %s", row["id"], e)
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": None,
+                    "shortlisted": None,
+                    "error": str(e),
+                }
+            )
+    result["extra_runs"] = extras
+    return result
+
+
+
+def most_used_sets(
+    session_factory, user_id: int, limit: int = 3, exclude_id: int | None = None
+) -> list[dict]:
+    """Screens the caller runs most, from their last 10 manual runs.
+
+    Auto runs (the batch's extra screens) never count, so the ranking reflects
+    the user's own choices and cannot reinforce itself. Deleted screens drop out
+    because their runs keep a NULL ``set_id``; ``exclude_id`` drops the active
+    screen. Order: uses desc, most recent run desc, id asc.
+    """
+    with session_factory() as session:
+        runs = (
+            session.query(ScreenRun)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.triggered_by == "manual")
+            .order_by(ScreenRun.id.desc())
+            .limit(MANUAL_RUN_WINDOW)
+            .all()
+        )
+        counts: dict[int, int] = {}
+        latest_run: dict[int, int] = {}
+        for run in runs:  # newest first
+            if run.set_id is None:
+                continue
+            counts[run.set_id] = counts.get(run.set_id, 0) + 1
+            latest_run.setdefault(run.set_id, run.id)
+        if exclude_id is not None:
+            counts.pop(exclude_id, None)
+        if not counts:
+            return []
+        rows = {
+            row.id: row
+            for row in session.query(ScreeningSet).filter(ScreeningSet.id.in_(list(counts)))
+        }
+        picked = [rows[set_id] for set_id in counts if set_id in rows]
+        picked.sort(key=lambda row: (-counts[row.id], -latest_run[row.id], row.id))
+        return [_projection(row) for row in picked[:limit]]
+
+def snapshot_extra_runs(provider, session_factory, user_id, active_set_id, limit=3):
+    """Immediate multi-screen extras on the stored snapshot (no network).
+
+    Union of the Phase 1.8 batch idea with the cached-first runner: the
+    active screen already ran via run_snapshot_screen; evaluate up to
+    limit most-used other screens on the same stored snapshot and persist
+    one triggered_by=auto ScreenRun each. A failing extra is reported,
+    never raised. The background job later refines every screen.
+    """
+    extras = []
+    try:
+        candidates = most_used_sets(session_factory, user_id, limit=limit, exclude_id=active_set_id)
+    except Exception as e:
+        logger.warning('extra screens lookup failed: %s', e)
+        return extras
+    today = date.today().isoformat()
+    try:
+        stocks = provider.list_stocks()
+    except Exception as e:
+        logger.warning('extra screens skipped, universe unavailable: %s', e)
+        return [{'set_id': c['id'], 'name': c['name'], 'run_id': None, 'shortlisted': None, 'error': str(e)} for c in candidates]
+    stale_flag = bool(getattr(provider, 'stale', False))
+    for cand in candidates:
+        try:
+            with session_factory() as session:
+                shortlist, rejected, stale = evaluate_stored_screen(session, stocks, cand['criteria'], cand['shortlist_size'], stale_flag, today)
+                run = ScreenRun(run_date=today, user_id=user_id, set_id=cand['id'], triggered_by='auto', criteria_json=json.dumps(cand['criteria']), shortlisted_json=json.dumps(shortlist))
+                session.add(run)
+                session.commit()
+                session.refresh(run)
+                run_id = run.id
+            extras.append({'set_id': cand['id'], 'name': cand['name'], 'run_id': run_id, 'shortlisted': len(shortlist), 'error': None})
+        except Exception as e:
+            logger.warning('extra screen run failed for set %s: %s', cand['id'], e)
+            extras.append({'set_id': cand['id'], 'name': cand['name'], 'run_id': None, 'shortlisted': None, 'error': str(e)})
+    return extras

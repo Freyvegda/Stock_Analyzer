@@ -28,8 +28,8 @@ import {
   type Quality,
   type RiverBand,
 } from './pagodaWorld'
-import { pathPlan, pathRibbon } from './pagodaScene'
-import { mergePlaced, ribbonStrip, ridgeStrip, toriiParts } from './worldGeometry'
+import { pathPlan } from './pagodaScene'
+import { mergePlaced, pavingGeometry, ribbonStrip, ridgeStrip, toriiParts } from './worldGeometry'
 
 /**
  * The world the pagoda stands in.
@@ -195,8 +195,9 @@ export function PagodaEnvironment({
         <meshStandardMaterial color={mix(light.bank, dark.bank)} roughness={0.95} />
       </mesh>
 
-      {/* The walk the gates stand on. Static — built once, never rewritten. */}
-      <PathStrip plan={walk} colour={mix(light.path, dark.path)} />
+      {/* The stone walk the gates stand on: slabs and kerbs, one merged
+          buffer, built once. It is what the camera walks. */}
+      <Paving plan={walk} colour={mix(light.path, dark.path)} />
 
       {/* The river, flowing across the frame behind the pagoda. */}
       <River band={river} colour={mix(light.water, dark.water)} t={t} ripple={ripple} night={night} />
@@ -414,14 +415,14 @@ function SkyDome({ night, sky }: { night: boolean; sky: ReturnType<typeof skyGra
 }
 
 /**
- * The walkway, as one static ribbon from the plinth to the viewer.
+ * The stone walk: a merged run of paving slabs with kerbs either side.
  *
- * It carries the gates (they stand on its centre line) and it is what the
- * camera walks. Built once: the walk does not animate, so it costs one draw
- * call and ~70 vertices for the whole journey.
+ * Built once — the walk does not animate — so the whole journey costs one draw
+ * call of a few hundred vertices. The slabs are laid on the pathPlan line,
+ * which the gates stand on and the camera walks.
  */
-function PathStrip({ plan, colour }: { plan: ReturnType<typeof pathPlan>; colour: Color }) {
-  const geometry = useMemo(() => ribbonStrip(pathRibbon(plan)), [plan])
+function Paving({ plan, colour }: { plan: ReturnType<typeof pathPlan>; colour: Color }) {
+  const geometry = useMemo(() => pavingGeometry(plan), [plan])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (
     <mesh geometry={geometry} receiveShadow>

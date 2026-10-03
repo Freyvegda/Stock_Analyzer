@@ -106,6 +106,9 @@ class ScreenRun(Base):
     set_id: Mapped[int | None] = mapped_column(
         ForeignKey("screening_sets.id"), nullable=True, index=True
     )
+    triggered_by: Mapped[str] = mapped_column(
+        String, nullable=False, server_default="manual", default="manual"
+    )
     criteria_json: Mapped[str] = mapped_column(Text, nullable=False)
     shortlisted_json: Mapped[str] = mapped_column(Text, nullable=False)
 

@@ -17,6 +17,17 @@ function vertexCount(geometry: { getAttribute: (n: string) => { count: number } 
   return geometry.getAttribute('position')?.count ?? 0
 }
 
+/** Any vertex further forward than `z`? Used to spot the proud door leaves. */
+function hasVertexBeyondZ(
+  geometry: { getAttribute: (n: string) => { count: number; getZ: (i: number) => number } | undefined },
+  z: number,
+) {
+  const pos = geometry.getAttribute('position')
+  if (!pos) return false
+  for (let i = 0; i < pos.count; i += 1) if (pos.getZ(i) > z) return true
+  return false
+}
+
 /**
  * Built once per (tier, ground) and reused.
  *
@@ -78,11 +89,16 @@ describe('buildStorey', () => {
   })
 
   it('gives the ground storey a door and the upper ones none', () => {
-    // The door is a merged part, so it is measured by the trim's vertex count
-    // growing when it is present.
+    // The door leaves are merged into the soffit at z = wall + 0.028, standing
+    // proud of every lattice bar (wall + 0.01). A vertex beyond wall + 0.015 is
+    // a door leaf — and the upper storey cannot produce one. This used to
+    // compare trim vertex counts, which the veranda rails (upper storeys only)
+    // poisoned: the proxy, not the door, decided the test.
+    const half = layout[0].bodyWidth / 2
     const ground = storeyFor(0, true)
     const upper = storeyFor(0, false)
-    expect(vertexCount(ground.trim!)).toBeGreaterThan(vertexCount(upper.trim!))
+    expect(hasVertexBeyondZ(ground.soffit!, half + 0.015)).toBe(true)
+    expect(hasVertexBeyondZ(upper.soffit!, half + 0.015)).toBe(false)
   })
 
   it('re-origins each lantern at its own cord top, so the swing pivots at the eave', () => {
@@ -117,6 +133,45 @@ describe('buildStorey', () => {
     // All of it above the eave line, which is the roof group's own origin.
     storey.roofTrim!.computeBoundingBox()
     expect(storey.roofTrim!.boundingBox!.min.y).toBeGreaterThanOrEqual(-1e-6)
+  })
+
+  it('sits the veranda deck at the storey floor, not under its own roof', () => {
+    // The deck is the storey's floor slab: at its base, projecting past the
+    // wall. Up under the eave it belonged to no storey in particular.
+    const tier = layout[1]
+    const storey = storeyFor(1, false)
+    storey.deck.computeBoundingBox()
+    const bb = storey.deck.boundingBox!
+    expect(bb.max.y).toBeLessThan(tier.bodyHeight * 0.2)
+    expect(bb.min.y).toBeGreaterThan(-0.1)
+    expect(bb.max.x - bb.min.x).toBeGreaterThan(tier.bodyWidth)
+  })
+
+  it('keeps the hip ridges on the roof, not poking out past its edge', () => {
+    // The ridge bars sit at one height on the roof. Sized from the old roof they
+    // overshot the surface at radius, and every roof grew a pair of thin wings.
+    // Each ridge vertex must sit on or under the surface above it.
+    const tier = layout[1]
+    const storey = storeyFor(1, false)
+    const pos = storey.roofTrim!.getAttribute('position')
+    const profile = (at: number) => {
+      const bendAt = 0.46
+      const bendY = 0.5 * tier.roofRise
+      return at <= bendAt
+        ? tier.roofRise - (tier.roofRise - bendY) * (at / bendAt)
+        : (bendY * (1 - at)) / (1 - bendAt)
+    }
+    let checked = 0
+    for (let i = 0; i < pos.count; i += 1) {
+      const r = Math.max(Math.abs(pos.getX(i)), Math.abs(pos.getZ(i))) / tier.roofHalfSpan
+      if (r >= 1) continue // a course may kiss the eave edge
+      expect(
+        pos.getY(i),
+        `roof trim at r=${r.toFixed(3)} floats above the roof surface`,
+      ).toBeLessThanOrEqual(profile(r) + 0.05)
+      checked += 1
+    }
+    expect(checked).toBeGreaterThan(0)
   })
 
   it('is deterministic', () => {

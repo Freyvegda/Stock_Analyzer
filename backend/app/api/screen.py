@@ -127,7 +127,24 @@ def run_screen(user: dict = Depends(current_user)):
         # skips it forever and the account is wedged until a restart.
         service.unregister_active_job(job["id"])
         raise
-    return {"run": run, "job": service.latest_job(SessionLocal, user["id"])}
+    # Multi-screen extras (Phase 1.8 batch, union merge): evaluate the most-used
+    # other screens on the same stored snapshot — zero network — and persist one
+    # triggered_by=auto run each. The background job refines every screen later.
+    extra_runs = service.snapshot_extra_runs(
+        provider, SessionLocal, user["id"], stored["id"]
+    )
+    latest = service.latest_job(SessionLocal, user["id"])
+    return {
+        "run": run,
+        "job": latest,
+        "shortlisted": run["shortlisted"],
+        "failed_count": run["failed_count"],
+        "failed_symbols": run["failed_symbols"],
+        "failed_details": run["failed_details"],
+        "stale": run["stale"],
+        "total": run["total"],
+        "extra_runs": extra_runs,
+    }
 
 
 @router.get("/jobs/latest")

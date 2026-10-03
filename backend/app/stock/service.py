@@ -114,11 +114,15 @@ def _snapshot(row: Fundamental, stock: Stock) -> dict:
     }
 
 
-def _latest_run_entry(session, user_id: int, symbol: str) -> dict | None:
-    """Symbol's rank/score inside the caller's latest screen run, if present."""
+def _latest_run_entry(session, user_id: int, symbol: str, set_id: int) -> dict | None:
+    """Symbol's rank/score inside the active screen's latest run, if present.
+
+    Scoped to the active set: with auto-runs stored, the user's newest run can
+    belong to another screen and must not feed this chip.
+    """
     run = (
         session.query(ScreenRun)
-        .filter(ScreenRun.user_id == user_id)
+        .filter(ScreenRun.user_id == user_id, ScreenRun.set_id == set_id)
         .order_by(ScreenRun.id.desc())
         .first()
     )
@@ -149,7 +153,10 @@ def _detail_payload(
     warning: str | None,
 ) -> dict:
     snapshot = _snapshot(row, stock)
-    criteria = screener_service.get_criteria(session_factory, user_id)["criteria"]
+    active = screener_service.get_active_set(session_factory, user_id)
+    report_sets = [active] + screener_service.most_used_sets(
+        session_factory, user_id, limit=3, exclude_id=active["id"]
+    )
     sections = digest_builder.build_sections(snapshot)
     public_snapshot = {
         key: snapshot[key]
@@ -161,7 +168,15 @@ def _detail_payload(
         "sector": stock.sector,
         "market_cap": stock.market_cap,
         "snapshot": public_snapshot,
-        "report": report_builder.build_report(snapshot, criteria),
+        "reports": [
+            {
+                "set_id": row["id"],
+                "name": row["name"],
+                "is_active": bool(row["is_active"]),
+                "report": report_builder.build_report(snapshot, row["criteria"]),
+            }
+            for row in report_sets
+        ],
         "profile": store.read_profile(session, stock.symbol),
         "main_ratios": sections["main_ratios"],
         "has": sections["has"],
@@ -169,7 +184,7 @@ def _detail_payload(
         "other_groups": sections["other_groups"],
         "data_date": snapshot["date"],
         "stale": snapshot["date"] != _today(),
-        "run": _latest_run_entry(session, user_id, stock.symbol),
+        "run": _latest_run_entry(session, user_id, stock.symbol, active["id"]),
         "refreshed": refreshed,
         "warning": warning,
     }

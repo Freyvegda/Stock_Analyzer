@@ -7,12 +7,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { TOWER_TIERS } from '@/content/tower'
-import { GATE_SOFT_REACH, toriiPath } from '../pagodaWorld'
+import { GATE_SOFT_REACH, toriiPath, CAMERA_FOV } from '../pagodaWorld'
 import {
   LANTERN_LIMIT,
   MAX_LANTERN_LIGHTS,
   SCROLL_SPAN,
   STAGE_COUNT,
+  VERANDA_PROJECTION,
   baseDetail,
   clamp,
   finialLayout,
@@ -31,6 +32,18 @@ import {
   tierStage,
   towerPose,
 } from '../pagodaScene'
+
+/**
+ * The roof's mid-side profile, as specified: two straight bands meeting at
+ * 0.46 of the way from ridge to eave, with the bend at half the rise.
+ * Hand-coded from the design, not read from the module under test.
+ */
+function roofProfile(rise: number, at: number): number {
+  const bendAt = 0.46
+  const bendY = 0.5 * rise
+  if (at <= bendAt) return rise - (rise - bendY) * (at / bendAt)
+  return (bendY * (1 - at)) / (1 - bendAt)
+}
 
 describe('stage maths', () => {
   it('derives the stage count from the tier array', () => {
@@ -78,11 +91,43 @@ describe('pagodaLayout', () => {
     }
   })
 
-  it('stacks upward without gaps or overlaps', () => {
+  it('seats each balcony floor on the roof below, with the roof rising against the wall', () => {
+    // The bug this replaces: a storey whose base sat on the roof's *apex*, so
+    // its bottom corners hung in the air over the slope. The floor rests on the
+    // roof at the veranda edge, and the roof keeps rising past it to meet the
+    // wall — the wall is pierced by its own foundation roof, not balanced on it.
     for (let i = 1; i < layout.length; i += 1) {
       const prev = layout[i - 1]
-      const top = prev.y + prev.bodyHeight + prev.roofRise
-      expect(layout[i].y).toBeGreaterThanOrEqual(top - 1e-9)
+      const verandaAt = (layout[i].roofHalfSpan * VERANDA_PROJECTION) / prev.roofHalfSpan
+      const expected = prev.y + prev.bodyHeight + roofProfile(prev.roofRise, verandaAt)
+      expect(layout[i].y, `storey ${i} not seated on the roof below`).toBeCloseTo(expected, 9)
+      // the roof surface at the wall is above the storey's floor: the roof
+      // wraps the base of the wall rather than stopping at the balcony edge
+      const wallAt = layout[i].bodyWidth / 2 / prev.roofHalfSpan
+      const wallSurface = prev.y + prev.bodyHeight + roofProfile(prev.roofRise, wallAt)
+      expect(wallSurface, `tier ${i} roof does not reach the wall`).toBeGreaterThan(layout[i].y)
+    }
+  })
+
+  it('tucks each roof ridge inside the storey above, never below it', () => {
+    // The roof wraps the base of the storey above: its ridge is buried in that
+    // storey, not left poking out under the floor.
+    for (let i = 1; i < layout.length; i += 1) {
+      const prev = layout[i - 1]
+      const ridge = prev.y + prev.bodyHeight + prev.roofRise
+      expect(ridge, `tier ${i} roof ridge below its floor`).toBeGreaterThan(layout[i].y)
+      expect(ridge, `tier ${i} roof ridge above its ceiling`).toBeLessThan(
+        layout[i].y + layout[i].bodyHeight,
+      )
+    }
+  })
+
+  it('gives every roof a deep eave, nearly twice the wall half-width', () => {
+    // Shallow eaves make the roof read as a lid on the box. A pagoda roof is a
+    // wide skirt: its half-span is about twice the wall's.
+    for (let i = 0; i < layout.length; i += 1) {
+      const wallHalf = layout[i].bodyWidth / 2
+      expect(layout[i].roofHalfSpan / wallHalf, `tier ${i} eave`).toBeGreaterThanOrEqual(1.8)
     }
   })
 
@@ -266,20 +311,58 @@ describe('towerPose', () => {
 
   it('reaches its working size by the overview stage', () => {
     const pose = towerPose(1 / SCROLL_SPAN)
-    expect(pose.scale).toBeGreaterThan(0.5)
+    expect(pose.scale).toBeGreaterThan(0.37)
   })
 
-  it('slides left and hands the camera to exactly one storey per tier stage', () => {
+  it('holds one eye line through every storey — the walk does not climb the tower', () => {
     const layout = pagodaLayout(n)
+    const poses = TOWER_TIERS.map((_, i) => towerPose(tierStage(i) / SCROLL_SPAN))
+    // One look height for all four sections, and it is not any storey's centre:
+    // the reveal is the walk past the gates, seen from a distance, not a climb
+    // up the tower.
+    for (const pose of poses) expect(pose.cameraY).toBeCloseTo(poses[0].cameraY, 9)
+    const centres = poses.map(
+      (pose, i) => (layout[i].y + layout[i].bodyHeight / 2) * pose.scale + pose.y,
+    )
+    // The storey centres really do differ, but the eye line is one value: it
+    // cannot be sitting on each of them in turn the way the old climb did.
+    expect(Math.max(...centres) - Math.min(...centres)).toBeGreaterThan(0.5)
+    const distanceToCentres = centres.reduce((sum, c) => sum + Math.abs(poses[0].cameraY - c), 0)
+    expect(distanceToCentres).toBeGreaterThan(0.5)
     for (let i = 0; i < n; i += 1) {
-      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
-      expect(pose.x).toBeLessThan(-0.4)
+      const pose = poses[i]
+      // one storey at a time is still the rule; only the camera's behaviour changed
       expect(pose.activeTier).toBe(i)
       expect(pose.tiers[i].emphasis).toBeCloseTo(1, 5)
-      // The open storey is framed, not merely scrolled past: the camera rises to
-      // its centre in the tower's own scaled space.
-      const centre = (layout[i].y + layout[i].bodyHeight / 2) * pose.scale + pose.y
-      expect(pose.cameraY, `tier ${i} is centred`).toBeCloseTo(centre, 1)
+    }
+    // and the eye line sits below the tower's ridge, so the whole building is
+    // in front of the camera, not behind it
+    const top = (layout[n - 1].y + layout[n - 1].bodyHeight + layout[n - 1].roofRise) * poses[0].scale + poses[0].y
+    expect(poses[0].cameraY).toBeLessThan(top)
+    for (const pose of poses) {
+      expect(pose.x, 'the tower has not slid left for the copy column').toBeLessThan(-0.4)
+      expect(pose.activeTier).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('keeps its distance: every rest is outside the gate line, with the pagoda whole', () => {
+    // The complaint this fixes: the camera used to end inside the gate line at
+    // z = 2.35, where the tower filled the frame and the top storeys were
+    // cropped. The walk now stops well short of the building.
+    const rests = TOWER_TIERS.map((_, i) => towerPose(tierStage(i) / SCROLL_SPAN).cameraZ)
+    expect(Math.min(...rests)).toBeGreaterThan(3)
+  })
+
+  it('frames the whole tower at every rest — base and ridge both inside', () => {
+    const layout = pagodaLayout(n)
+    const top = (layout[n - 1].y + layout[n - 1].bodyHeight + layout[n - 1].roofRise)
+    for (let i = 0; i < n; i += 1) {
+      const pose = towerPose(tierStage(i) / SCROLL_SPAN)
+      const half = Math.tan((CAMERA_FOV * Math.PI) / 360) * pose.cameraZ
+      const base = pose.y
+      const ridge = pose.y + top * pose.scale
+      expect(base, `tier ${i} base below the frame`).toBeGreaterThan(pose.cameraY - half)
+      expect(ridge, `tier ${i} ridge above the frame`).toBeLessThan(pose.cameraY + half)
     }
   })
 
@@ -479,10 +562,16 @@ describe('tierDetail', () => {
     }
   })
 
-  it('sits the balcony between the body top and the eave', () => {
+  it('sits the veranda at the storey floor, just above the roof below', () => {
+    // The balconies belong at the *bottom* of each storey — its floor, above
+    // the roof below — as in the reference. Sited under the storey's own eave
+    // they read as a shelf on the wall instead of a balcony you could stand on.
     const d = tierDetail(layout[2])
     expect(d.balconyY).toBeGreaterThan(0)
+    expect(d.balconyY).toBeLessThan(layout[2].bodyHeight * 0.2)
+    // It projects past the wall, but stays inside the eave that shelters it.
     expect(d.balconyWidth).toBeGreaterThan(layout[2].bodyWidth)
+    expect(d.balconyWidth).toBeLessThan(layout[2].roofHalfSpan * 2)
     expect(d.railingHeight).toBeGreaterThan(0)
   })
 })
@@ -557,7 +646,7 @@ describe('roof courses', () => {
   it('narrows toward the ridge', () => {
     // Tile courses are concentric and stacked; if the radius did not shrink the
     // roof would read as one flat plate again.
-    const courses = roofCourses(layout[1].roofHalfSpan)
+    const courses = roofCourses(layout[1].roofHalfSpan, layout[1].roofRise)
     expect(courses.length).toBeGreaterThan(2)
     for (let i = 1; i < courses.length; i += 1) {
       expect(courses[i].radius).toBeLessThan(courses[i - 1].radius)
@@ -565,18 +654,33 @@ describe('roof courses', () => {
     }
   })
 
+  it('lays every course on the roof surface, not sunk beneath it', () => {
+    // The bug this pins: courses were placed by an older profile, so every ring
+    // sat under the roof it was supposed to tile and was never visible. Each
+    // course must lie on the surface at its own radius — never sunk, and never
+    // floating more than the ridge's own thickness above it.
+    for (const t of layout) {
+      for (const c of roofCourses(t.roofHalfSpan, t.roofRise)) {
+        const surface = roofProfile(t.roofRise, c.radius / t.roofHalfSpan)
+        expect(c.y, `course at radius ${c.radius} is sunk`).toBeGreaterThanOrEqual(surface - 1e-9)
+        expect(c.y, `course at radius ${c.radius} floats`).toBeLessThanOrEqual(surface + 0.02)
+      }
+    }
+  })
+
   it('keeps every course inside the roof it tiles', () => {
     for (const t of layout) {
-      for (const c of roofCourses(t.roofHalfSpan)) {
+      for (const c of roofCourses(t.roofHalfSpan, t.roofRise)) {
         expect(c.radius).toBeLessThanOrEqual(t.roofHalfSpan + 1e-9)
         expect(c.y).toBeGreaterThanOrEqual(0)
-        expect(c.y).toBeLessThanOrEqual(t.roofRise + 1e-9)
+        // a hair proud of the surface, so the ring's tube clears the slope
+        expect(c.y).toBeLessThanOrEqual(t.roofRise + 0.01)
       }
     }
   })
 
   it('is deterministic', () => {
-    expect(roofCourses(0.9)).toEqual(roofCourses(0.9))
+    expect(roofCourses(0.9, 0.5)).toEqual(roofCourses(0.9, 0.5))
   })
 })
 

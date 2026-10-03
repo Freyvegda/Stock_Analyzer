@@ -314,9 +314,12 @@ used.
   apex-plus-eave-ring build rather than `ConeGeometry(4)`: a square pyramid does not read as a
   pagoda, and the upturned corner is the shape that does.
 - **Detail** follows the reference illustration's anatomy, not its palette: corner posts, a
-  veranda with balusters, a ground-floor double-leaf door with ring pulls, lattice window screens,
-  concentric roof tile courses with hip ridges, and lanterns hung on visible cords from the eave
-  tips. The lanterns are the tower's own light after dark, and only a capped few carry a real
+  veranda with balusters at each storey's floor, a ground-floor double-leaf door with ring pulls,
+  lattice window screens, concentric roof tile courses with hip ridges, and lanterns hung on
+  visible cords from the eave tips. Each roof's half-span is nearly twice the wall's, and the
+  storey above sits on the roof *at its veranda edge*: the roof rises past the balcony to wrap
+  the base of the wall, so the wall is pierced by its foundation roof rather than balanced on the
+  ridge. The lanterns are the tower's own light after dark, and only a capped few carry a real
   point light — the scene's main cost control.
 - **One scroll value, two consumers.** `useScroll` produces a single `MotionValue`. The scene
   samples it inside `useFrame` (continuous, no React re-render); the DOM subscribes through
@@ -327,10 +330,12 @@ used.
   overlaps lit two storeys at once and pulled the tower apart. The other three dim — to a floor,
   not to black: the building must stay a building.
 - **The reveal is the walk.** The building never moves within itself: the storeys stay in their
-  stack and only their light changes. The camera walks the gate path — one rest point per storey,
-  each just past a gate, easing between them — so scrolling is passing through a torii, and the
-  sign-up is the step back that frames the pagoda whole. Every pose value is damped toward its
-  target in the frame loop, so scroll jitter cannot shake the building or kick the walk.
+  stack and only their light changes. The camera holds **one eye line** on the building's middle
+  — it never climbs to a storey's centre or grows the tower to fill the frame — and walks the
+  gate path, one rest point per storey, each just past a gate, easing between them. So scrolling
+  is passing through a torii while the pagoda stays whole in the distance, and the sign-up is the
+  step back that frames it whole again. Every pose value is damped toward its target in the frame
+  loop, so scroll jitter cannot shake the building or kick the walk.
 - **Passing through a gate softens the vista.** `gateSoftness` peaks as the camera crosses a
   torii and is zero at every section rest, weighted by distance — the pagoda is further away
   through the outer gates, so those are the softest. The renderer maps it to a few pixels of CSS
@@ -343,13 +348,18 @@ used.
   `BufferGeometry` whose *positions* are rewritten at the shared 8 Hz tick — the station xs never
   change, so the index buffer is built once. No reflections, deliberately: the surface answers the
   light diffusely, a faint emissive keeps it readable at night, and the meander plus the drift
-  carry the read. ~160 vertices, one draw call, and a vertex-cap test pins it. The walkway is the
-  same ribbon idea, built once and never rewritten.
+  carry the read. ~160 vertices, one draw call, and a vertex-cap test pins it.
+- **The walk is straight and paved.** `pathPlan`/`pathCentre` run the walk down the axis — a bowed
+  path read as the ground swinging underfoot while the camera walked it, and rendered as a wedge.
+  `pathSlabs` lays a jointed run of stone slabs from the plinth steps to the viewer, and
+  `pavingGeometry` merges them with a kerb either side into one buffer: slabs flush with the walk
+  surface the gates stand on, kerbs a touch proud, the run capped at twenty slabs.
 - **Cost.** Three rules, each held by a test: geometry is merged per material, repeated fields are
   a single `InstancedMesh` each, and nothing calls `setState` per frame. A storey draws a handful
   of calls rather than ninety. `pickQuality` scales particles, `dpr` and shadows to the device, so
   a modest laptop or a touch device gets the same picture with fewer particles instead of a worse
-  one. The two ribbons are budgeted and capped (river ≤ 200 vertices, walkway ≤ 80), the particle
+  one. The river ribbon is budgeted and capped (≤ 200 vertices) and the paving run is capped at
+  twenty merged slabs, the particle
   populations are ceilings in `WORLD_LIMITS`, and the gate blur is gated off on the low tier.
   Merged buffers, ribbon geometries and material sets are disposed on unmount. There is no
   drifting mist: the ridges recede by value, and full-width additive quads are exactly the fill

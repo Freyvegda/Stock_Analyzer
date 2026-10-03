@@ -48,7 +48,7 @@ export function smoothstep(t: number): number {
 
 export interface TierGeometry {
   index: number
-  /** y of the tier's base (the underside of its roof). */
+  /** y of the storey's floor — the base of its body. */
   y: number
   bodyWidth: number
   bodyHeight: number
@@ -56,24 +56,87 @@ export interface TierGeometry {
   roofRise: number
 }
 
+/** Where the roof's profile bends, as a fraction from ridge to eave. */
+const ROOF_BEND_AT = 0.46
+/**
+ * Sag exponent: how far the surface drops by the bend. Set so the bend sits at
+ * **half the rise** — the roof falls quickly near the ridge, then flares
+ * shallowly out to the eave, which is the pagoda profile. Shared with the mesh.
+ */
+const ROOF_SAG = Math.log(0.5) / Math.log(1 - ROOF_BEND_AT)
+
+/**
+ * The roof's mid-side profile height, `at` of the way from ridge to eave.
+ *
+ * The surface is two straight bands — ridge to the bend, then the long flare
+ * out to the eave. This is the exact shape `pagodaRoofVertices` builds (along
+ * the middle of a side; the corners lift above it), and the stacking below
+ * reads it so the two can never disagree about where the roof surface is.
+ */
+function roofProfileY(rise: number, at: number): number {
+  const a = clamp(at, 0, 1)
+  const bendY = Math.pow(1 - ROOF_BEND_AT, ROOF_SAG) * rise
+  if (a <= ROOF_BEND_AT) return rise - (rise - bendY) * (a / ROOF_BEND_AT)
+  return (bendY * (1 - a)) / (1 - ROOF_BEND_AT)
+}
+
+/**
+ * The inverse: how far out the roof surface reaches at a given height.
+ *
+ * Used to size the hip ridges, which sit at one height on the sloped surface.
+ * Sized from the eave span instead, they overshoot the surface and read as
+ * wings sticking out of every roof.
+ */
+export function roofRadiusAt(halfSpan: number, rise: number, y: number): number {
+  const yy = clamp(y, 0, rise)
+  const bendY = Math.pow(1 - ROOF_BEND_AT, ROOF_SAG) * rise
+  const at =
+    yy >= bendY
+      ? 1 - (yy * (1 - ROOF_BEND_AT)) / bendY
+      : ((rise - yy) * ROOF_BEND_AT) / (rise - bendY)
+  return at * halfSpan
+}
+
+/**
+ * The veranda's projection, as a fraction of the roof's half-span: the balcony
+ * floor edge reaches out to where the roof below passes underneath it.
+ */
+export const VERANDA_PROJECTION = 0.6
+
 /**
  * A pagoda tapers: every storey is narrower than the one below it, which is what
  * makes the silhouette read as a pagoda rather than a stack of boxes.
+ *
+ * Each storey's floor sits **on the roof of the storey below, at the veranda
+ * edge**: the balcony floor rests on the roof surface, and the roof keeps
+ * rising past it to wrap the base of the wall, so the wall is visibly pierced
+ * by the roof and the balcony reads as standing on the roof. Seating a storey
+ * on the roof's apex — as this first did — leaves the floor's corners hanging
+ * in the air over the slope, which reads as a box balanced on a roof.
  */
 export function pagodaLayout(n: number): TierGeometry[] {
   const tiers: TierGeometry[] = []
-  let y = 0
   for (let i = 0; i < n; i += 1) {
     const t = n === 1 ? 0 : i / (n - 1)
     // A pagoda is slender: tall walls under wide, overhanging roofs, tapering
-    // gently. Heavier taper reads as a stack of shrinking boxes instead.
+    // gently. Heavier taper reads as a stack of shrinking boxes instead. The
+    // eaves are deliberately deep — their half-span is nearly twice the wall's,
+    // which is what makes the roof a skirt rather than a lid.
     const taper = 1 - 0.11 * t
-    const bodyWidth = 1.34 * taper
-    const bodyHeight = 0.66 * (1 - 0.08 * t)
-    const roofHalfSpan = 0.95 * taper
-    const roofRise = 0.6 * (1 - 0.08 * t)
-    tiers.push({ index: i, y, bodyWidth, bodyHeight, roofHalfSpan, roofRise })
-    y += bodyHeight + roofRise
+    tiers.push({
+      index: i,
+      y: 0,
+      bodyWidth: 1.34 * taper,
+      bodyHeight: 0.62 * (1 - 0.06 * t),
+      roofHalfSpan: 1.27 * taper,
+      roofRise: 0.85 * (1 - 0.08 * t),
+    })
+  }
+  for (let i = 1; i < n; i += 1) {
+    const below = tiers[i - 1]
+    const verandaHalf = tiers[i].roofHalfSpan * VERANDA_PROJECTION
+    const at = verandaHalf / below.roofHalfSpan
+    tiers[i].y = below.y + below.bodyHeight + roofProfileY(below.roofRise, at)
   }
   return tiers
 }
@@ -116,12 +179,12 @@ export function pagodaRoofVertices(opts: RoofOptions): RoofGeometry {
   ]
 
   // A roof is not one slope but two: an upper concave sweep from the ridge, then
-  // the lower flare out to the eave. `profile` is the fraction of the way from
-  // ridge to eave, and `SAG` (>1) pushes each band *below* the straight cone —
-  // that droop is what stops the roof reading as a flat plate.
-  const SAG = 1.55
+  // the lower flare out to the eave. `bend.at` is the fraction of the way from
+  // ridge to eave, and `ROOF_SAG` (>1) pushes each band *below* the straight
+  // cone — that droop is what stops the roof reading as a flat plate. Both are
+  // module constants because `pagodaLayout` stacks storeys on this same surface.
   const BANDS: Array<{ at: number; flare: number }> = [
-    { at: 0.46, flare: 0.3 },
+    { at: ROOF_BEND_AT, flare: 0.3 },
     { at: 1, flare: 1 },
   ]
 
@@ -141,7 +204,7 @@ export function pagodaRoofVertices(opts: RoofOptions): RoofGeometry {
         const z = (az + (bz - az) * t) * band.at
         // Only the eave ring flicks up; the upper band stays on the curve.
         const lift = isEave ? eaveLift * Math.max(bump(t, cornerSpan), bump(1 - t, cornerSpan)) : 0
-        const y = rise * Math.pow(1 - band.at, SAG) + lift
+        const y = rise * Math.pow(1 - band.at, ROOF_SAG) + lift
         const j = jitter * wobble(side, s)
         const index = positions.length / 3
         positions.push(x + j, y, z)
@@ -268,8 +331,12 @@ export function tierDetail(tier: TierGeometry): TierDetail {
   return {
     columns,
     lanterns,
-    balconyY: tier.bodyHeight * 0.92,
-    balconyWidth: tier.roofHalfSpan * 1.78,
+    // The veranda is the storey's floor: at its base, sheltered by this
+    // storey's own eave, with the roof below passing under its edge. It
+    // projects to `VERANDA_PROJECTION` of the eave, which is what `pagodaLayout`
+    // seats the storey on.
+    balconyY: 0.02,
+    balconyWidth: tier.roofHalfSpan * VERANDA_PROJECTION * 2,
     railingHeight: 0.075,
     balusters: 7,
   }
@@ -394,18 +461,19 @@ const ROOF_COURSES = 5
  *
  * A pagoda roof reads as tiled precisely because the slope is stepped, not
  * because it is a smooth cone. `radius` shrinks and `y` rises toward the ridge,
- * which is the direction the test pins.
+ * which is the direction the test pins, and each course's `y` is the roof's own
+ * surface height at its radius — a course placed by any other profile sits
+ * under the roof and is never seen.
  */
-export function roofCourses(halfSpan: number): RoofCourse[] {
+export function roofCourses(halfSpan: number, rise: number): RoofCourse[] {
   // Eave first, ridge last, so a caller's straight walk inward sees the radius
   // shrink and the height rise — the direction the courses are actually laid.
   return Array.from({ length: ROOF_COURSES }, (_, i) => {
     const at = 1 - (i + 1) / ROOF_COURSES
     return {
       radius: halfSpan * at,
-      // Matches the SAG curve the roof itself uses, so a course sits *on* the
-      // slope rather than floating above it.
-      y: halfSpan * 0.5 * Math.pow(1 - at, 1.55),
+      // On the surface, a hair proud so the ring's tube clears the slope.
+      y: roofProfileY(rise, at) + 0.004,
       step: halfSpan * 0.06,
     }
   })
@@ -578,20 +646,20 @@ export function lightingRig(mode: LightMode): LightingRig {
 // --- the walkway ------------------------------------------------------------
 
 export interface PathPlan {
+  /** The paving surface: the line the gates stand on and the camera walks. */
   y: number
   halfWidth: number
   /** Where the walk starts, behind the camera. */
   nearZ: number
-  /** Where it meets the plinth steps. */
+  /** Where the paving run meets the plinth steps. */
   farZ: number
-  /** Station spacing along the walk. */
-  step: number
 }
 
-/** The most the walkway may bow away from the centre line. */
-export const PATH_AMPL = 0.5
-/** The bow's wavelength along the walk. */
-const PATH_WAVE = 15
+/** Nominal slab depth and joint width along the walk. */
+const SLAB_DEPTH = 0.42
+const SLAB_JOINT = 0.025
+/** How many slabs the run may use. The whole walk is merged into one buffer. */
+export const SLAB_LIMIT = 20
 
 /**
  * The walk the camera takes, from the viewer's side to the pagoda's steps.
@@ -601,36 +669,44 @@ const PATH_WAVE = 15
  * direction of import keeps the two from drifting apart.
  */
 export function pathPlan(): PathPlan {
-  return { y: -0.16, halfWidth: 0.55, nearZ: 6.8, farZ: 1, step: 0.35 }
+  return { y: -0.12, halfWidth: 0.55, nearZ: 6.8, farZ: 0.8 }
 }
 
 /**
  * The walkway's centre line at `z`.
  *
- * Straight on the centre line from the plinth out to `farZ` — so the last steps
- * line up with the building — then bowing out and back over the walk.
+ * Straight on the axis, everywhere: a bowed path read as the ground swinging
+ * underfoot while the camera walked it, and rendered as a wedge of stone. One
+ * definition, shared by the camera, the gates and the paving.
  */
-export function pathCentre(z: number): number {
-  const plan = pathPlan()
-  if (z <= plan.farZ) return 0
-  const ramp = smoothstep((z - plan.farZ) / 5.5)
-  const wave = Math.sin(((z - plan.farZ) / PATH_WAVE) * Math.PI * 2)
-  return PATH_AMPL * ramp * wave
+export function pathCentre(_z: number): number {
+  return 0
+}
+
+export interface PathSlab {
+  /** Slab centre, along the walk. */
+  z: number
+  /** Slab depth; across the walk it spans `2 * halfWidth`. */
+  depth: number
+  halfWidth: number
 }
 
 /**
- * The walkway as a ribbon, near to far, as flat (x, y, z) triples: two vertices
- * per station. Static: the walk does not animate, so this is built once.
+ * The stone paving, as a run of slabs laid from the steps out to the viewer.
+ *
+ * Uniform slabs and joints, sized so the run covers `[farZ, nearZ]` exactly: a
+ * partial slab at either end would render as a ragged edge of stone. Counted
+ * and capped, because the run is merged into a single buffer downstream.
  */
-export function pathRibbon(plan: PathPlan): number[] {
-  const stations = Math.floor((plan.nearZ - plan.farZ) / plan.step) + 1
-  const out: number[] = []
-  for (let s = 0; s < stations; s += 1) {
-    const z = plan.nearZ - s * plan.step
-    const centre = pathCentre(z)
-    out.push(centre - plan.halfWidth, plan.y, z, centre + plan.halfWidth, plan.y, z)
-  }
-  return out
+export function pathSlabs(plan: PathPlan): PathSlab[] {
+  const span = plan.nearZ - plan.farZ
+  const count = Math.min(SLAB_LIMIT, Math.max(1, Math.ceil(span / (SLAB_DEPTH + SLAB_JOINT))))
+  const depth = (span - (count - 1) * SLAB_JOINT) / count
+  return Array.from({ length: count }, (_, i) => ({
+    z: plan.farZ + depth / 2 + i * (depth + SLAB_JOINT),
+    depth,
+    halfWidth: plan.halfWidth,
+  }))
 }
 
 // --- the scroll pose -------------------------------------------------------
@@ -664,18 +740,22 @@ const DIMMED = 0.58
 /**
  * The camera's rest points: one just past each gate, then the pagoda itself.
  *
- * The gates stand a little way off the building (user direction), so the walk
- * reads as approaching it; the call to action is the last step, at the steps.
+ * The whole row of gates stands in the middle distance, in front of the pagoda
+ * (`toriiPath`), so the walk never leaves the middle of the approach: the
+ * building stays whole in the frame from the first tier to the last.
  */
-const FIRST_REST = 5.05
-const LAST_REST = 2.35
+const FIRST_REST = 5.27
+const LAST_REST = 3.17
 /**
- * The sign-up's view: back out past the first gate, where the pagoda reads
+ * The sign-up's view: one step back out of the walk, where the pagoda reads
  * whole with air around it. Chosen off every gate so the frame stays sharp.
  */
-const CTA_REST = 5.1
-/** Where the camera looks on arrival: the pagoda's middle, as a whole shape. */
-const CTA_CAMERA_Y = 0.45
+const CTA_REST = 3.85
+/**
+ * The one eye line for the walk. The camera looks at the building's middle,
+ * never at a storey's centre: the reveal is the walk, not a climb.
+ */
+const LOOK_Y = 0.35
 
 /** Sample a value across integer stage anchors, eased between them. */
 function sampleStages(keys: number[], values: number[], s: number): number {
@@ -694,29 +774,31 @@ function sampleStages(keys: number[], values: number[], s: number): number {
  *
  * hero -> tower small and low, camera wide; overview -> full size, centred;
  * tier i -> the camera walks one more rest point along the gate path toward the
- * pagoda, passing through the torii on the way and rising to the storey's
- * centre; cta -> the last step: the camera arrives at the pagoda's steps and
- * looks up at it as a whole.
+ * pagoda, passing through a torii on the way — one gate per storey — while
+ * holding one eye line on the building's middle; cta -> a step back that frames
+ * the pagoda whole.
  *
  * The building never moves within itself: the storeys stay in their stack and
- * only their light changes. The journey is the camera's, which is why the pose
- * carries a camera rest point per storey rather than any per-storey offset.
+ * only their light changes. The camera never climbs to a storey or fills the
+ * frame with one: the journey is a walk past the gates, seen from a distance,
+ * which is why the pose carries camera rest points and no per-storey framing.
  */
 export function towerPose(p: number): TowerPose {
   const s = stageProgress(p)
   const n = TOWER_TIERS.length
-  const layout = pagodaLayout(n)
   const tiers: TierPose[] = Array.from({ length: n }, () => ({
     emphasis: 0,
     brightness: 1,
   }))
 
   const hero = smoothstep(s / 1.2)
-  // The tower is ~4.4 world units tall; at full scale it must still clear the
-  // frame, so the working scale tops out well below 1.
-  const scale = 0.32 + 0.24 * hero
-  // Hero sits the tower low in the frame, under the headline, as the brief asks.
-  const y = -1.5 + 0.45 * hero
+  // The tower is ~4.5 world units tall; at this scale the whole building sits
+  // in the frame at every rest, with air around it — which is the look the walk
+  // keeps. The camera never grows the tower to fill the frame.
+  const scale = 0.32 + 0.06 * hero
+  // Hero sits the tower low in the frame, under the headline, as the brief asks;
+  // from the overview on it lifts to the middle so the base clears the frame.
+  const y = -1.5 + 0.8 * hero
 
   // Overview (stage 1) hands over to tier 0 (stage 2).
   // Centre again once the last tier's window closes, so the cta reads as a
@@ -762,24 +844,20 @@ export function towerPose(p: number): TowerPose {
     tiers[i].brightness = 1 - dim * (1 - tiers[i].emphasis)
   }
 
-  // The camera. One rest point per stage, walked in order: the stage anchors are
-  // the gates' milestones and the last one is the pagoda's steps. `sampleStages`
-  // eases between them, so the walk never kicks.
+  // The camera. One rest point per stage, walked in order, each just past a
+  // gate; `sampleStages` eases between them, so the walk never kicks. The eye
+  // line is one value for the whole journey: looking up at a storey was what
+  // framed storeys instead of the building.
   const ctaStage = 2 + n
   const restZ = (i: number) =>
     n <= 1 ? LAST_REST : FIRST_REST - (FIRST_REST - LAST_REST) * (i / (n - 1))
   const stageKeys = [0, 1, ...Array.from({ length: n }, (_, i) => 2 + i), ctaStage]
-  const stageY = (i: number) => (layout[i].y + layout[i].bodyHeight / 2) * scale + y
   const cameraZ = sampleStages(
     stageKeys,
     [6.4, 6.15, ...Array.from({ length: n }, (_, i) => restZ(i)), CTA_REST],
     s,
   )
-  const cameraY = sampleStages(
-    stageKeys,
-    [0, 0, ...Array.from({ length: n }, (_, i) => stageY(i)), CTA_CAMERA_Y],
-    s,
-  )
+  const cameraY = LOOK_Y * hero
   // The camera walks the walkway's centre line, so it passes *through* every
   // gate rather than beside it; the gates stand on that same line. At the very
   // end it steps off the path onto the building's axis, so the sign-up presents

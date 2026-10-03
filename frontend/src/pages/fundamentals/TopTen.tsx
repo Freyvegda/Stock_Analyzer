@@ -14,7 +14,7 @@ import { Num } from '@/components/ui/Num'
 import type { FundamentalsOutletContext } from './FundamentalsLayout'
 
 export default function TopTen() {
-  const { rows, summary, lastRunDate, latestLoaded, latestError, running, job, stale } =
+  const { rows, summary, lastRunDate, latestLoaded, latestError, running, job, stale, extraRuns } =
     useOutletContext<FundamentalsOutletContext>()
 
   const todayIso = (() => {
@@ -77,6 +77,19 @@ export default function TopTen() {
       ) : null}
 
       {job !== null ? <RunProgress job={job} /> : null}
+
+      {extraRuns !== null && extraRuns.length > 0 ? (
+        <Text data-testid="extra-runs" fontSize="xs" color="fg.muted">
+          Also ran:{' '}
+          {extraRuns.map((extra, index) => (
+            <span key={extra.set_id}>
+              {index > 0 ? ' · ' : ''}
+              {extra.name}
+              {extra.error !== null ? ' (failed)' : ` (${extra.shortlisted ?? 0})`}
+            </span>
+          ))}
+        </Text>
+      ) : null}
 
       {latestError !== null ? (
         <Text role="alert" color="fg.error" fontSize="sm">

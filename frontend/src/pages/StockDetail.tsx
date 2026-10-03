@@ -27,7 +27,7 @@ import { BlurFade } from '../components/ui/BlurFade'
 import { Num } from '../components/ui/Num'
 import { Skeleton } from '../components/ui/Skeleton'
 import { StockChart } from '../components/StockChart'
-import { StockReportCard } from '../components/StockReportCard'
+import { StockReportsAccordion } from '../components/StockReportsAccordion'
 import { toaster } from '../components/ui/toaster'
 
 const RANGES: { key: ChartRange; label: string }[] = [
@@ -423,7 +423,7 @@ export default function StockDetail() {
       <div data-testid="detail-halves" className="grid items-stretch gap-4 lg:grid-cols-2">
         <DescriptionCard profile={detail.profile} symbol={detail.symbol} name={detail.name} />
         <BlurFade className="h-full">
-          <StockReportCard report={detail.report} />
+          <StockReportsAccordion reports={detail.reports} />
         </BlurFade>
       </div>
 

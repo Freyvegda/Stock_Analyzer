@@ -150,7 +150,8 @@ D:\CODES\Projects\stock-analyzer\
 - Navbar search: always-visible 3D-glass bar at every width (no icon trigger — owner ruling 2026-09-29), Ctrl/Cmd+K focuses
 - Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
 
-### Phase 1.8 — Pagoda landing + JWT auth + cached-first run (run performance)
+### Phase 1.8 — Pagoda landing + JWT auth + cached-first run (run performance) + multi-screen extras
+- Multi-screen runs: `POST /screen/run` returns the cached-first active snapshot plus the 3 most-used other screens (auto, from the last 10 manual runs) evaluated on the same stored snapshot; `screen_runs.triggered_by` separates manual/auto; the background job later refines every screen on fresh data; stock detail serves a live `reports` array (active + most used) behind the Criteria pass accordion; spec `docs/superpowers/specs/2026-10-03-phase-1.8-multi-screen-runs-design.md`; plans `plan/phase-1.8/`
 - Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven walk to a distant pagoda - one torii gate per feature section on a meandering walkway, the river flowing sideways in the distance, and the sign-up stepping back to present the pagoda whole. Each section has real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does
 - Tier content lives in one place (`src/content/tower.ts`); geometry, the scroll story, the walkway and the roof mesh are pure and three-free (`three/pagodaScene.ts`), so the tower cannot drift from the page's sections and none of it needs WebGL to test
 - Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256 and *is* the revocation mechanism. Client single-flights refreshes (rotation would otherwise invalidate them in parallel); 3h sliding idle logout with a server-side backstop

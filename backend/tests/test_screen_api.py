@@ -415,3 +415,37 @@ def test_run_uses_the_updated_active_set(client, sign_in, provider, test_db):
         json={"criteria": [{"key": "pe", "enabled": True, "value": 25}]},
     )
     assert [r["symbol"] for r in client.post("/screen/run").json()["run"]["shortlisted"]] == ["AAA"]
+
+
+def test_run_returns_extra_runs_and_stores_auto_rows(client, sign_in, provider, test_db):
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    provider(FakeProvider())
+    default = client.get("/screen/sets").json()[0]
+    quality = client.post("/screen/sets", json={"name": "Quality"}).json()  # becomes active
+    with test_db() as session:
+        session.add(
+            ScreenRun(
+                run_date="2026-10-01",
+                user_id=user["id"],
+                set_id=quality["id"],
+                triggered_by="manual",
+                criteria_json="[]",
+                shortlisted_json="[]",
+            )
+        )
+        session.commit()
+    client.post(f"/screen/sets/{default['id']}/activate")
+
+    body = client.post("/screen/run").json()
+
+    assert [extra["name"] for extra in body["extra_runs"]] == ["Quality"]
+    extra = body["extra_runs"][0]
+    assert extra["run_id"] is not None and extra["shortlisted"] == 1 and extra["error"] is None
+    with test_db() as session:
+        runs = session.query(ScreenRun).order_by(ScreenRun.id).all()
+    assert [(run.set_id, run.triggered_by) for run in runs] == [
+        (quality["id"], "manual"),
+        (default["id"], "manual"),
+        (quality["id"], "auto"),
+    ]
