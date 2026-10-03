@@ -33,8 +33,9 @@ from app.stock.store import trim_raw, upsert_profile
 
 logger = logging.getLogger(__name__)
 
-# yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
-WORKERS = 8
+# Stooq + screener are slower and policed per-host; 4 workers keeps a
+# ~500-stock first run to minutes without hammering either source.
+WORKERS = 4
 
 #: The most-used measure looks at this many of the user's own (manual) runs.
 MANUAL_RUN_WINDOW = 10
