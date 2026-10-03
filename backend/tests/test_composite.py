@@ -46,6 +46,18 @@ def make_provider(tmp_path, **kwargs):
     )
 
 
+def test_statements_price_skips_quote(tmp_path, monkeypatch):
+    have_statements = dict(statements(), price=2500.0)
+
+    def boom(symbol):
+        raise AssertionError("quote must not run when statements price exists")
+
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: have_statements)
+    monkeypatch.setattr(comp_mod, "_fetch_quote", boom)
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    assert out["market_cap"] == 2500.0 * 300.0
+
+
 def test_fundamentals_merges_price_statements_math(tmp_path, monkeypatch):
     monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: statements())
     monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: 2500.0)

@@ -101,13 +101,14 @@ class CompositeProvider(DataProvider):
         statements = fetch_statements(
             symbol, self.statements_dir, ttl_days=self.statements_ttl_days
         )
-        # Fresh file cache already holds yesterday's close — reuse it before
-        # spending a quote call (I4: halves Stooq load on screen runs).
+        # Screener's page price is enough for a daily screen — the quote
+        # only runs when no price is known anywhere (Stooq hangs for
+        # minutes on some networks; never pay that with a price in hand).
         price = _fresh_cached_close(symbol, self.price_dir, self.price_ttl_hours)
         if price is None:
-            price = _fetch_quote(symbol)
-        if price is None:
             price = statements.get("price")
+        if price is None:
+            price = _fetch_quote(symbol)
         if price is None:
             cached = price_cache.read_cached(symbol, self.price_dir)
             if cached:
