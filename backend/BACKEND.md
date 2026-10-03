@@ -16,7 +16,7 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 
 - Python 3.10, FastAPI, uvicorn
 - SQLAlchemy 2.x + SQLite (`data/stockanalyzer.db`) — schema must stay Postgres-compatible (no SQLite-only types); engine sets WAL + `busy_timeout` pragmas on connect (Phase 1.8)
-- Composite provider (default): Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements + ratios_math), yfinance legacy fallback off by default (`ENABLE_YFINANCE=1` opts in), NSE/BSE announcement endpoints (PDFs)
+- Composite provider (default): Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements + ratios_math) with per-field yfinance fill for null derived ratios plus ratio-calculator fallback (yfinance statement numbers recomputed through math when `.info` is rate-limited, algebraic pe/pb/roe/market_cap derivation), yfinance hot path off by default (`ENABLE_YFINANCE=1` opts the legacy full-row + ohlc tails back in), NSE/BSE announcement endpoints (PDFs)
 - pdfplumber (PDF text), google-generativeai (Gemini Flash), xgboost + scikit-learn, pandas, pyyaml, httpx
 - pytest (tests must run OFFLINE — mock all network)
 
@@ -84,7 +84,7 @@ backend/
 
 ## Architectural Rules (do not break)
 
-1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/stooq directly. Methods: `list_stocks()`, `fundamentals(symbol, cached=None)`, `ohlc(symbol, years=5)`, `filings(symbol)`. `cached` is the previously stored payload; providers may reuse its statement-derived ROE/ROCE instead of refetching. Default is `composite_impl.build_default_provider()` (Stooq + screener + math, yFinance off unless `ENABLE_YFINANCE=1`). Prices persist as `data/prices/{SYM}.csv` + statements as `data/statements/{SYM}.json` — OHLC never bloats SQLite.
+1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/stooq directly. Methods: `list_stocks()`, `fundamentals(symbol, cached=None)`, `ohlc(symbol, years=5)`, `filings(symbol)`. `cached` is the previously stored payload; providers may reuse its statement-derived ROE/ROCE instead of refetching. Default is `composite_impl.build_default_provider()` (Stooq + screener + math with stale-merged statements, per-field yfinance fill for null derived ratios, yfinance statements-base + algebraic calculator fallback when throttled — good math never overwritten, failures keep math; yFinance hot path off unless `ENABLE_YFINANCE=1`). Prices persist as `data/prices/{SYM}.csv` + statements as `data/statements/{SYM}.json` — OHLC never bloats SQLite.
 2. **Model interface** (`app/models/base.py`) — `train(symbol, rows)`, `predict(symbol, rows) -> signal`. XGBoost is primary; LSTM is an optional experiment behind the same interface. NO custom transformer (overfits ~1250 daily rows).
 3. **Pipeline stages are independent endpoints**, triggered manually from UI buttons. Each stage idempotent: same-day rerun overwrites, never duplicates (composite PKs).
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
@@ -113,7 +113,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
   -> POST /screen/run: engine.py gates the snapshot for the active screen (manual) + up to 3 most-used others (auto) — zero fundamentals calls -> screen_runs rows + run_jobs row (one queued item per saved screen, triggering items done) -> 200 {run, extra_runs, job}
   -> background runner: fundamentals(symbol, cached=stored row) for EVERY symbol whose snapshot is
-     not from today (composite: screener statements + Stooq quote + ratios_math) -> fundamentals (ok|failed) + company_profiles upsert; gate survivors ordered
+     not from today (composite: screener statements merged over stale cache + Stooq quote + ratios_math, per-field yfinance fill for nulls with debug reasons logged, statements-base + algebraic calculator fallback when throttled) -> fundamentals (ok|failed) + company_profiles upsert; gate survivors ordered
      first, counters flushed every 25 fetches; a failed fetch keeps the stored row
   -> every saved screen re-evaluated on the fresh snapshot (active last) -> one screen_runs row each
   -> GET /screen/jobs/latest: status + universe counters + per-screen items; stale running jobs swept
