@@ -10,7 +10,9 @@ Rationale: zero setup, zero cost, single-file backup. 500 stocks x 5yr daily pri
 
 **Hard rule: schema stays Postgres-compatible.** No SQLite-only column types, no SQLite-specific SQL. If scale ever demands it, swap = change connection string only. Mongo/NoSQL NOT used — documents live on the filesystem (`data/docs/{symbol}/`), their metadata + AI results in relational tables.
 
-## Tables (11)
+**SQLite pragmas (Phase 1.8):** every connection on the SQLite engine sets `PRAGMA journal_mode=WAL` + `PRAGMA busy_timeout=5000` via a `connect` event listener (`configure_sqlite` in `database.py`). Connection-level only — no schema change; the listener is skipped for non-SQLite dialects, so the Postgres swap stays a connection-string change. WAL keeps readers unblocked while a background job writes; busy_timeout waits out short writer locks instead of raising `database is locked`.
+
+## Tables (13)
 
 Defined in `backend/app/db/models.py`. SQLAlchemy 2.x typed mappings (`Mapped[...]`).
 
@@ -106,6 +108,44 @@ Audit trail of every screen execution, per user, attributed to the screen it ran
 
 Read pattern: `WHERE user_id = ? AND set_id = ? ORDER BY id DESC LIMIT 1` (the active
 screen's latest run).
+
+### run_jobs (Phase 1.8)
+Append-only background job behind a cached-first run — one row per `POST /screen/run`.
+`screen_runs` stays the shortlist audit; this table tracks refresh progress + interruption.
+| Column | Type | Notes |
+|---|---|---|
+| id | Int PK autoincr | |
+| user_id | Int NOT NULL, indexed, FK → users.id | run owner |
+| set_id | Int NOT NULL, FK → screening_sets.id | active screen that triggered the run; plain FK, no cascade — deleting the screen keeps job history (projection shows `name=""`) |
+| started_at | String NOT NULL | ISO date-time |
+| finished_at | String? | set on terminal status |
+| status | String NOT NULL | `running` \| `done` \| `failed` \| `interrupted` |
+| universe_total | Int NOT NULL default 0 | stale universe symbols planned for refresh |
+| universe_done | Int NOT NULL default 0 | successful refreshes |
+| universe_failed | Int NOT NULL default 0 | `data_status=failed` refreshes |
+| error | Text? | job-level failure message |
+
+Counters live here, not as per-symbol rows — symbol outcome already lives in
+`fundamentals.data_status`.
+
+### run_job_items (Phase 1.8)
+One row per saved screen inside a job (active included; API orders active first).
+| Column | Type | Notes |
+|---|---|---|
+| id | Int PK autoincr | |
+| job_id | Int NOT NULL, indexed, FK → run_jobs.id | |
+| set_id | Int NOT NULL, FK → screening_sets.id | plain FK, no cascade — history survives screen deletion |
+| status | String NOT NULL | `queued` \| `running` \| `done` \| `failed` |
+| started_at | String? | stamped when the screen starts |
+| finished_at | String? | stamped on terminal status |
+| error | Text? | per-screen failure message |
+| run_id | Int?, FK → screen_runs.id | persisted shortlist once done; NULL when the job failed before writing one |
+
+Rules: one running job per user; keep the latest 20 jobs — older `run_jobs` + their
+`run_job_items` are pruned when a new job is created. A `running` job whose worker died with
+the process is swept to `interrupted` on the next jobs read (live in-process jobs registered
+by the worker are skipped), and a rerun after interruption is cheap thanks to same-day stored
+rows. Both tables are append-only job history; `screen_runs` rows are never pruned.
 
 ### documents
 Filing metadata; files on disk.
