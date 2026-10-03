@@ -1,22 +1,30 @@
 """Screen API: thin routers — validation plus service calls (BACKEND.md rule 6)."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.auth.deps import current_user
 from app.data.provider import DataProvider
 from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
-from app.screener import service
+from app.screener import runner, service
 from app.screener.catalog import RATIO_CATALOG
 from app.screener.criteria import ScreeningSetCreate, ScreeningSetUpdate
 
 router = APIRouter()
 
 _NOT_FOUND = "Screen not found"
+_MID_RUN = "Screen is mid-run"
 
 
 def get_provider() -> DataProvider:
     return YFinanceProvider()
+
+
+def _reject_if_busy(set_id: int, user_id: int) -> None:
+    """409 when the target set has queued/running items in the caller's job."""
+    if set_id in service.busy_set_ids(SessionLocal, user_id):
+        raise HTTPException(status_code=409, detail=_MID_RUN)
 
 
 @router.get("/ratios")
@@ -53,6 +61,7 @@ def update_set(
     set_id: int, payload: ScreeningSetUpdate, user: dict = Depends(current_user)
 ) -> dict:
     init_db()
+    _reject_if_busy(set_id, user["id"])
     changes = payload.model_dump(exclude_unset=True)
     try:
         return service.update_set(SessionLocal, user["id"], set_id, changes)
@@ -63,6 +72,7 @@ def update_set(
 @router.delete("/sets/{set_id}", status_code=204)
 def delete_set(set_id: int, user: dict = Depends(current_user)) -> None:
     init_db()
+    _reject_if_busy(set_id, user["id"])
     try:
         service.delete_set(SessionLocal, user["id"], set_id)
     except service.SetNotFoundError:
@@ -74,6 +84,7 @@ def delete_set(set_id: int, user: dict = Depends(current_user)) -> None:
 @router.post("/sets/{set_id}/activate")
 def activate_set(set_id: int, user: dict = Depends(current_user)) -> dict:
     init_db()
+    _reject_if_busy(set_id, user["id"])
     try:
         return service.activate_set(SessionLocal, user["id"], set_id)
     except service.SetNotFoundError:
@@ -81,17 +92,37 @@ def activate_set(set_id: int, user: dict = Depends(current_user)) -> dict:
 
 
 @router.post("/run")
-def run_screen(user: dict = Depends(current_user)) -> dict:
+def run_screen(user: dict = Depends(current_user)):
+    """Cached-first run: snapshot now, background refresh job after (Phase 1.8)."""
     init_db()
+    busy = service.busy_set_ids(SessionLocal, user["id"])  # sweeps stale runs first
+    if busy:
+        job = service.latest_job(SessionLocal, user["id"])
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Run already in progress", "job_id": job["id"]},
+        )
     stored = service.get_criteria(SessionLocal, user["id"])
-    return service.run_screen(
-        get_provider(),
+    provider = get_provider()
+    # Snapshot first: a provider burst (502) must not leave a stuck running job.
+    run = service.run_snapshot_screen(
+        provider,
         SessionLocal,
         user,
         stored["criteria"],
         stored["shortlist_size"],
         stored["id"],
     )
+    job = service.create_job(SessionLocal, user["id"], stored["id"])
+    service.mark_item(SessionLocal, job["id"], stored["id"], "done", run_id=run["run_id"])
+    runner.submit_job(job["id"], provider, SessionLocal)
+    return {"run": run, "job": service.latest_job(SessionLocal, user["id"])}
+
+
+@router.get("/jobs/latest")
+def latest_job(user: dict = Depends(current_user)) -> dict:
+    init_db()
+    return {"job": service.latest_job(SessionLocal, user["id"])}
 
 
 @router.get("/latest")

@@ -13,6 +13,7 @@ from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
 from app.db.models import User
 from app.main import app
+from app.screener import runner
 
 
 def create_session_cookie(user: dict) -> str:
@@ -52,6 +53,9 @@ def test_db(tmp_path, monkeypatch):
     monkeypatch.setattr(screen_api, "init_db", lambda: None)
     monkeypatch.setattr(stock_api, "init_db", lambda: None)
     monkeypatch.setattr(stocks_api, "init_db", lambda: None)
+    # TestClient requests must never spawn the worker thread; worker tests call
+    # runner.execute_job directly.
+    monkeypatch.setattr(runner, "submit_job", lambda *args, **kwargs: None)
     return TestSession
 
 

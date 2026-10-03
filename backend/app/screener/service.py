@@ -1,19 +1,21 @@
-"""Screen service: stored-first staged screen, fetch survivors, persist, evaluate.
+"""Screen service: stored-snapshot screen, run-job primitives, persistence.
 
 Business logic for the fundamental screen lives here (BACKEND.md rule 6: thin
-API layer). Routers validate input and call these functions. The endpoint is
-synchronous for the MVP; an async job queue is a later optimization.
+API layer). Routers validate input and call these functions. The synchronous
+path evaluates the stored snapshot (zero network beyond ``list_stocks``); the
+background refresh worker in ``runner.py`` re-reads every saved screen on
+fresh data and refines the active one last.
 
-Run flow (shared universe, one network stage):
-1. gate the stored snapshot (newest ``ok`` row per symbol + ``stocks.market_cap``)
-   with the caller's criteria — no network;
-2. refresh fundamentals for every symbol whose snapshot is not from today (plus
-   symbols with no stored row) — first run of the day fills the shared DB for all
-   users; same-day reruns cost zero calls;
-3. re-check all rows on fresh-or-stored values; a failed refresh keeps stored values.
+Run flow (shared universe, one network stage, Phase 1.8):
+1. the API gates the stored snapshot with the caller's criteria and persists a
+   ``ScreenRun`` — no fundamentals calls;
+2. ``POST /screen/run`` creates a job row and queues it on the runner; the
+   worker refreshes fundamentals for every symbol whose snapshot is not from
+   today (plus symbols with no stored row) — one refresh fills the shared DB;
+3. after the refresh, the worker re-evaluates every saved screen (active last)
+   and persists one ``ScreenRun`` per screen.
 """
 
-import concurrent.futures
 import json
 import logging
 from datetime import date, datetime, timezone
@@ -42,9 +44,6 @@ from app.stock.store import profile_values, trim_raw, upsert_profile
 
 logger = logging.getLogger(__name__)
 
-# yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
-WORKERS = 8
-
 # Job history kept per user (older jobs + their items are pruned on create).
 KEEP_JOBS = 20
 
@@ -63,24 +62,6 @@ class LastSetError(Exception):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, dict | None, str | None]]:
-    """Fetch fundamentals per stock, isolating failures (BACKEND.md rule 4).
-
-    Returns [(stock, fundamentals | None, error_text | None)] in input order.
-    One failing stock never kills the batch.
-    """
-
-    def fetch_one(stock: dict) -> tuple[dict, dict | None, str | None]:
-        try:
-            return stock, provider.fundamentals(stock["symbol"]), None
-        except Exception as e:  # noqa: BLE001 — per-stock isolation, never re-raise
-            logger.warning("fundamentals fetch failed for %s: %s", stock["symbol"], e)
-            return stock, None, str(e)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        return list(pool.map(fetch_one, stocks))
 
 
 def latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamental]:
@@ -119,127 +100,6 @@ def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) 
         "market_cap": market_cap,
         "raw": raw,
         "data_date": fundamental.date,
-    }
-
-
-def run_screen(
-    provider: DataProvider,
-    session_factory,
-    user: dict,
-    criteria: list[dict],
-    shortlist_size: int = 10,
-    set_id: int | None = None,
-) -> dict:
-    """Run the staged fundamental screen for one user and persist it.
-
-    Gate failures cost no network calls; only survivors are refreshed. Same-day
-    reruns merge fundamentals; one ScreenRun per call with the criteria snapshot
-    verbatim for reproducibility.
-    """
-    today = date.today().isoformat()
-    stocks = provider.list_stocks()
-
-    with session_factory() as session:
-        existing = {s.symbol: s for s in session.query(Stock).all()}
-        for stock_data in stocks:
-            stock = existing.get(stock_data["symbol"])
-            if stock is None:
-                stock = Stock(symbol=stock_data["symbol"], name=stock_data["name"], sector=stock_data["sector"])
-                session.add(stock)
-                existing[stock.symbol] = stock
-            stock.name = stock_data["name"]
-            stock.sector = stock_data["sector"]
-
-        symbols = [stock_data["symbol"] for stock_data in stocks]
-        latest = latest_ok_fundamentals(session, symbols)
-        stored_rows = {
-            symbol: stored_row(symbol, latest[symbol], existing[symbol].market_cap)
-            for symbol in symbols
-            if symbol in latest
-        }
-
-        # Refresh every symbol whose snapshot is not from today (plus symbols with
-        # no stored row), so one run fills the shared DB for all users. Rejections
-        # are computed once, on the best values (fresh where fetched, stored else).
-        refresh_symbols = [
-            symbol for symbol in symbols if symbol not in latest or latest[symbol].date != today
-        ]
-        stock_by_symbol = {stock_data["symbol"]: stock_data for stock_data in stocks}
-        results = _fetch_all(provider, [stock_by_symbol[symbol] for symbol in refresh_symbols])
-
-        fresh_rows: dict[str, dict] = {}
-        failed_symbols: list[str] = []
-        for stock_data, f, error in results:
-            symbol = stock_data["symbol"]
-            if f is None:
-                failed_symbols.append(symbol)
-                # A failed refresh must never clobber a good same-day snapshot
-                # (same rule as the stock detail path).
-                today_row = session.get(Fundamental, (symbol, today))
-                if today_row is None or today_row.data_status != "ok":
-                    session.merge(
-                        Fundamental(
-                            symbol=symbol,
-                            date=today,
-                            data_status="failed",
-                            raw_json=json.dumps({"error": error or "fetch failed"}),
-                        )
-                    )
-                continue
-
-            # Never null out a known market cap because a later fetch failed.
-            if f.get("market_cap") is not None:
-                existing[symbol].market_cap = f["market_cap"]
-            session.merge(
-                Fundamental(
-                    symbol=f["symbol"],
-                    date=today,
-                    pe=f["pe"],
-                    pb=f["pb"],
-                    roe=f["roe"],
-                    roce=f["roce"],
-                    debt_to_equity=f["debt_to_equity"],
-                    data_status="ok",
-                    raw_json=json.dumps(trim_raw(f["raw"]), default=str),
-                )
-            )
-            upsert_profile(session, symbol, f["raw"], today)
-            fresh_rows[symbol] = {**f, "market_cap": f.get("market_cap"), "data_date": today}
-
-        # Fresh values win; a failed refresh falls back to the stored row. Every
-        # symbol with data (today's or stored) is evaluated once on the best values.
-        candidates = [
-            fresh_rows.get(symbol) or stored_rows[symbol]
-            for symbol in symbols
-            if symbol in fresh_rows or symbol in stored_rows
-        ]
-        survivors, rejected = screen_rows(candidates, criteria)
-
-        shortlist = rank_shortlist(survivors, shortlist_size)
-        stale = bool(getattr(provider, "stale", False)) or any(
-            row.get("data_date") != today for row in shortlist
-        )
-
-        run = ScreenRun(
-            run_date=today,
-            user_id=user["id"],
-            set_id=set_id,
-            criteria_json=json.dumps(criteria),
-            shortlisted_json=json.dumps(shortlist),
-        )
-        session.add(run)
-        session.commit()
-        session.refresh(run)
-        run_id = run.id
-
-    return {
-        "run_id": run_id,
-        "shortlisted": shortlist,
-        "failed_count": len(failed_symbols),
-        "failed_symbols": failed_symbols,
-        "failed_details": rejected,
-        "stale": stale,
-        "total": len(stocks),
     }
 
 
@@ -290,7 +150,7 @@ def persist_fetch_batch(
 ) -> tuple[dict[str, dict], list[str]]:
     """Bulk-persist one fetched batch — one existence query per table, no per-row merge.
 
-    ``results`` comes straight from ``_fetch_all``-style fetching:
+    ``results`` comes straight from the worker's fetch loop:
     ``[(stock, fundamentals | None, error | None)]``. Today's ``fundamentals``
     rows and the batch's ``company_profiles`` rows are loaded once, then updated
     in place (or added). Fetch-failure semantics match the legacy per-row loop:
@@ -378,7 +238,7 @@ def run_snapshot_screen(
 
     ``provider.list_stocks()`` runs before any session opens — a slow or
     unreachable universe fetch must not hold a write transaction. Returns the
-    legacy ``run_screen`` payload so polling/shortlist consumers keep their shape.
+    cached-run payload so polling/shortlist consumers keep their shape.
     """
     today = date.today().isoformat()
     stocks = provider.list_stocks()

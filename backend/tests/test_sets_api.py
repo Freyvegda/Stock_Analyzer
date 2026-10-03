@@ -1,6 +1,7 @@
 """API tests for /screen/sets and the retired /screen/criteria (Phase 1.7)."""
 
-from app.db.models import ScreeningSet
+from app.db.models import RunJob, RunJobItem, ScreeningSet
+from app.screener import service
 
 
 def create_screen(client, name, **extra):
@@ -123,3 +124,43 @@ def test_corrupt_criteria_json_falls_back_to_defaults(client, sign_in, test_db):
     body = client.get("/screen/sets").json()
     assert body[0]["name"] == "Broken"
     assert len(body[0]["criteria"]) == 6  # Phase-1 defaults, never a 500
+
+
+def seed_running_job(test_db, user_id, set_id):
+    """One registered running job with a queued item for ``set_id``."""
+    with test_db() as session:
+        job = RunJob(user_id=user_id, set_id=set_id, started_at="now", status="running")
+        session.add(job)
+        session.flush()
+        session.add(RunJobItem(job_id=job.id, set_id=set_id, status="queued"))
+        session.commit()
+        job_id = job.id
+    service.register_active_job(job_id)
+    return job_id
+
+
+def test_update_delete_activate_busy_screen_409(client, sign_in, test_db):
+    user = sign_in()
+    created = create_screen(client, "Quality")
+    job_id = seed_running_job(test_db, user["id"], created["id"])
+    try:
+        put = client.put(f"/screen/sets/{created['id']}", json={"name": "Renamed"})
+        assert put.status_code == 409
+        assert put.json()["detail"] == "Screen is mid-run"
+        assert client.delete(f"/screen/sets/{created['id']}").status_code == 409
+        assert client.post(f"/screen/sets/{created['id']}/activate").status_code == 409
+    finally:
+        service.unregister_active_job(job_id)
+
+
+def test_activate_other_screen_allowed_while_busy(client, sign_in, test_db):
+    user = sign_in()
+    default = client.get("/screen/sets").json()[0]
+    quality = create_screen(client, "Quality")  # becomes active
+    job_id = seed_running_job(test_db, user["id"], quality["id"])
+    try:
+        activated = client.post(f"/screen/sets/{default['id']}/activate")
+    finally:
+        service.unregister_active_job(job_id)
+    assert activated.status_code == 200
+    assert activated.json()["is_active"] is True
