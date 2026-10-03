@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
 WORKERS = 8
 
+#: The most-used measure looks at this many of the user's own (manual) runs.
+MANUAL_RUN_WINDOW = 10
+
 
 class SetNotFoundError(Exception):
     """Raised when a screening set does not exist for the caller (404)."""
@@ -297,6 +300,44 @@ def _reject_duplicate_name(session, user_id: int, name: str, exclude_id: int | N
     for row in _user_sets(session, user_id):
         if row.id != exclude_id and row.name.strip().lower() == needle:
             raise ConfigError(f"a screen named {name!r} already exists")
+
+
+def most_used_sets(
+    session_factory, user_id: int, limit: int = 3, exclude_id: int | None = None
+) -> list[dict]:
+    """Screens the caller runs most, from their last 10 manual runs.
+
+    Auto runs (the batch's extra screens) never count, so the ranking reflects
+    the user's own choices and cannot reinforce itself. Deleted screens drop out
+    because their runs keep a NULL ``set_id``; ``exclude_id`` drops the active
+    screen. Order: uses desc, most recent run desc, id asc.
+    """
+    with session_factory() as session:
+        runs = (
+            session.query(ScreenRun)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.triggered_by == "manual")
+            .order_by(ScreenRun.id.desc())
+            .limit(MANUAL_RUN_WINDOW)
+            .all()
+        )
+        counts: dict[int, int] = {}
+        latest_run: dict[int, int] = {}
+        for run in runs:  # newest first
+            if run.set_id is None:
+                continue
+            counts[run.set_id] = counts.get(run.set_id, 0) + 1
+            latest_run.setdefault(run.set_id, run.id)
+        if exclude_id is not None:
+            counts.pop(exclude_id, None)
+        if not counts:
+            return []
+        rows = {
+            row.id: row
+            for row in session.query(ScreeningSet).filter(ScreeningSet.id.in_(list(counts)))
+        }
+        picked = [rows[set_id] for set_id in counts if set_id in rows]
+        picked.sort(key=lambda row: (-counts[row.id], -latest_run[row.id], row.id))
+        return [_projection(row) for row in picked[:limit]]
 
 
 def list_sets(session_factory, user_id: int) -> list[dict]:
