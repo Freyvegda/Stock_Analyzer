@@ -112,13 +112,13 @@ git commit -m "feat: stock Criteria pass accordion over per-screen reports"
 ### Task F3: StockDetail wiring + `Also ran` line
 
 **Files:**
-- Modify: `frontend/src/pages/StockDetail.tsx`, `frontend/src/pages/fundamentals/ScreeningCriteria.tsx`
-- Test: `frontend/src/pages/__tests__/StockDetail.test.tsx`, `frontend/src/pages/__tests__/ScreeningCriteria.test.tsx`
+- Modify: `frontend/src/pages/StockDetail.tsx`, `frontend/src/pages/fundamentals/TopTen.tsx`
+- Test: `frontend/src/pages/__tests__/StockDetail.test.tsx`, `frontend/src/pages/__tests__/TopTen.test.tsx`
 
 - [ ] **Step 1: Update the failing tests** — StockDetail fixture moves `report` → `reports`
-  (active + one extra; assert both headers and the active-first order). ScreeningCriteria: run
-  response with `extra_runs` renders `Also ran: Quality (7) · Value (0)`; a failed extra shows its
-  name + failure marker; no `extra_runs` renders nothing.
+  (active + one extra; assert both headers and the active-first order). TopTen: run response with
+  `extra_runs` renders `Also ran: Quality (7) · Value (failed)` (the line lives on Top 10 because
+  the run auto-jumps there); no `extra_runs` renders nothing.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** — StockDetail passes `detail.reports` to the accordion; the layout
   `extraRuns` line lands in the run card.
