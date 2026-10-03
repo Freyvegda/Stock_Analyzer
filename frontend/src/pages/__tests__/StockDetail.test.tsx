@@ -171,16 +171,19 @@ beforeEach(() => vi.resetAllMocks())
 
 describe('StockDetail', () => {
   it('renders the identity header, report verdict and metric groups', async () => {
+    const user = userEvent.setup()
     mockLoads()
     renderPage()
 
     expect(await screen.findByText('TCS')).toBeInTheDocument()
     expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
-    expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveTextContent('Default')
+    expect(screen.getAllByText('Passes your screen').length).toBeGreaterThanOrEqual(2) // picker button + card
+
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByRole('option', { name: /quality/i })).toBeInTheDocument()
     expect(screen.getByText('Below your screen')).toBeInTheDocument()
-    expect(screen.getByText('Default')).toBeInTheDocument()
-    expect(screen.getByText('Quality')).toBeInTheDocument()
     expect(screen.getByText('Risk')).toBeInTheDocument()
     expect(screen.getAllByText('22.1').length).toBeGreaterThanOrEqual(2) // report row + metric tile
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
@@ -212,14 +215,14 @@ describe('StockDetail', () => {
     mockLoads()
     await user.click(screen.getByRole('button', { name: /retry/i }))
 
-    expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
+    expect((await screen.findAllByText('Passes your screen')).length).toBeGreaterThanOrEqual(1)
   })
 
   it('switching range derives locally without refetching ohlc', async () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
     const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: '6M' }))
@@ -234,7 +237,7 @@ describe('StockDetail', () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
     const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
@@ -256,10 +259,11 @@ describe('StockDetail', () => {
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
     expect(screen.getByText('Not checked yet')).toBeInTheDocument()
 
-    await user.click(screen.getByText('Quality'))
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: /quality/i }))
 
     await waitFor(() =>
       expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/report?set_id=2'),
@@ -280,7 +284,7 @@ describe('StockDetail', () => {
       ],
     })
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     await user.click(screen.getByRole('button', { name: /refresh/i }))
 
@@ -297,7 +301,7 @@ describe('StockDetail', () => {
       warning: 'Live refresh failed: fetch failed for TCS',
     })
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     await user.click(screen.getByRole('button', { name: /refresh/i }))
 
@@ -306,7 +310,7 @@ describe('StockDetail', () => {
         expect.objectContaining({ description: 'Live refresh failed: fetch failed for TCS' }),
       ),
     )
-    expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getAllByText('Passes your screen').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByTestId('refresh-warning')).toHaveTextContent(
       'Live refresh failed: fetch failed for TCS',
     )
@@ -315,11 +319,12 @@ describe('StockDetail', () => {
   it('renders the description and the verdict side by side above the chart', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     const halves = screen.getByTestId('detail-halves')
     expect(halves).toContainElement(screen.getByTestId('company-description'))
-    expect(halves).toContainElement(screen.getByTestId('stock-reports'))
+    expect(halves).toContainElement(screen.getByTestId('screen-picker'))
+    expect(halves).toContainElement(screen.getByTestId('screen-report-card'))
     expect(halves.className).toContain('lg:grid-cols-2')
 
     const chart = screen.getByTestId('price-chart')
@@ -329,7 +334,7 @@ describe('StockDetail', () => {
   it('orders ratios and company facts below the chart', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     const chart = screen.getByTestId('price-chart')
     const ratios = screen.getByText('Main fundamental ratios')
@@ -363,7 +368,7 @@ describe('StockDetail', () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByTestId('company-description-body')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -406,7 +411,7 @@ describe('StockDetail', () => {
     })
     renderPage()
 
-    expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
+    expect((await screen.findAllByText('Passes your screen')).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByTestId('company-description')).toHaveTextContent('No description stored yet')
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
     expect(screen.queryByText('What it has')).not.toBeInTheDocument()
@@ -418,7 +423,7 @@ describe('StockDetail', () => {
   it('renders has, done and other-ratio tiles', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByText('What it has')).toBeInTheDocument()
     expect(screen.getByText('Revenue')).toBeInTheDocument()
@@ -430,7 +435,7 @@ describe('StockDetail', () => {
   it('renders the other groups by category', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByText('All other ratios')).toBeInTheDocument()
     expect(screen.getByText('Risk')).toBeInTheDocument()

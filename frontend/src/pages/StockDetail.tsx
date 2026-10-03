@@ -29,7 +29,9 @@ import { BlurFade } from '../components/ui/BlurFade'
 import { Num } from '../components/ui/Num'
 import { Skeleton } from '../components/ui/Skeleton'
 import { StockChart } from '../components/StockChart'
-import { StockReportsAccordion } from '../components/StockReportsAccordion'
+import { ScreenPicker } from '../components/ScreenPicker'
+import type { ScreenOption } from '../components/ScreenPicker'
+import { ScreenReportCard } from '../components/ScreenReportCard'
 import { aggregateCandles, sliceRange } from '../lib/candles'
 import { toaster } from '../components/ui/toaster'
 
@@ -255,11 +257,67 @@ export default function StockDetail() {
   const [extraReports, setExtraReports] = useState<Record<number, StockScreenReport>>({})
   const [pendingReports, setPendingReports] = useState<number[]>([])
   const [reportErrors, setReportErrors] = useState<Record<number, string>>({})
+  const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const displayedCandles = useMemo(
     () => aggregateCandles(sliceRange(candles, range), interval),
     [candles, range, interval],
   )
+
+  const knownReports = useMemo(
+    () =>
+      detail === null
+        ? []
+        : [...detail.reports, ...Object.values(extraReports)].filter(
+            (report, index, all) => all.findIndex((other) => other.set_id === report.set_id) === index,
+          ),
+    [detail, extraReports],
+  )
+
+  const screenOptions = useMemo<ScreenOption[]>(() => {
+    if (detail === null) return []
+    const meta =
+      sets !== null && sets.length > 0
+        ? sets.map((set) => ({ id: set.id, name: set.name, isActive: set.is_active }))
+        : detail.reports.map((report) => ({
+            id: report.set_id,
+            name: report.name,
+            isActive: report.is_active,
+          }))
+    const seen = new Set<number>()
+    return meta
+      .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
+      .map((item) => {
+        const known = knownReports.find((report) => report.set_id === item.id)
+        return {
+          id: item.id,
+          name: item.name,
+          isActive: item.isActive,
+          verdict: known !== undefined ? known.report.verdict : null,
+          pending: pendingReports.includes(item.id),
+          score: known?.report.score ?? null,
+          passed: known?.report.passed,
+          enabled: known?.report.enabled,
+        }
+      })
+  }, [detail, sets, knownReports, pendingReports])
+
+  const activeId =
+    sets?.find((set) => set.is_active)?.id ??
+    detail?.reports.find((report) => report.is_active)?.set_id ??
+    null
+
+  useEffect(() => {
+    if (selectedId === null && activeId !== null) setSelectedId(activeId)
+  }, [selectedId, activeId])
+
+  const selectedReport = knownReports.find((report) => report.set_id === selectedId) ?? null
+  const selectedMeta = screenOptions.find((option) => option.id === selectedId)
+
+  function selectScreen(setId: number) {
+    setSelectedId(setId)
+    void requestReport(setId)
+  }
 
   async function loadDetail() {
     setLoading(true)
@@ -340,6 +398,7 @@ export default function StockDetail() {
       setPendingReports([])
       setReportErrors({})
       setSets(null)
+      setSelectedId(null)
       loadDetail()
       loadCandles()
       loadSets()
@@ -475,17 +534,25 @@ export default function StockDetail() {
       <div data-testid="detail-halves" className="grid items-stretch gap-4 lg:grid-cols-2">
         <DescriptionCard profile={detail.profile} symbol={detail.symbol} name={detail.name} />
         <BlurFade className="h-full">
-          <StockReportsAccordion
-            reports={[...detail.reports, ...Object.values(extraReports)]}
-            sets={
-              sets !== null && sets.length > 0
-                ? sets.map((set) => ({ id: set.id, name: set.name, is_active: set.is_active }))
-                : undefined
-            }
-            pendingIds={pendingReports}
-            errors={reportErrors}
-            onExpand={requestReport}
-          />
+          <div className="flex h-full flex-col gap-3">
+            <ScreenPicker
+              options={screenOptions}
+              selectedId={selectedId}
+              onSelect={selectScreen}
+            />
+            <div className="min-h-0 flex-1">
+              <ScreenReportCard
+                name={selectedMeta?.name ?? detail.symbol}
+                isActive={selectedMeta?.isActive ?? false}
+                report={selectedReport?.report ?? null}
+                pending={selectedId !== null && pendingReports.includes(selectedId)}
+                error={selectedId !== null ? reportErrors[selectedId] : undefined}
+                onRetry={() => {
+                  if (selectedId !== null) void requestReport(selectedId)
+                }}
+              />
+            </div>
+          </div>
         </BlurFade>
       </div>
 
