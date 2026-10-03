@@ -25,7 +25,7 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 ```
 backend/
 ├── app/
-│   ├── main.py            # FastAPI app, CORS (localhost:5173), session middleware, router mounts, /health
+│   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
 │   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run, GET /screen/jobs/latest, GET /screen/latest
@@ -34,7 +34,8 @@ backend/
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
 │   │   ├── signals.py     # POST /model/train, POST /model/predict, GET /model/signals
 │   │   └── backtest.py    # POST /backtest/run, GET /backtest/{id}
-│   ├── auth/              # scrypt hashing, user service, current_user dependency
+│   ├── auth/              # scrypt hashing, PyJWT access tokens, user + refresh-session service,
+│                          # current_user dependency (bearer header)
 │   │   ├── security.py
 │   │   ├── service.py
 │   │   └── deps.py
@@ -85,7 +86,20 @@ backend/
 5. **Gemini fallback**: on rate limit/error, queue with exponential backoff, then keyword-based sentiment; always record `method = gemini|fallback` in `doc_analysis`.
 6. **Thin API layer**: routers validate input and call services. Business logic lives in `screener/`, `docs/`, `models/`, `backtest/` — not in `api/`.
 7. **Screening criteria live in the database, per user, as named screens** (Phase 1.7; Phase 1.5 retired `config/screening.yaml`). `screening_sets` rows own `criteria_json` + a per-screen `thesis`; exactly one is active per user and drives `POST /screen/run`, `GET /screen/latest`, `/stocks` verdicts and the stock report. Valid keys are owned by `screener/catalog.py`; validation/defaults by `screener/criteria.py`; the engine reads only enabled criteria and clamps every run to 10 rows. `shortlist_size` is server-owned and never accepted from clients.
-8. **Auth**: scrypt password hashing + signed `sa_session` cookie (Starlette `SessionMiddleware`, secret at `data/.session_secret`). Every route except `/health` and public `/auth` state/login/setup requires `current_user` (401 `Not authenticated`).
+8. **Auth**: scrypt password hashing (stdlib) + a token pair. The **access token** is a 15-minute
+   HS256 JWT (PyJWT — the one external auth dependency, added to avoid hand-rolling algorithm
+   pinning and expiry checks; the ₹0 budget is about API keys, not libraries), signed with the
+   secret at `data/.auth_secret` and sent as `Authorization: Bearer`. The **refresh token** is an
+   opaque random string, stored only as SHA-256 in `auth_sessions`, and set as an HttpOnly
+   `SameSite=Strict` cookie named `sa_refresh` with `path=/` (a narrower path is never sent,
+   because the browser matches it against `/api/auth/refresh` before the Vite proxy rewrites it).
+   `POST /auth/refresh` **rotates** the refresh token, so a captured one dies on its next use —
+   the client must single-flight refreshes for this to be safe. A session idle for 3h is revoked
+   server-side as a backstop for the client-side activity timer; `sweep_sessions` runs on login to
+   bound the table. `logout` and `refresh` deliberately do **not** depend on `current_user`: a
+   logout arriving after the access token expired must still revoke the session. Every route
+   except `/health` and public `/auth` requires `current_user` (401 `Not authenticated`, generic —
+   never saying whether a token expired or was forged).
 
 ## Data Flow
 

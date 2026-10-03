@@ -292,6 +292,152 @@ export function bonfirePaletteFor(colorMode: string | undefined): BonfirePalette
   return colorMode === 'dark' ? bonfirePalette.dark : bonfirePalette.light
 }
 
+export interface PagodaPalette {
+  /** Storey body — the plastered wall between roofs. */
+  body: string
+  /** Roof tile. */
+  roof: string
+  /** Eave trim, column and the finial. */
+  trim: string
+  /** Stone base. */
+  plinth: string
+  /** The lantern's own emissive colour — the tower's light source at night. */
+  lantern: string
+  /** Veranda deck and railing. */
+  deck: string
+  /** The underside of an eave — the roof tile in shadow. */
+  soffit: string
+  /** Ambient term. Cool at night, near-white by day. */
+  ambient: string
+  /** Frontal warm fill. */
+  fill: string
+  /** The sun, by day. */
+  sun: string
+  // --- the world the tower stands in -------------------------------------
+  /** Sky at the zenith. */
+  skyTop: string
+  /** Sky at the horizon, which the ridges recede toward. */
+  skyHorizon: string
+  /** The nearest mountain range — the darkest and most contrasted. */
+  ridgeNear: string
+  /** The middle range. */
+  ridgeMid: string
+  /** The furthest range, closest in value to the sky. */
+  ridgeFar: string
+  /** Drifting haze between the ranges. */
+  mist: string
+  /** The river at the tower's foot. */
+  water: string
+  /** The banks the river runs through. */
+  bank: string
+  /** The walkway between the gates. */
+  path: string
+  /** Blossom canopy. */
+  foliage: string
+  /** Trunk and branches. */
+  bark: string
+  /** Night sky points. */
+  star: string
+  /** The moon's disc. */
+  moon: string
+  /** Corona by day, halo by night. */
+  halo: string
+  /** The torii gates' lacquer. */
+  torii: string
+}
+
+/**
+ * The landing pagoda. A sibling of `bonfirePalette`, deliberately outside
+ * `ThemeTokens`: `components/three/**` is hex-free by rule, and this keeps it
+ * that way without giving the vault-rules test an exception to make.
+ *
+ * The pagoda carries no data, so it uses brand sakura for its lit surfaces and
+ * the site's own plum-ink neutrals for the rest. It never encodes gain or loss —
+ * a roof tinted by "did this stock pass" would break the site's core rule.
+ */
+export const pagodaPalette: { dark: PagodaPalette; light: PagodaPalette } = {
+  dark: {
+    // Moonlit: plum-ink plaster under a deep sakura roof, with warm lanterns
+    // doing the lighting. The trim is the brand hue because it is what the
+    // lanterns catch.
+    body: '#4C3A46',
+    roof: '#8E4470',
+    trim: '#FFA9C6',
+    plinth: '#241A21',
+    lantern: '#FFB877',
+    deck: '#4A3641',
+    soffit: '#2A1C25',
+    ambient: '#5C6B93',
+    fill: '#FFA9C6',
+    sun: '#FFD9A8',
+    // Night sky: plum at the horizon lifting to deep indigo overhead, so the
+    // zenith reads as the darkest thing in the frame.
+    skyTop: '#14101F',
+    skyHorizon: '#2E1E30',
+    // The ranges recede toward the horizon colour, so they stack into depth.
+    // By night the sky is already near-black, so the recession has to happen
+    // *upward* from the horizon rather than downward from it.
+    ridgeNear: '#150F1B',
+    ridgeMid: '#201726',
+    ridgeFar: '#332336',
+    mist: '#6E5A7A',
+    // Water lifted off the bank so the river reads at night, when there is no
+    // environment map to give it a highlight. The bank stays near-black.
+    water: '#26304A',
+    /** The banks the river runs through. */
+    bank: '#160F16',
+    /** The walkway between the gates. */
+    path: '#2A2029',
+    foliage: '#6B3352',
+    bark: '#241A22',
+    star: '#E8DCF0',
+    // Cool, so it reads as moonlight rather than a second sun.
+    moon: '#DCE4F2',
+    halo: '#8FA0C4',
+    torii: '#7A2F4E',
+  },
+  light: {
+    // Petal Paper, in daylight: the same building, sunlit. Plaster reads warm
+    // white, the tile keeps its sakura, and the sun is a touch above white so
+    // the eaves throw a legible shadow.
+    body: '#F5E7EC',
+    roof: '#B0336A',
+    trim: '#8C2753',
+    plinth: '#E2CBD5',
+    lantern: '#FFCE9A',
+    deck: '#EAD6DE',
+    soffit: '#C9A3B3',
+    ambient: '#FFF4F8',
+    fill: '#FFE7EF',
+    // Daylight sky: a cool high blue over a warm sakura horizon.
+    skyTop: '#9FC4E4',
+    skyHorizon: '#F6DCE4',
+    // Receding toward the horizon, and lighter with distance.
+    ridgeNear: '#6E7A96',
+    ridgeMid: '#A8B4C6',
+    ridgeFar: '#EAEEF4',
+    mist: '#FFFFFF',
+    // Bright enough to read as sky-reflecting water against the warm bank; the
+    // original pool rendered as a dark slab because it was metal and unlit.
+    water: '#B9D6E6',
+    /** The banks the river runs through. */
+    bank: '#CBB1BE',
+    /** The walkway between the gates. */
+    path: '#E8D7DE',
+    foliage: '#F0A8C4',
+    bark: '#6B4A52',
+    star: '#FFFFFF',
+    // Warm, so it reads as a sun and not as a pale moon.
+    sun: '#FFF6DC',
+    // The moon is never rendered by day, but the key must exist in both modes —
+    // a palette whose two halves disagree on their shape is a palette the
+    // crossfade will drop keys out of.
+    moon: '#DCE4F2',
+    halo: '#FFE2A8',
+    torii: '#B0336A',
+  },
+}
+
 export const CSS_VAR_BY_KEY: Record<keyof ThemeTokens, string> = {
   background: '--background',
   foreground: '--foreground',

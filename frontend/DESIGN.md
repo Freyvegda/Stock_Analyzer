@@ -109,10 +109,22 @@ Signatures (the whole inventory):
     real dial snapping home); the plate enters with a shallow perspective tilt. A turn is a
     selection response, not a loop.
 
-**Loops — complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
+**Loops - complete whitelist:** Sakura Leaf loader, status-rail marquee (overflow only),
 last-run status dot pulse, Bonfire flame + embers (signed-in app), Sakura Garden falling
-petals (login only). Max one loop per viewport zone; `/login` swaps the bonfire out for the
-garden. Loops never render inside tables, summaries, or chart interiors.
+petals (login only), Pagoda tower (landing page only). Max one loop per viewport zone;
+`/login` swaps the bonfire out for the garden, and `/` swaps it out for the pagoda. Loops
+never render inside tables, summaries, or chart interiors.
+
+The landing page is allowed one *primary* loop (the tower: sway, lantern swing, roof
+reveal) plus a **shared atmosphere loop** (petals, fireflies, birds and the water, all
+driven off the same clock so they read as one weather system rather than four unrelated
+animations). No other loop mounts in the landing viewport.
+
+6. **Pagoda tower** (landing page `/` only) - scroll-linked, four storeys, one open at a
+   time; a slow finial and eave sway is its only autonomous motion. Under reduced motion it
+   renders a single static frame; below `md` a static inline SVG mark replaces it and the 3D
+   chunk is never requested. The landing page carries the primary loop and the shared
+   atmosphere loop, and nothing else.
 
 - Honouring `prefers-reduced-motion: reduce` is mandatory: final state instantly or nothing
   runs. Use `usePrefersReducedMotion`; every animated component ships a reduced-motion test.
@@ -278,6 +290,94 @@ wanderers that carries sparks across the whole screen. `emberSeeds`, `emberPose`
 - Budgets: 280 embers (cap 320, one instanced mesh of axis-aligned square pixel quads,
   `EMBER_PIXEL` ≈ 2–3 screen px before per-ember scale), 9 stones, 3 logs, 6 flame layers, one
   bloom sprite, one 128px canvas texture — no assets, no new dependency.
+
+## Pagoda
+
+`components/three/Pagoda.tsx` is the landing page's scene: a four-storey pagoda at `/`, approached
+on foot. The visitor walks a gate path — one torii per feature section — while the pagoda stands
+in the distance, and the sign-up steps back to present it whole. It is the one marketing surface
+in a tool that is otherwise dense and tabular, and it is the only place the storey metaphor is
+used.
+
+- **One source of truth.** `src/content/tower.ts` holds the tier list — id, heading, tagline,
+  route, badge, cards. Both the scene and the DOM sections read it, and every geometry function
+  derives from `TOWER_TIERS.length`, so the pagoda cannot end up with a different number of
+  storeys than the page has sections.
+- **Geometry is pure.** `pagodaLayout`, `pagodaRoofVertices`, `finialLayout`, `towerPose`,
+  `storeyOpenings`, `roofCourses`, `hangingLanterns`, `baseDetail`, `pathPlan`, `pathCentre` and
+  `pathRibbon` live in `three/pagodaScene.ts` — the walkway is there because the camera *is* the
+  walker, and the gates stand on its line. The world's layout lives in `three/pagodaWorld.ts` —
+  sky, sun or moon, ridges, grove, the sideways river, torii, stars, petals, fireflies and birds —
+  and both are unit-tested with no WebGL. `storeyGeometry.ts` assembles a storey into merged
+  buffers; `worldGeometry.ts` builds the ribbon strips and the gates. The renderers compute no
+  shape of their own, and `components/three/**` stays hex-free. The roof is a custom
+  apex-plus-eave-ring build rather than `ConeGeometry(4)`: a square pyramid does not read as a
+  pagoda, and the upturned corner is the shape that does.
+- **Detail** follows the reference illustration's anatomy, not its palette: corner posts, a
+  veranda with balusters, a ground-floor double-leaf door with ring pulls, lattice window screens,
+  concentric roof tile courses with hip ridges, and lanterns hung on visible cords from the eave
+  tips. The lanterns are the tower's own light after dark, and only a capped few carry a real
+  point light — the scene's main cost control.
+- **One scroll value, two consumers.** `useScroll` produces a single `MotionValue`. The scene
+  samples it inside `useFrame` (continuous, no React re-render); the DOM subscribes through
+  `useLandingStage` for the active stage index and the open accordion row. Neither owns the state,
+  so the tower and the cards cannot disagree about which storey is open. Section pinning is CSS
+  `position: sticky`.
+- **One storey at a time.** Tier windows are half a stage wide so they meet edge to edge; wider
+  overlaps lit two storeys at once and pulled the tower apart. The other three dim — to a floor,
+  not to black: the building must stay a building.
+- **The reveal is the walk.** The building never moves within itself: the storeys stay in their
+  stack and only their light changes. The camera walks the gate path — one rest point per storey,
+  each just past a gate, easing between them — so scrolling is passing through a torii, and the
+  sign-up is the step back that frames the pagoda whole. Every pose value is damped toward its
+  target in the frame loop, so scroll jitter cannot shake the building or kick the walk.
+- **Passing through a gate softens the vista.** `gateSoftness` peaks as the camera crosses a
+  torii and is zero at every section rest, weighted by distance — the pagoda is further away
+  through the outer gates, so those are the softest. The renderer maps it to a few pixels of CSS
+  blur on the canvas (`gateBlur`), only while walking inward, and the DOM is touched only when the
+  value changes. It is a full-screen pass, so it is the first thing dropped: the `low` quality
+  tier and `prefers-reduced-motion` get the scene sharp rather than an effect their device cannot
+  carry. `worldGeometry.test.ts` and `pagodaWorld.test.ts` pin the reach, the peaks and the gate.
+- **The river flows sideways.** `riverBand` + `riverRibbon`: a band across the frame behind the
+  pagoda, meandering on one slow sine and drifting with the clock, on a single
+  `BufferGeometry` whose *positions* are rewritten at the shared 8 Hz tick — the station xs never
+  change, so the index buffer is built once. No reflections, deliberately: the surface answers the
+  light diffusely, a faint emissive keeps it readable at night, and the meander plus the drift
+  carry the read. ~160 vertices, one draw call, and a vertex-cap test pins it. The walkway is the
+  same ribbon idea, built once and never rewritten.
+- **Cost.** Three rules, each held by a test: geometry is merged per material, repeated fields are
+  a single `InstancedMesh` each, and nothing calls `setState` per frame. A storey draws a handful
+  of calls rather than ninety. `pickQuality` scales particles, `dpr` and shadows to the device, so
+  a modest laptop or a touch device gets the same picture with fewer particles instead of a worse
+  one. The two ribbons are budgeted and capped (river ≤ 200 vertices, walkway ≤ 80), the particle
+  populations are ceilings in `WORLD_LIMITS`, and the gate blur is gated off on the low tier.
+  Merged buffers, ribbon geometries and material sets are disposed on unmount. There is no
+  drifting mist: the ridges recede by value, and full-width additive quads are exactly the fill
+  cost that hurts integrated graphics.
+- **Landing navigation.** The overview list and the storey rail both jump to a storey; the rail
+  sits on the *right*, because the pose slides the tower left and a left rail would sit on top of
+  it. Each tick is one fixed-size dot button with its label absolutely positioned, so a longer
+  heading cannot make a wider "bookmark" and the four stay one size; the active dot is primary and
+  the rest are muted-foreground, readable in both themes. Each storey's cards are a hover-open,
+  keyboard-operable accordion, one row at a time, which is also what carries the content when the
+  3D is absent. Storeys marked `in-progress` do not link to their own stub route: they say so and
+  offer a screen that works.
+- **Copy sits on glass.** Every feature block, the overview list and the sign-up panel are
+  token-derived translucent surfaces (`bg-background/70` + blur + hairline border), so headings,
+  taglines, rows and links stay legible over the day scene, where a pale sky and a bright river
+  sit directly behind them.
+- **Colour.** `pagodaPalette` (`tokens.ts`, a sibling of `bonfirePalette`, outside `ThemeTokens`).
+  Both palettes are resident and crossfade over roughly 300ms, like the bonfire. The pagoda is
+  brand, not status: lit surfaces use sakura and the site's own plum-ink neutrals, and **no
+  element ever encodes gain or loss** — a roof tinted by "did this stock pass" would break the
+  rule above. `Pagoda.test.tsx` pins this.
+- **Gates:** lazy route chunk *and* lazy scene chunk (three.js is never in the initial bundle, and
+  a visitor landing on `/login` never downloads it), `hasWebGL()` else nothing, hidden below `md`,
+  paused when the tab is hidden, `aria-hidden`, `pointer-events-none`, `-z-10`.
+- **Degradations, deliberately different.** Below `md`, without WebGL, or under reduced motion the
+  DOM story carries the whole content on its own: same four sections, same cards, no 3D chunk
+  requested. Reduced motion additionally renders a single static frame rather than removing the
+  scene outright, which is the "final state instantly" rule.
 - The fire is never interactive and never carries text; toasts (also bottom-end) render above
   it.
 

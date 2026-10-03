@@ -34,6 +34,27 @@ class ScreeningSet(Base):
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class AuthSession(Base):
+    """One issued refresh token. The row *is* the revocation mechanism.
+
+    Only the SHA-256 of the token is stored, so a database leak yields no usable
+    credential. ``revoked_at IS NULL`` means live; logout writes it. ``last_seen_at``
+    slides on every refresh and drives the 3-hour idle logout — there is no
+    ``expires_at``, because a session that keeps being used should not die on a
+    clock.
+    """
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    last_seen_at: Mapped[str] = mapped_column(String, nullable=False)
+    revoked_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class Stock(Base):
     __tablename__ = "stocks"
 

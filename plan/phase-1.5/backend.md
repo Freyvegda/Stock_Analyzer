@@ -12,6 +12,11 @@ more than 10 rows.
 
 ## What shipped
 
+> **Superseded by Phase 1.8.** The signed `sa_session` cookie and
+> `SessionMiddleware` were replaced by a 15-minute HS256 access token in memory plus a rotating
+> opaque refresh token in an HttpOnly `sa_refresh` cookie. Read this section for history; the
+> current contract is in `backend/BACKEND.md` and `app/db/DATABASE.md`.
+
 - `app/auth/` — `security.py` (stdlib scrypt hashing, `data/.session_secret`),
   `service.py` (create/authenticate/get user, `seed_default_criteria`),
   `deps.py` (`current_user`, 401 `Not authenticated`).

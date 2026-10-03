@@ -99,11 +99,13 @@ function renderApp(path: string) {
 beforeEach(() => vi.resetAllMocks())
 
 describe('App routing shell', () => {
-  it('sends / to the criteria page inside the fundamentals shell', async () => {
+  it('serves the public landing page at / without the app shell', async () => {
+    // `/` is the marketing surface now, so it must not redirect into the
+    // signed-in shell and must not require auth.
     mockApi()
     renderApp('/')
-    expect(await screen.findByText('PE ≤ 25×', undefined, { timeout: 5000 })).toBeInTheDocument()
-    expect(screen.getByRole('navigation', { name: 'Fundamental analysis' })).toBeInTheDocument()
+    expect(await screen.findByTestId('landing')).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Fundamental analysis' })).not.toBeInTheDocument()
   })
 
   it('sends /stocks to the stocks page inside the fundamentals shell', async () => {

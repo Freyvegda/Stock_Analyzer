@@ -8,6 +8,18 @@ export interface AuthState {
   user: AuthUser | null
 }
 
+/**
+ * What `/auth/login` and `/auth/setup` return. The access token goes into memory
+ * and is sent as a bearer header; the refresh token is never in the body, only in
+ * the HttpOnly cookie.
+ */
+export interface AuthBundle {
+  user: AuthUser
+  access_token: string
+  token_type: 'bearer'
+  expires_in: number
+}
+
 export type RatioDirection = 'min' | 'max'
 
 export interface RatioSpec {

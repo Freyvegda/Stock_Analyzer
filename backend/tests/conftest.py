@@ -8,7 +8,7 @@ from itsdangerous import TimestampSigner
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.auth.security import hash_password, session_secret
+from app.auth.security import auth_secret, hash_password, sign_access_token
 from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
 from app.db.models import User
@@ -16,17 +16,9 @@ from app.main import app
 from app.screener import runner, service
 
 
-def create_session_cookie(user: dict) -> str:
-    """Sign a session cookie directly in Starlette's format — no HTTP login dance."""
-    payload = b64encode(
-        json.dumps({"user_id": user["id"], "username": user["username"]}).encode("utf-8")
-    )
-    return TimestampSigner(str(session_secret())).sign(payload).decode("utf-8")
-
-
 @pytest.fixture
 def client():
-    """Fresh TestClient per test — isolated cookie jar."""
+    """Fresh TestClient per test — isolated header/cookie jar."""
     with TestClient(app) as c:
         yield c
 
@@ -63,8 +55,12 @@ def test_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def sign_in(client, test_db):
-    """Sign in a user (creating the row directly — no single-account guard) and
-    install the session cookie. Idempotent for repeated usernames."""
+    """Create a user row directly and install their access token.
+
+    The token goes on ``client.headers`` (httpx merges client-level headers
+    into every request), so the ~50 existing call sites keep working as
+    ``client.get(url)`` with no per-request header.
+    """
 
     def _sign_in(username: str = "alice", password: str = "password123") -> dict:
         username = username.strip().lower()
@@ -80,7 +76,7 @@ def sign_in(client, test_db):
                 session.commit()
                 session.refresh(row)
             user = {"id": row.id, "username": row.username}
-        client.cookies.set("sa_session", create_session_cookie(user))
+        client.headers["Authorization"] = f"Bearer {sign_access_token(user)}"
         return user
 
     return _sign_in
