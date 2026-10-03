@@ -119,6 +119,45 @@ def seed_user(session_factory, username: str = "alice", criteria: list[dict] | N
         return user.id
 
 
+def seed_set(session_factory, user_id: int, name: str, criteria: list[dict]) -> int:
+    with session_factory() as session:
+        row = ScreeningSet(
+            user_id=user_id,
+            name=name,
+            criteria_json=json.dumps(criteria),
+            thesis=None,
+            shortlist_size=10,
+            is_active=False,
+            updated_at="now",
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
+def seed_run(
+    session_factory,
+    user_id: int,
+    set_id: int | None,
+    shortlisted: list[dict] | None = None,
+    triggered_by: str = "manual",
+) -> int:
+    with session_factory() as session:
+        row = ScreenRun(
+            run_date="2026-09-30",
+            user_id=user_id,
+            set_id=set_id,
+            triggered_by=triggered_by,
+            criteria_json="[]",
+            shortlisted_json=json.dumps(shortlisted or []),
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row.id
+
+
 def daily_rows(end: date, days: int) -> list[dict]:
     return [
         {
@@ -146,7 +185,7 @@ def test_stored_snapshot_never_calls_provider(session_factory):
     assert detail["stale"] is True
     assert detail["snapshot"]["pe"] == 20.0
     assert "raw" not in detail["snapshot"]
-    assert detail["report"]["verdict"] == "pass"
+    assert detail["reports"][0]["report"]["verdict"] == "pass"
     assert detail["refreshed"] is None and detail["warning"] is None
 
 
@@ -304,8 +343,8 @@ def test_verdict_uses_callers_criteria(session_factory):
     a = service.get_stock_detail(session_factory, provider, alice, "AAA")
     b = service.get_stock_detail(session_factory, provider, bob, "AAA")
 
-    assert a["report"]["verdict"] == "pass"
-    assert b["report"]["verdict"] == "fail"
+    assert a["reports"][0]["report"]["verdict"] == "pass"
+    assert b["reports"][0]["report"]["verdict"] == "fail"
     assert a["snapshot"] == b["snapshot"]
     assert provider.fundamentals_calls == []
 
@@ -313,25 +352,71 @@ def test_verdict_uses_callers_criteria(session_factory):
 def test_run_context_from_latest_run(session_factory):
     seed_stock(session_factory)
     seed_fundamental(session_factory)
-    alice = seed_user(session_factory, "alice")
+    alice = seed_user(session_factory, "alice", [{"key": "pe", "enabled": True, "value": 25.0}])
     bob = seed_user(session_factory, "bob")
     with session_factory() as session:
-        session.add(
-            ScreenRun(
-                run_date="2026-09-25",
-                user_id=alice,
-                criteria_json="[]",
-                shortlisted_json=json.dumps([{"symbol": "AAA", "rank": 1, "score": 9.5}]),
-            )
+        default_id = (
+            session.query(ScreeningSet).filter_by(user_id=alice, name="Default").one().id
         )
-        session.commit()
+    seed_run(
+        session_factory,
+        alice,
+        default_id,
+        shortlisted=[{"symbol": "AAA", "rank": 1, "score": 9.5}],
+    )
 
     provider = FakeProvider()
     a = service.get_stock_detail(session_factory, provider, alice, "AAA")
     b = service.get_stock_detail(session_factory, provider, bob, "AAA")
 
-    assert a["run"] == {"run_id": a["run"]["run_id"], "run_date": "2026-09-25", "rank": 1, "score": 9.5}
+    assert a["run"] == {"run_id": a["run"]["run_id"], "run_date": "2026-09-30", "rank": 1, "score": 9.5}
     assert b["run"] is None
+
+
+def test_reports_active_first_then_most_used(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory)
+    alice = seed_user(session_factory, "alice", [{"key": "pe", "enabled": True, "value": 25.0}])
+    quality = seed_set(session_factory, alice, "Quality", [{"key": "pe", "enabled": True, "value": 10.0}])
+    value = seed_set(session_factory, alice, "Value", [{"key": "pb", "enabled": True, "value": 1.0}])
+    seed_run(session_factory, alice, quality)
+    seed_run(session_factory, alice, value)  # more recent use
+
+    detail = service.get_stock_detail(session_factory, FakeProvider(), alice, "AAA")
+
+    assert "report" not in detail
+    assert [row["name"] for row in detail["reports"]] == ["Default", "Value", "Quality"]
+    assert [row["is_active"] for row in detail["reports"]] == [True, False, False]
+    assert [row["report"]["verdict"] for row in detail["reports"]] == ["pass", "fail", "fail"]
+    assert detail["reports"][0]["report"]["criteria"][0]["key"] == "pe"
+
+
+def test_reports_without_history_have_only_the_active(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory)
+    alice = seed_user(session_factory, "alice", [{"key": "pe", "enabled": True, "value": 25.0}])
+
+    detail = service.get_stock_detail(session_factory, FakeProvider(), alice, "AAA")
+
+    assert [row["name"] for row in detail["reports"]] == ["Default"]
+    assert detail["reports"][0]["is_active"] is True
+
+
+def test_run_context_ignores_auto_runs_of_other_screens(session_factory):
+    seed_stock(session_factory)
+    seed_fundamental(session_factory)
+    alice = seed_user(session_factory, "alice", [{"key": "pe", "enabled": True, "value": 25.0}])
+    with session_factory() as session:
+        default_id = (
+            session.query(ScreeningSet).filter_by(user_id=alice, name="Default").one().id
+        )
+    quality = seed_set(session_factory, alice, "Quality", [{"key": "pe", "enabled": True, "value": 10.0}])
+    seed_run(session_factory, alice, default_id, shortlisted=[{"symbol": "AAA", "rank": 1, "score": 9.5}])
+    seed_run(session_factory, alice, quality, triggered_by="auto")  # newer, other screen
+
+    detail = service.get_stock_detail(session_factory, FakeProvider(), alice, "AAA")
+
+    assert detail["run"]["rank"] == 1
 
 
 def test_ohlc_slices_and_aggregates(session_factory):

@@ -134,8 +134,9 @@ def test_first_view_fetches_and_second_user_reads_db(client, sign_in, provider, 
 
     assert p.fundamentals_calls == ["AAA"]
     assert alice["data_date"] == TODAY and alice["stale"] is False
-    assert alice["report"]["verdict"] == "pass"
-    assert alice["report"]["groups"]
+    assert alice["reports"][0]["report"]["verdict"] == "pass"
+    assert alice["reports"][0]["report"]["groups"]
+    assert alice["reports"][0]["is_active"] is True
     assert alice["run"] is None
 
     sign_in("bob")
@@ -159,10 +160,10 @@ def test_verdict_is_per_user(client, sign_in, provider, test_db):
     seed_criteria(test_db, bob["id"], [{"key": "pe", "enabled": True, "value": 5.0}])
     bob_view = client.get("/stock/AAA").json()
 
-    assert alice_view["report"]["verdict"] == "pass"
-    assert bob_view["report"]["verdict"] == "fail"
+    assert alice_view["reports"][0]["report"]["verdict"] == "pass"
+    assert bob_view["reports"][0]["report"]["verdict"] == "fail"
     assert alice_view["snapshot"] == bob_view["snapshot"]
-    assert bob_view["report"]["notes"] == ["P/E 20× is above your limit of 5×"]
+    assert bob_view["reports"][0]["report"]["notes"] == ["P/E 20× is above your limit of 5×"]
 
 
 def test_refresh_returns_stored_with_warning_when_fetch_fails(client, sign_in, provider, test_db):
