@@ -3,8 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.deps import current_user
+from app.data.composite_impl import build_default_provider
 from app.data.provider import DataProvider
-from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
 from app.screener import service
 from app.screener.catalog import RATIO_CATALOG
@@ -16,7 +16,7 @@ _NOT_FOUND = "Screen not found"
 
 
 def get_provider() -> DataProvider:
-    return YFinanceProvider()
+    return build_default_provider()
 
 
 @router.get("/ratios")

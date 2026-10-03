@@ -10,8 +10,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth.deps import current_user
+from app.data.composite_impl import build_default_provider
 from app.data.provider import DataProvider
-from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
 from app.stock import service
 from app.stock.candles import CandleCache
@@ -22,7 +22,7 @@ default_cache = CandleCache()
 
 
 def get_provider() -> DataProvider:
-    return YFinanceProvider()
+    return build_default_provider()
 
 
 def _normalize(symbol: str) -> str:
