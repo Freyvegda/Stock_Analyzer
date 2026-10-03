@@ -318,12 +318,27 @@ def _cache_path(symbol: str, cache_dir: str) -> str:
     return os.path.join(cache_dir, f"{symbol.strip().upper()}.json")
 
 
+#: Pause after every statements download — bursts earn 429s.
+POLITE_DELAY_SECONDS = 2.0
+
+#: 429 backoff default when the response names no Retry-After.
+BLOCKED_BACKOFF_SECONDS = 60.0
+
+
+def _retry_after(resp) -> float:
+    try:
+        return max(0.0, float(resp.headers.get("Retry-After", BLOCKED_BACKOFF_SECONDS)))
+    except (TypeError, ValueError):
+        return BLOCKED_BACKOFF_SECONDS
+
+
 def _download(symbol: str) -> str:
     """Company page HTML, consolidated first (falls back on 404).
 
     Screener renders standalone figures on the main page; Nifty 500
     screening wants consolidated. Standalone-only companies 404 on the
-    consolidated path and fall back to the main page.
+    consolidated path and fall back to the main page. 429s back off per
+    Retry-After instead of failing fast; every success pauses politely.
     """
     symbol = symbol.strip().upper()
     urls = [
@@ -332,20 +347,25 @@ def _download(symbol: str) -> str:
     ]
     last_error: Exception | None = None
     for url_index, url in enumerate(urls):
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
                 if resp.status_code == 404 and url_index == 0:
                     break  # standalone-only company: fall back to main page
-                if resp.status_code in (403, 429):
-                    raise ScreenerBlockedError(f"screener blocked {symbol}: {resp.status_code}")
+                if resp.status_code == 429:
+                    last_error = ScreenerBlockedError(f"screener limited {symbol}: 429")
+                    time.sleep(_retry_after(resp))
+                    continue
+                if resp.status_code == 403:
+                    raise ScreenerBlockedError(f"screener blocked {symbol}: 403")
                 resp.raise_for_status()
+                time.sleep(POLITE_DELAY_SECONDS)
                 return resp.text
             except ScreenerBlockedError:
                 raise
             except Exception as e:  # noqa: BLE001 — retry then propagate
                 last_error = e
-                time.sleep(1.0 * (attempt + 1))
+                time.sleep(5.0 * (attempt + 1))
     raise last_error  # type: ignore[misc]
 
 

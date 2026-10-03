@@ -33,9 +33,9 @@ from app.stock.store import trim_raw, upsert_profile
 
 logger = logging.getLogger(__name__)
 
-# Stooq + screener are slower and policed per-host; 4 workers keeps a
-# ~500-stock first run to minutes without hammering either source.
-WORKERS = 4
+# Screener + Stooq police per-host bursts; 2 workers with the 2s
+# polite delay stay near ~1 req/s and clear of 429 storms.
+WORKERS = 2
 
 #: The most-used measure looks at this many of the user's own (manual) runs.
 MANUAL_RUN_WINDOW = 10

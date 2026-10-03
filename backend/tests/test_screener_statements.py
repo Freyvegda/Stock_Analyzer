@@ -45,6 +45,39 @@ def test_quarterly_table_skipped_for_annuals():
     assert out["revenue_prev"] == 90.0
 
 
+def test_429_backs_off_then_succeeds(tmp_path, monkeypatch):
+    import app.data.screener_statements as stmt_mod
+
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(stmt_mod.time, "sleep", lambda s: sleeps.append(s))
+
+    class R429:
+        status_code = 429
+        headers = {"Retry-After": "0"}
+        text = "limited"
+
+        def raise_for_status(self):
+            pass
+
+    class R200:
+        status_code = 200
+        headers = {}
+        text = fixture_html()
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, **kwargs):
+        calls.append(url)
+        return R429() if len(calls) == 1 else R200()
+
+    monkeypatch.setattr(stmt_mod.httpx, "get", fake_get)
+    out = stmt_mod.fetch_statements("AAA", cache_dir=str(tmp_path), ttl_days=30)
+    assert out["revenue"] == 100000.0
+    assert len(calls) == 2 and sleeps
+
+
 def test_missing_tables_yield_nones():
     out = stmt.parse_statements("<html><body>nothing</body></html>")
     assert out["revenue"] is None
