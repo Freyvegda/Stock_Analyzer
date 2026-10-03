@@ -3,12 +3,12 @@
 > Spec: `docs/superpowers/specs/2026-10-03-phase-1.8-multi-screen-runs-design.md` §7.
 > Backend contract: `plan/phase-1.8/backend.md`. Design contract: `frontend/DESIGN.md`.
 
-**Goal:** the criteria page reports the extra screens a run evaluated, and the stock detail page
+**Goal:** the Top 10 page reports the extra screens a run evaluated, and the stock detail page
 shows a "Criteria pass" accordion — one live report per screen (active + 3 most used).
 
 **Architecture:** `StockReportsAccordion` replaces `StockReportCard` (its body becomes the
 accordion item body); `StockDetail` consumes `reports`; `FundamentalsLayout` carries `extraRuns`
-from the run response; `ScreeningCriteria` renders the `Also ran` line.
+from the run response; `TopTen` renders the `Also ran` line (the run auto-jumps there).
 
 **Tech stack:** React 19, TS, Vite, Chakra UI v3, Tailwind v4, lucide, vitest + jsdom. No new deps.
 
@@ -54,8 +54,9 @@ export interface StockScreenReport { set_id: number; name: string; is_active: bo
   `res.extra_runs ?? []`; `activateSet`/`createSet`/`deleteSet` clear it (they already clear
   `summary`).
 
-- [ ] **Step 1: Write the failing test** — extend `FundamentalsLayout.test.tsx` (probe reads
-  `extraRuns` from the context; mock `/screen/run` returning two extras).
+- [ ] **Step 1: Write the failing test** — the F3 TopTen test covers the context field end-to-end
+  (the plan's separate probe was dropped: the visible line is the stronger contract); mock
+  `/screen/run` returning two extras.
 - [ ] **Step 2: Run to verify failure** — `npx vitest run src/pages/__tests__/FundamentalsLayout.test.tsx`.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run to verify pass.**
@@ -121,12 +122,12 @@ git commit -m "feat: stock Criteria pass accordion over per-screen reports"
   the run auto-jumps there); no `extra_runs` renders nothing.
 - [ ] **Step 2: Run to verify failure.**
 - [ ] **Step 3: Implement** — StockDetail passes `detail.reports` to the accordion; the layout
-  `extraRuns` line lands in the run card.
+  `extraRuns` line lands in `TopTen`.
 - [ ] **Step 4: Run to verify pass** — affected suites + `npm run build`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/pages/StockDetail.tsx frontend/src/pages/fundamentals/ScreeningCriteria.tsx frontend/src/pages/__tests__/StockDetail.test.tsx frontend/src/pages/__tests__/ScreeningCriteria.test.tsx
+git add frontend/src/pages/StockDetail.tsx frontend/src/pages/fundamentals/TopTen.tsx frontend/src/pages/__tests__/StockDetail.test.tsx frontend/src/pages/__tests__/TopTen.test.tsx
 git commit -m "feat: stock reports accordion + extra screens line on the run card"
 ```
 
@@ -151,6 +152,6 @@ git commit -m "docs: frontend context for multi-screen runs and the reports acco
 
 - Accordion renders active-first, one item per report, verdicts and criteria correct; empty state
   intact; no single-report component remains.
-- Criteria page shows the extra screens a run touched, failures included, without disturbing the
+- Top 10 shows the extra screens a run touched, failures included, without disturbing the
   active summary.
 - `npm test` green offline; `npm run build` clean.
