@@ -28,7 +28,7 @@ backend/
 │   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
-│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run, GET /screen/latest
+│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (active + 3 most-used batch), GET /screen/latest
 │   │   ├── stock.py       # GET /stock/{symbol}, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
 │   │   ├── stocks.py      # GET /stocks — universe list with per-user verdicts
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
@@ -48,14 +48,14 @@ backend/
 │   │   ├── catalog.py     # RATIO_CATALOG — source of truth for valid criteria keys
 │   │   ├── criteria.py    # pydantic screening-set + criteria models, defaults, validation (ConfigError)
 │   │   ├── engine.py      # criteria filtering + ranking -> shortlist (pure)
-│   │   └── service.py     # fetch + persist + evaluate + screening-set CRUD orchestration (rule 6)
+│   │   └── service.py     # staged batch: prepare once, evaluate per screen; sets CRUD (rule 6)
 │   ├── stock/             # stock detail + universe (Phase 1.6/1.6b)
 │   │   ├── candles.py     # pure range slicing + 15d/1mo aggregation + in-memory TTL cache
 │   │   ├── digest.py      # pure detail sections: main ratios, balance, performance, other
 │   │   ├── report.py      # pure per-user report builder (verdict/score/criteria/groups)
 │   │   ├── store.py       # raw_json whitelist + company_profiles upsert/read
 │   │   ├── universe.py    # GET /stocks rows: shared snapshot + per-user verdict
-│   │   └── service.py     # stored-first snapshot, refresh fallback, cached candles
+│   │   └── service.py     # stored-first snapshot, refresh fallback, cached candles; reports for active + most-used screens
 │   ├── docs/
 │   │   ├── fetcher.py     # PDF download -> data/docs/{symbol}/
 │   │   ├── parser.py      # pdfplumber extraction
@@ -109,8 +109,12 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> fundamentals(symbol) for EVERY symbol whose snapshot is not from today -> fundamentals table
      (data_status ok|failed) + company_profiles upsert; same-day reruns cost zero calls
   -> fresh values re-checked; a failed fetch keeps the stored row -> screen_runs.shortlisted_json (~10 symbols)
+  -> POST /screen/run batch (Phase 1.8): one prepare stage, then the active screen (triggered_by=manual)
+     + up to 3 most-used other screens (triggered_by=auto, from the last 10 manual runs) stored as
+     separate runs; extras reuse the same candidates and cost zero extra network
   -> GET /stocks: whole stored universe + caller's verdict (pass|fail|no_data), computed on read
-  -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + report
+  -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + reports for the
+     active screen and the 3 most-used screens
      + profile + digest sections (main_ratios | has | done | other_groups), computed per caller
   -> /stock/{symbol}/ohlc: 5y daily bars via provider -> memory TTL cache (900 s) -> slice + aggregate
      (1d/15d/1mo). Daily bars are NEVER written to the DB.
@@ -124,6 +128,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 ## Error Handling
 
 - Network calls: httpx with timeouts + retry w/ backoff; yfinance wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
+- Batch runs: an extra most-used screen failing is caught and reported as `extra_runs[].error`; the active result and the other extras still persist
 - Stock detail: stored-first (zero network when a snapshot exists); refresh failure serves the stored row with `warning` + `refreshed=false`; a failed fetch never overwrites a same-day ok row; candles fall back to the in-memory cache and are never persisted
 - Universe: `GET /stocks` seeds `stocks` from the provider only when the table is empty; upstream seeding failures ride the global httpx → 502 handler; a stock with no stored row lists as `no_data`
 - PDF parse failure: log, `parse_status=failed`, continue; UI shows "n/m docs parsed"
@@ -149,6 +154,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 | 1.6 | Stock detail page | `/stock/{symbol}` serves shared stored snapshot + per-user report + cached candles (1d/15d/1mo, never persisted); tests green offline |
 | 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol; detail serves profile + digest sections; tests green offline |
 | 1.7 | Saved screens + navbar search | `screening_sets` CRUD/activate; runs + latest scoped to the active screen; criteria page edits inline (no dialog); navbar glass search always visible; tests green offline |
+| 1.8 | Multi-screen runs + criteria accordion | `POST /screen/run` stores 1 manual + ≤3 auto runs on one prepared snapshot; stock detail serves `reports` for active + most-used screens; tests green offline |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |
 | 3 | Price model | Signals generated for shortlist; model trains on synthetic data in tests |
 | 4 | Backtest | Walk-forward report vs Nifty 500; offline integration test green |

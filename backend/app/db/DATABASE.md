@@ -123,7 +123,9 @@ Audit trail of every screen execution, per user, attributed to the screen it ran
 | shortlisted_json | Text | JSON array of {symbol, ratios, rank} |
 
 Read pattern: `WHERE user_id = ? AND set_id = ? ORDER BY id DESC LIMIT 1` (the active
-screen's latest run).
+screen's latest run). A Run Screen batch (Phase 1.8) writes one `manual` row for the active
+set plus up to three `auto` rows for the most-used other screens; `most_used_sets` reads only
+the last 10 `manual` rows, so auto-runs never feed the ranking.
 
 ### documents
 Filing metadata; files on disk.
