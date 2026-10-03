@@ -1,10 +1,19 @@
 """Service-level tests for Phase 1.8 run jobs (no HTTP)."""
 
 import json
+import logging
 from datetime import date
 
-from app.db.models import CompanyProfile, Fundamental, RunJob, RunJobItem, ScreenRun, Stock
-from app.screener import service
+from app.db.models import (
+    CompanyProfile,
+    Fundamental,
+    RunJob,
+    RunJobItem,
+    ScreeningSet,
+    ScreenRun,
+    Stock,
+)
+from app.screener import runner, service
 from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
@@ -16,13 +25,17 @@ class MapProvider:
     """Fixed 3-stock universe; ``fundamentals()`` logs calls (stored-snapshot
     tests assert it is never hit), provider objects are passed directly."""
 
-    def __init__(self, data=None, fail=(), stale=False):
+    def __init__(self, data=None, fail=(), stale=False, universe=None):
         self.data = data or {}
         self.fail = set(fail)
         self.stale = stale
+        self.universe = universe
         self.calls: list[str] = []
+        self.cached_payloads: dict[str, dict | None] = {}
 
     def list_stocks(self):
+        if self.universe is not None:
+            return self.universe
         return [
             {"symbol": "AAA", "name": "Alpha", "sector": "IT", "market_cap": None},
             {"symbol": "BBB", "name": "Beta", "sector": "Bank", "market_cap": None},
@@ -31,9 +44,19 @@ class MapProvider:
 
     def fundamentals(self, symbol, cached=None):
         self.calls.append(symbol)
+        self.cached_payloads[symbol] = cached
         if symbol in self.fail:
             raise RuntimeError(f"fetch failed for {symbol}")
         return {"symbol": symbol, **self.data[symbol], "raw": self.data[symbol].get("raw", {"src": "fake"})}
+
+
+class DeadFundamentalsProvider(MapProvider):
+    """Every ``fundamentals()`` call fails, like Yahoo throttling the whole batch."""
+
+    def fundamentals(self, symbol, cached=None):
+        self.calls.append(symbol)
+        self.cached_payloads[symbol] = cached
+        raise RuntimeError("yfinance unavailable")
 
 
 def seed_stored(test_db, rows, date_iso=STORED_DATE):
@@ -79,6 +102,29 @@ def get_item(test_db, job_id, set_id):
             "started_at": row.started_at,
             "finished_at": row.finished_at,
         }
+
+
+def job_row(test_db, job_id):
+    """Flat view of one job row, detached from the session."""
+    with test_db() as session:
+        row = session.get(RunJob, job_id)
+        return {
+            "status": row.status,
+            "error": row.error,
+            "finished_at": row.finished_at,
+            "universe_total": row.universe_total,
+            "universe_done": row.universe_done,
+            "universe_failed": row.universe_failed,
+        }
+
+
+def run_job(test_db, user, provider, set_id=None):
+    """Create a job for the active (or given) set and execute it synchronously."""
+    if set_id is None:
+        set_id = service.get_active_set(test_db, user["id"])["id"]
+    job_id = service.create_job(test_db, user["id"], set_id)["id"]
+    runner.execute_job(job_id, provider, test_db)
+    return job_id
 
 
 def test_create_job_creates_item_per_set_active_first(test_db, sign_in):
@@ -352,3 +398,307 @@ def test_persist_fetch_batch_inserts_failed_without_ok_row(test_db):
         assert row.data_status == "failed"
         assert json.loads(row.raw_json) == {"error": "yfinance unavailable"}
         assert session.get(Stock, "AAA").market_cap == 5000.0  # failed fetch never nulls it
+
+
+# --- Worker: runner.execute_job (B5) ----------------------------------------
+
+
+def test_execute_job_refreshes_stale_and_refines(test_db, sign_in):
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    active = service.get_active_set(test_db, user["id"])
+    p = MapProvider(
+        data={"AAA": {**GOOD, "pe": 30}},
+        universe=[{"symbol": "AAA", "name": "Alpha", "sector": "IT", "market_cap": None}],
+    )
+
+    job_id = run_job(test_db, user, p, set_id=active["id"])
+
+    job = job_row(test_db, job_id)
+    assert job["status"] == "done" and job["error"] is None and job["finished_at"] is not None
+    assert (job["universe_total"], job["universe_done"], job["universe_failed"]) == (1, 1, 0)
+    assert p.calls == ["AAA"]
+    assert p.cached_payloads["AAA"]["pe"] == GOOD["pe"]  # stored snapshot passed as cached=
+    item = get_item(test_db, job_id, active["id"])
+    assert item["status"] == "done" and item["run_id"] is not None
+    latest = service.latest_screen(test_db, user["id"])  # reads ORDER BY id DESC
+    assert latest["shortlisted"] == []  # refined on the fresh, PE-failing row
+    with test_db() as session:
+        row = session.get(Fundamental, ("AAA", date.today().isoformat()))
+        assert row.data_status == "ok" and row.pe == 30
+
+
+def test_execute_job_same_day_rerun_makes_no_calls(test_db, sign_in):
+    user = sign_in()
+    seed_stored(
+        test_db,
+        [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}],
+        date_iso=date.today().isoformat(),
+    )
+    p = MapProvider(data={})
+
+    job_id = run_job(test_db, user, p)
+
+    assert p.calls == []
+    assert job_row(test_db, job_id)["status"] == "done"
+    latest = service.latest_screen(test_db, user["id"])
+    assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]
+
+
+def test_execute_job_runs_every_saved_screen(test_db, sign_in):
+    user = sign_in()
+    default = service.list_sets(test_db, user["id"])[0]
+    quality = service.create_set(test_db, user["id"], "Quality", None, None)
+    seed_stored(
+        test_db,
+        [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}],
+        date_iso=date.today().isoformat(),
+    )
+    p = MapProvider(data={})
+
+    job_id = run_job(test_db, user, p, set_id=quality["id"])
+
+    default_item = get_item(test_db, job_id, default["id"])
+    quality_item = get_item(test_db, job_id, quality["id"])
+    assert default_item["status"] == quality_item["status"] == "done"
+    assert default_item["run_id"] is not None and quality_item["run_id"] is not None
+    assert default_item["run_id"] != quality_item["run_id"]
+    with test_db() as session:
+        run_ids = {row.id for row in session.query(ScreenRun).all()}
+    assert {default_item["run_id"], quality_item["run_id"]} <= run_ids
+
+
+def test_job_done_when_every_fetch_fails(test_db, sign_in):
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}])
+    p = DeadFundamentalsProvider()
+
+    job_id = run_job(test_db, user, p)
+
+    job = job_row(test_db, job_id)
+    assert job["status"] == "done"
+    assert (job["universe_total"], job["universe_done"], job["universe_failed"]) == (3, 0, 3)
+    latest = service.latest_screen(test_db, user["id"])
+    assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]  # cached shortlist survives
+
+
+def test_screen_failure_isolated(test_db, sign_in):
+    user = sign_in()
+    poison = service.create_set(test_db, user["id"], "Poison", None, None)
+    quality = service.create_set(test_db, user["id"], "Quality", None, None)
+    # Nested past json.loads' recursion limit: criteria_from_json cannot fall back,
+    # so the poison screen raises in the worker's screen stage.
+    deep = "[" * 2000 + "]" * 2000
+    with test_db() as session:
+        session.get(ScreeningSet, poison["id"]).criteria_json = deep
+        session.commit()
+    seed_stored(
+        test_db,
+        [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}],
+        date_iso=date.today().isoformat(),
+    )
+    p = MapProvider(data={})
+
+    job_id = run_job(test_db, user, p, set_id=quality["id"])
+
+    poison_item = get_item(test_db, job_id, poison["id"])
+    quality_item = get_item(test_db, job_id, quality["id"])
+    assert poison_item["status"] == "failed" and poison_item["error"]
+    assert quality_item["status"] == "done" and quality_item["run_id"] is not None
+    assert job_row(test_db, job_id)["status"] == "done"
+
+
+def test_global_failure_marks_job_failed(test_db, sign_in):
+    user = sign_in()
+    active = service.get_active_set(test_db, user["id"])
+
+    class DeadListProvider:
+        stale = False
+
+        def list_stocks(self):
+            raise RuntimeError("universe download refused")
+
+    job_id = service.create_job(test_db, user["id"], active["id"])["id"]
+
+    runner.execute_job(job_id, DeadListProvider(), test_db)
+
+    job = job_row(test_db, job_id)
+    assert job["status"] == "failed" and "universe download refused" in job["error"]
+    assert job["finished_at"] is not None
+    item = get_item(test_db, job_id, active["id"])
+    assert item["status"] == "failed" and "universe download refused" in item["error"]
+
+
+def test_refresh_order_puts_survivors_first(test_db, sign_in, monkeypatch):
+    user = sign_in()
+    seed_stored(
+        test_db,
+        [
+            {"symbol": "AAA", **GOOD},
+            {"symbol": "BBB", **{**BAD, "market_cap": 100}},
+            {"symbol": "CCC", **{**BAD, "market_cap": 200}},
+        ],
+    )
+    p = MapProvider(data={"AAA": GOOD, "BBB": GOOD, "CCC": GOOD})
+    monkeypatch.setattr(runner, "WORKERS", 1)  # single worker: call order == queue order
+
+    run_job(test_db, user, p)
+
+    assert p.calls[0] == "AAA"  # stored-snapshot survivor refines first
+    assert p.calls[1:] == ["CCC", "BBB"]  # rest by descending market cap
+
+
+# --- Fetch semantics migrated from test_screen_api.py (B5) ------------------
+
+
+def test_failed_fetch_persisted_and_market_cap_preserved(test_db, sign_in):
+    user = sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD})  # CCC fails
+    run_job(test_db, user, p)
+    # CCC is retried on the same-day rerun (a failed row is not an ok snapshot).
+    same_day = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD}, fail=("AAA", "CCC"))
+    run_job(test_db, user, same_day)
+    with test_db() as session:
+        assert session.get(Stock, "AAA").market_cap == 5000.0
+        assert session.get(Fundamental, ("CCC", date.today().isoformat())).data_status == "failed"
+    assert same_day.calls == ["CCC"]  # AAA/BBB have today's ok snapshot
+
+
+def test_run_twice_same_day_is_idempotent(test_db, sign_in):
+    user = sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+    run_job(test_db, user, p)
+    p.calls.clear()
+    run_job(test_db, user, p)
+    with test_db() as session:
+        assert session.query(ScreenRun).count() == 2
+        assert session.query(Fundamental).count() == 3
+    assert p.calls == []
+
+
+def test_screen_run_refreshes_every_stale_symbol(test_db, sign_in):
+    """Survivor-only fetching is gone: every stale symbol lands in the shared DB."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **GOOD}])
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+
+    run_job(test_db, user, p)
+
+    assert sorted(p.calls) == ["AAA", "BBB", "CCC"]  # BBB lost the PE gate but is still refreshed
+    latest = service.latest_screen(test_db, user["id"])
+    assert {r["symbol"] for r in latest["shortlisted"]} == {"AAA", "CCC"}
+
+
+def test_stale_reject_passing_fresh_is_not_reported_failed(test_db, sign_in):
+    """A symbol rejected on the stored snapshot but passing fresh must be in the
+    refined shortlist, not reported failed."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **GOOD}])
+    p = MapProvider(data={"AAA": GOOD, "BBB": GOOD, "CCC": GOOD})
+
+    run_job(test_db, user, p)
+
+    latest = service.latest_screen(test_db, user["id"])
+    assert {r["symbol"] for r in latest["shortlisted"]} == {"AAA", "BBB", "CCC"}
+
+
+def test_screen_run_writes_company_profiles(test_db, sign_in):
+    user = sign_in()
+    raw = {
+        "src": "fake",
+        "longBusinessSummary": "Makes things",
+        "industry": "Oil & Gas",
+        "fullTimeEmployees": 350000,
+    }
+    p = MapProvider(
+        data={
+            "AAA": {**GOOD, "raw": raw},
+            "BBB": {**BAD, "raw": raw},
+            "CCC": {**GOOD, "raw": raw},
+        }
+    )
+
+    run_job(test_db, user, p)
+
+    with test_db() as session:
+        profiles = {row.symbol: row for row in session.query(CompanyProfile).all()}
+    assert sorted(profiles) == ["AAA", "BBB", "CCC"]
+    assert profiles["AAA"].industry == "Oil & Gas"
+    assert profiles["AAA"].employees == 350000
+
+
+def test_first_run_fetches_whole_universe_when_nothing_stored(test_db, sign_in):
+    user = sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+
+    job_id = run_job(test_db, user, p)
+
+    assert sorted(p.calls) == ["AAA", "BBB", "CCC"]
+    job = job_row(test_db, job_id)
+    assert (job["universe_total"], job["universe_done"], job["universe_failed"]) == (3, 3, 0)
+
+
+def test_failed_refresh_keeps_same_day_ok_row(test_db, sign_in):
+    """Same-day ok snapshot must survive a failed refresh in the job path too."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}], date_iso=date.today().isoformat())
+    p = DeadFundamentalsProvider()
+
+    run_job(test_db, user, p)
+
+    latest = service.latest_screen(test_db, user["id"])
+    assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]
+    with test_db() as session:
+        row = session.get(Fundamental, ("AAA", date.today().isoformat()))
+        assert row.data_status == "ok" and row.pe == GOOD["pe"]
+
+
+def test_refreshed_values_override_stored_snapshot(test_db, sign_in):
+    """A passer is re-checked on fresh data; a regressed fresh PE cuts it."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    p = MapProvider(data={"AAA": {**GOOD, "pe": 30}, "BBB": BAD, "CCC": BAD})
+
+    run_job(test_db, user, p)
+
+    latest = service.latest_screen(test_db, user["id"])
+    assert latest["shortlisted"] == []
+    with test_db() as session:
+        row = session.get(Fundamental, ("AAA", date.today().isoformat()))
+        assert row.data_status == "ok" and row.pe == 30
+
+
+def test_stored_snapshot_keeps_screen_alive_when_refresh_fails(test_db, sign_in):
+    """Bug repro: yfinance down must not empty the screen when a snapshot exists."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}])
+    p = DeadFundamentalsProvider()
+
+    job_id = run_job(test_db, user, p)
+
+    latest = service.latest_screen(test_db, user["id"])
+    assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]
+    assert latest["shortlisted"][0]["data_date"] == STORED_DATE
+    assert job_row(test_db, job_id)["universe_failed"] == 3
+
+
+def test_failed_fetch_logs_warning(test_db, sign_in, caplog):
+    user = sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD})  # CCC fails
+
+    with caplog.at_level(logging.WARNING):
+        run_job(test_db, user, p)
+
+    assert "CCC" in caplog.text
+
+
+def test_screen_rerun_same_day_makes_no_fundamentals_calls(test_db, sign_in):
+    """Second job the same day finds a current snapshot for every symbol."""
+    user = sign_in()
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": GOOD})
+
+    run_job(test_db, user, p)
+    p.calls.clear()
+    run_job(test_db, user, p)
+
+    assert p.calls == []
