@@ -93,6 +93,10 @@ def compute_ratios(base: dict) -> dict:
     capital_employed = None
     if assets is not None and curr_liab is not None:
         capital_employed = assets - curr_liab
+    if capital_employed is None and equity is not None and debt is not None:
+        # Screener balance sheets omit current split; equity + debt is the
+        # standard simplified capital employed.
+        capital_employed = equity + debt
 
     raw: dict = {}
     raw["trailingEps"] = _round(eps)
@@ -157,9 +161,9 @@ def compute_ratios(base: dict) -> dict:
         "symbol": base.get("symbol"),
         "pe": _round(pe),
         "pb": _round(pb),
-        "roe": _round(_div(net_income, equity) * 100) if equity else None,
-        "roce": _round(_div(ebit, capital_employed) * 100)
-        if ebit is not None and capital_employed and capital_employed > 0
+        "roe": _round(_roe * 100) if (_roe := _div(net_income, equity)) is not None else None,
+        "roce": _round(_roce * 100)
+        if (_roce := _div(ebit, capital_employed)) is not None and capital_employed and capital_employed > 0
         else None,
         "debt_to_equity": _round(_div(debt, equity)) if equity else None,
         "market_cap": _round(market_cap),

@@ -83,6 +83,21 @@ def test_negative_capital_employed_yields_none_roce():
     assert out["roce"] is None
 
 
+def test_roce_falls_back_to_equity_plus_debt():
+    b = {"ebit": 20000.0, "equity": 75000.0, "total_debt": 15000.0,
+         "total_assets": 150000.0, "current_liabilities": None}
+    out = compute_ratios(b)
+    assert out["roce"] == round(20000.0 / (75000.0 + 15000.0) * 100, 4)
+
+
+def test_none_numerator_yields_none_not_crash():
+    b = {"price": 10.0, "shares_outstanding": 5.0, "equity": 100.0,
+         "net_income": None, "revenue": 50.0}
+    out = compute_ratios(b)
+    assert out["roe"] is None
+    assert out["pe"] is None  # eps needs net income
+
+
 def test_negative_prev_yields_none_growth():
     from app.data.ratios_math import compute_ratios, BASE_FIELDS
     assert "revenue_prev" in BASE_FIELDS
