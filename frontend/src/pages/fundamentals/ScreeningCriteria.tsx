@@ -10,6 +10,7 @@ import { Button, Box, Flex, Text } from '@chakra-ui/react'
 import { useOutletContext } from 'react-router-dom'
 import { CriteriaEditor, type CriteriaEditorHandle } from '@/components/CriteriaEditor'
 import { CriteriaPanel } from '@/components/CriteriaPanel'
+import { RunProgress } from '@/components/RunProgress'
 import { ScreenTabs, TABPANEL_ID, tabId } from '@/components/ScreenTabs'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { NumberTicker } from '@/components/ui/NumberTicker'
@@ -29,6 +30,9 @@ export default function ScreeningCriteria() {
     rows,
     summary,
     lastRunDate,
+    job,
+    busySetIds,
+    starting,
     running,
     elapsed,
     runError,
@@ -46,6 +50,7 @@ export default function ScreeningCriteria() {
   const [switching, setSwitching] = useState(false)
   const [switchError, setSwitchError] = useState<string | null>(null)
   const editorRef = useRef<CriteriaEditorHandle>(null)
+  const activeBusy = activeSet !== null && busySetIds.has(activeSet.id)
 
   const todayIso = (() => {
     const now = new Date()
@@ -138,6 +143,7 @@ export default function ScreeningCriteria() {
               active={activeSet}
               dirty={dirty}
               busy={switching}
+              busySetIds={busySetIds}
               onSelect={requestSwitch}
               onCreate={async (name) => {
                 await ensureDraftSaved()
@@ -163,6 +169,7 @@ export default function ScreeningCriteria() {
             <CriteriaPanel
               set={activeSet}
               ratios={ratios}
+              locked={activeBusy}
               onEdit={() => setEditorOpen(true)}
               onRetry={() => void reloadSets()}
               error={setsError}
@@ -218,6 +225,7 @@ export default function ScreeningCriteria() {
           onOpenChange={setEditorOpen}
           set={activeSet}
           ratios={ratios}
+          disabled={activeBusy}
           onSave={handleSave}
           onDirtyChange={setDirty}
         />
@@ -256,7 +264,13 @@ export default function ScreeningCriteria() {
             ) : null}
           </Flex>
 
-          {running ? (
+          {job !== null ? (
+            <div className="mt-4">
+              <RunProgress job={job} />
+            </div>
+          ) : null}
+
+          {starting ? (
             <div className="mt-4 flex flex-col items-center gap-2">
               <Suspense fallback={null}>
                 <SakuraLeafLoader size={120} label="Running screen…" />

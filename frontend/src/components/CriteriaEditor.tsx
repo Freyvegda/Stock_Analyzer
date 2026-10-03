@@ -63,6 +63,8 @@ export interface CriteriaEditorProps {
   ratios: RatioSpec[]
   onSave: (criteria: Criterion[], thesis: string | null) => Promise<void>
   onDirtyChange?: (dirty: boolean) => void
+  /** The screen is mid-run: every control locks and save() resolves false. */
+  disabled?: boolean
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -150,7 +152,10 @@ function AddCriterion({
 }
 
 export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorProps>(
-  function CriteriaEditor({ open, onOpenChange, set, ratios, onSave, onDirtyChange }, ref) {
+  function CriteriaEditor(
+    { open, onOpenChange, set, ratios, onSave, onDirtyChange, disabled = false },
+    ref,
+  ) {
     const [rows, setRows] = useState<DraftRow[]>([])
     const [thesis, setThesis] = useState('')
     const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
@@ -286,6 +291,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
     }
 
     const save = useCallback(async (): Promise<boolean> => {
+      if (disabled) return false
       if (set === null || !dirty) return true
       const errors: Record<number, string> = {}
       const parsed: Criterion[] = []
@@ -322,7 +328,7 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
       } finally {
         setSaving(false)
       }
-    }, [set, dirty, rows, thesis, onSave])
+    }, [set, dirty, rows, thesis, onSave, disabled])
 
     useImperativeHandle(ref, () => ({ save }), [save])
 
@@ -371,100 +377,103 @@ export const CriteriaEditor = forwardRef<CriteriaEditorHandle, CriteriaEditorPro
                   Loading criteria…
                 </Text>
               ) : (
-                <Stack gap={4}>
-                  {open && bookmarkedItems.length > 0 ? (
-                    <Suspense fallback={null}>
-                      <RibbonRail items={bookmarkedItems} onSelect={handleRibbonSelect} />
-                    </Suspense>
-                  ) : null}
-                  <Flex justify="flex-end">
-                    <Button
-                      size="xs"
-                      variant={bookmarkedOnly ? 'subtle' : 'outline'}
-                      colorPalette={bookmarkedOnly ? 'sakura' : undefined}
-                      aria-pressed={bookmarkedOnly}
-                      onClick={() => setBookmarkedOnly((value) => !value)}
-                    >
-                      Bookmarked only
-                    </Button>
-                  </Flex>
-
-                  {selected === null ? (
-                    <Text fontSize="sm" color="fg.muted">
-                      No bookmarked criteria yet.
-                    </Text>
-                  ) : (
-                    <Flex gap={5} align="flex-start" direction={{ base: 'column', lg: 'row' }}>
-                      <Box flexShrink={0} w={{ base: '100%', lg: '15rem' }} pt={1}>
-                        <CategoryDial
-                          segments={segments}
-                          value={selected}
-                          onValueChange={setPick}
-                          reduced={reduced}
-                        />
-                      </Box>
-                      <Box flex="1" minW={0}>
-                        <Box className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                          {entries.map(({ row, index }) => {
-                            const spec = catalog.get(row.key)
-                            const label = spec?.label ?? row.key
-                            return (
-                              <CriterionCard
-                                key={row.key}
-                                row={row}
-                                spec={spec}
-                                label={label}
-                                error={rowErrors[index]}
-                                index={index}
-                                reduced={reduced}
-                                onToggleEnabled={(enabled) => toggleRow(row.key, enabled)}
-                                onChangeValue={(value) => setRowValue(row.key, value)}
-                                onToggleBookmark={() => toggleBookmark(row.key)}
-                                onRemove={() => removeRow(row.key)}
-                              />
-                            )
-                          })}
-                          {options.length > 0 || selected === OTHER_CATEGORY ? (
-                            <Box className="glass-card glass-card-add" p={3}>
-                              <AddCriterion
-                                category={selected}
-                                options={options}
-                                onAdd={addRatio}
-                              />
-                            </Box>
-                          ) : null}
-                        </Box>
-                      </Box>
+                <fieldset disabled={disabled} className="m-0 min-w-0 border-0 p-0">
+                  <Stack gap={4}>
+                    {open && bookmarkedItems.length > 0 ? (
+                      <Suspense fallback={null}>
+                        <RibbonRail items={bookmarkedItems} onSelect={handleRibbonSelect} />
+                      </Suspense>
+                    ) : null}
+                    <Flex justify="flex-end">
+                      <Button
+                        size="xs"
+                        variant={bookmarkedOnly ? 'subtle' : 'outline'}
+                        colorPalette={bookmarkedOnly ? 'sakura' : undefined}
+                        aria-pressed={bookmarkedOnly}
+                        onClick={() => setBookmarkedOnly((value) => !value)}
+                      >
+                        Bookmarked only
+                      </Button>
                     </Flex>
-                  )}
 
-                  <Field.Root>
-                    <Field.Label>Thesis</Field.Label>
-                    <Textarea
-                      rows={3}
-                      maxLength={500}
-                      value={thesis}
-                      onChange={(e) => setThesis(e.target.value)}
-                    />
-                    <Field.HelperText>{thesis.length}/500</Field.HelperText>
-                  </Field.Root>
+                    {selected === null ? (
+                      <Text fontSize="sm" color="fg.muted">
+                        No bookmarked criteria yet.
+                      </Text>
+                    ) : (
+                      <Flex gap={5} align="flex-start" direction={{ base: 'column', lg: 'row' }}>
+                        <Box flexShrink={0} w={{ base: '100%', lg: '15rem' }} pt={1}>
+                          <CategoryDial
+                            segments={segments}
+                            value={selected}
+                            onValueChange={disabled ? () => {} : setPick}
+                            reduced={reduced}
+                          />
+                        </Box>
+                        <Box flex="1" minW={0}>
+                          <Box className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {entries.map(({ row, index }) => {
+                              const spec = catalog.get(row.key)
+                              const label = spec?.label ?? row.key
+                              return (
+                                <CriterionCard
+                                  key={row.key}
+                                  row={row}
+                                  spec={spec}
+                                  label={label}
+                                  error={rowErrors[index]}
+                                  index={index}
+                                  reduced={reduced}
+                                  onToggleEnabled={(enabled) => toggleRow(row.key, enabled)}
+                                  onChangeValue={(value) => setRowValue(row.key, value)}
+                                  onToggleBookmark={() => toggleBookmark(row.key)}
+                                  onRemove={() => removeRow(row.key)}
+                                />
+                              )
+                            })}
+                            {options.length > 0 || selected === OTHER_CATEGORY ? (
+                              <Box className="glass-card glass-card-add" p={3}>
+                                <AddCriterion
+                                  category={selected}
+                                  options={options}
+                                  onAdd={addRatio}
+                                />
+                              </Box>
+                            ) : null}
+                          </Box>
+                        </Box>
+                      </Flex>
+                    )}
 
-                  {formError !== null ? (
-                    <Text role="alert" color="fg.error" fontSize="sm">
-                      {formError}
-                    </Text>
-                  ) : null}
+                    <Field.Root>
+                      <Field.Label>Thesis</Field.Label>
+                      <Textarea
+                        rows={3}
+                        maxLength={500}
+                        value={thesis}
+                        onChange={(e) => setThesis(e.target.value)}
+                      />
+                      <Field.HelperText>{thesis.length}/500</Field.HelperText>
+                    </Field.Root>
 
-                  <Button
-                    alignSelf="flex-start"
-                    colorPalette="sakura"
-                    loading={saving}
-                    loadingText="Saving…"
-                    onClick={() => void save()}
-                  >
-                    Save
-                  </Button>
-                </Stack>
+                    {formError !== null ? (
+                      <Text role="alert" color="fg.error" fontSize="sm">
+                        {formError}
+                      </Text>
+                    ) : null}
+
+                    <Button
+                      alignSelf="flex-start"
+                      colorPalette="sakura"
+                      loading={saving}
+                      loadingText="Saving…"
+                      disabled={disabled}
+                      onClick={() => void save()}
+                    >
+                      Save
+                    </Button>
+                  </Stack>
+                </fieldset>
               )}
             </Accordion.ItemBody>
           </Accordion.ItemContent>

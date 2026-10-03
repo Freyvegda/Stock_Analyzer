@@ -10,7 +10,6 @@ import TopTen from '../fundamentals/TopTen'
 import { api } from '../../api/client'
 import { AuthProvider } from '../../auth/AuthContext'
 import { RequireAuth } from '../../components/RequireAuth'
-import { RunProgress } from '../../components/RunProgress'
 import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { StatusProvider, StatusRail } from '../../components/StatusRail'
@@ -135,11 +134,10 @@ const doneJob = job({
   ],
 })
 
-/** Reads the outlet context and renders the real RunProgress panel, so the
- * layout tests assert the same projection F3 will place in the pages. */
+/** Reads the outlet context into stable probes. F3 moved the real RunProgress
+ * panel into TopTen, so the top10 route renders it next to these probes. */
 function RunProbe() {
-  const { job: currentJob, busySetIds, stale, starting } =
-    useOutletContext<FundamentalsOutletContext>()
+  const { busySetIds, stale, starting } = useOutletContext<FundamentalsOutletContext>()
   return (
     <div>
       <span data-testid="probe-starting">{String(starting)}</span>
@@ -147,7 +145,6 @@ function RunProbe() {
       <span data-testid="probe-busy">
         {[...busySetIds].sort((a, b) => a - b).join(',')}
       </span>
-      {currentJob !== null ? <RunProgress job={currentJob} /> : null}
     </div>
   )
 }
@@ -274,8 +271,8 @@ describe('FundamentalsLayout', () => {
     renderLayout()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
 
-    expect(await screen.findByTestId('job-chip-1')).toBeInTheDocument()
-    expect(screen.getByTestId('probe-busy')).toHaveTextContent('1,2')
+    expect(await screen.findByTestId('probe-busy')).toHaveTextContent('1,2')
+    expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
     expect(screen.getByTestId('probe-starting')).toHaveTextContent('false')
     expect(screen.getByTestId('probe-stale')).toHaveTextContent('false')
     expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()

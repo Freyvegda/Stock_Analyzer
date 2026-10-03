@@ -27,12 +27,15 @@ export function CriteriaPanel({
   onEdit,
   onRetry,
   error = null,
+  locked = false,
 }: {
   set: ScreeningSet | null
   ratios: RatioSpec[]
   onEdit: () => void
   onRetry?: () => void
   error?: string | null
+  /** The active screen's run is queued/running — editing waits for the job. */
+  locked?: boolean
 }) {
   const catalog = new Map(ratios.map((ratio) => [ratio.key, ratio]))
   const enabled = set?.criteria.filter((criterion) => criterion.enabled) ?? []
@@ -50,8 +53,13 @@ export function CriteriaPanel({
               {enabled.length} enabled · {bookmarked} bookmarked
             </Text>
           ) : null}
+          {locked ? (
+            <Text fontSize="xs" color="fg.muted" mt={1} data-testid="panel-locked">
+              Screen is running — editing unlocks when the job finishes.
+            </Text>
+          ) : null}
         </Box>
-        <Button size="sm" colorPalette="sakura" onClick={onEdit} disabled={set === null}>
+        <Button size="sm" colorPalette="sakura" onClick={onEdit} disabled={set === null || locked}>
           Edit Criteria
         </Button>
       </Flex>

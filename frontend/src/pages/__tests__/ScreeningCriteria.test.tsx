@@ -87,15 +87,48 @@ const doneJob = {
   items: [],
 }
 
+const runningJob = {
+  id: 10,
+  set_id: 1,
+  status: 'running',
+  started_at: '2026-10-03T10:00:00.000Z',
+  finished_at: null,
+  error: null,
+  universe_total: 500,
+  universe_done: 40,
+  universe_failed: 0,
+  items: [
+    {
+      set_id: 1,
+      name: 'Default',
+      status: 'running',
+      run_id: null,
+      error: null,
+      started_at: '2026-10-03T10:00:00.000Z',
+      finished_at: null,
+    },
+    {
+      set_id: 2,
+      name: 'Quality',
+      status: 'done',
+      run_id: 2,
+      error: null,
+      started_at: '2026-10-03T09:59:00.000Z',
+      finished_at: '2026-10-03T09:59:30.000Z',
+    },
+  ],
+}
+
 function mockLoads(
   latest: unknown = emptyRun,
   sets: ScreeningSet[] = [setA, setB],
+  job: unknown = null,
 ) {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/screen/sets') return Promise.resolve(sets)
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
-    if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -143,6 +176,32 @@ describe('ScreeningCriteria', () => {
     expect(await screen.findByTestId('sakura-leaf-loader')).toBeInTheDocument()
     expect(screen.getByTestId('elapsed')).toHaveTextContent('00:00')
     expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
+  })
+
+  it('locks the active screen while its job runs: editor, rename and delete controls disabled', async () => {
+    mockLoads(emptyRun, [setA, setB], runningJob)
+    renderFundamentals()
+    expect(await screen.findByTestId('panel-locked')).toHaveTextContent(
+      'Screen is running — editing unlocks when the job finishes.',
+    )
+    expect(screen.getByRole('button', { name: /edit criteria/i })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Default' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Rename Default' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Close Default' })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Quality' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Close Quality' })).toBeEnabled()
+    expect(screen.getByTestId('tab-running-1')).toBeInTheDocument()
+    expect(screen.queryByTestId('tab-running-2')).not.toBeInTheDocument()
+  })
+
+  it('disables Run Screen and paints the progress panel on the run card while the job runs', async () => {
+    mockLoads(emptyRun, [setA, setB], runningJob)
+    renderFundamentals()
+    expect(await screen.findByTestId('run-progress')).toBeInTheDocument()
+    expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
+    expect(screen.queryByTestId('sakura-leaf-loader')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('elapsed')).not.toBeInTheDocument()
   })
 
   it('jumps to the top 10 page when a run finishes while on the criteria page', async () => {
