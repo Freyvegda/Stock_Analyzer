@@ -354,7 +354,9 @@ git commit -m "refactor: stored-snapshot screen + bulk fetch persist primitives"
 
 **Interfaces:**
 - Produces in `runner.py`:
-  - `WORKERS = 16`.
+  - `WORKERS = 2` (screener politeness budget: 2 workers × 2s delay ≈ 1 req/s;
+    a 500-stock cold refresh runs ~8–10 min; 16 workers 429-storm with 60s
+    backoffs instead).
   - `execute_job(job_id: int, provider: DataProvider, session_factory) -> None` — synchronous;
     never raises (a global failure marks the job `failed`).
   - `submit_job(job_id: int, provider: DataProvider, session_factory) -> None` — module-level

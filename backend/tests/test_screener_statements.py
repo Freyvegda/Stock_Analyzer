@@ -396,3 +396,30 @@ def test_404_is_terminal_no_retry(tmp_path, monkeypatch):
         raise AssertionError("missing symbol must raise")
     assert len(calls) == 2  # consolidated + main, then stop
     assert sleeps == []
+
+
+def test_404_serves_stale_cache_without_retry(tmp_path, monkeypatch):
+    # Delisted-but-known symbol: last-known statements served, zero backoff.
+    import app.data.screener_statements as stmt_mod
+
+    stale = {"as_of": "2020-01-01", "fields": {"revenue": 5.0}}
+    (tmp_path / "NOSUCH.json").write_text(json.dumps(stale), encoding="utf-8")
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(stmt_mod.time, "sleep", lambda s: sleeps.append(s))
+
+    class R404:
+        status_code = 404
+        headers = {}
+        text = "not found"
+
+        def raise_for_status(self):
+            raise AssertionError("404 must short-circuit before raise_for_status")
+
+    monkeypatch.setattr(
+        stmt_mod.httpx, "get", lambda url, **kwargs: (calls.append(url), R404())[1]
+    )
+    out = stmt_mod.fetch_statements("NOSUCH", cache_dir=str(tmp_path), ttl_days=30)
+    assert out["revenue"] == 5.0
+    assert len(calls) == 2
+    assert sleeps == []

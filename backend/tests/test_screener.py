@@ -204,7 +204,6 @@ def test_latest_ok_uses_grouped_max_query():
 
     source = inspect.getsource(service.latest_ok_fundamentals)
     assert "func.max" in source and "group_by" in source
-    assert source.count("def latest_ok_fundamentals") == 1 or True
     defs = [
         line
         for line in inspect.getsource(service).splitlines()

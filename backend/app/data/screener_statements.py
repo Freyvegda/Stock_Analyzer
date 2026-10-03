@@ -473,9 +473,10 @@ def fetch_statements(
 ) -> dict:
     """Return base statement fields, serving file cache when fresh.
 
-    A block (403/429) or a block page (parse without core fields) serves
-    the stale cache at any age; only a first-ever fetch with no cache
-    raises. Good cache is never overwritten by an empty parse.
+    A block (403/429) serves the stale cache at any age; a 404 on every page
+    variant raises terminal ``SymbolNotFoundError`` (no backoff retry) but
+    still serves a stale cache when one exists. Only a first-ever fetch with
+    no cache raises. Good cache is never overwritten by an empty parse.
     """
     today = date.today().isoformat()
     path = _cache_path(symbol, cache_dir)
