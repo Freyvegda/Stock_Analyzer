@@ -72,8 +72,10 @@ def test_configure_sqlite_sets_wal_and_busy_timeout():
     # temp engine -> configure_sqlite -> PRAGMA journal_mode == "wal",
     # PRAGMA busy_timeout == 5000
 def test_configure_sqlite_skips_other_dialects():
-    # create_mock_engine("postgresql://", executor) -> configure_sqlite(engine) ->
-    # event.contains(engine, "connect", _sqlite_pragmas) is False
+    # configure_sqlite on an engine whose dialect is not sqlite attaches no listener
+    # (SQLAlchemy 2.0.54 create_mock_engine has no event registry — a real SQLite
+    # engine with engine.dialect.name patched to "postgresql" exercises the same guard;
+    # assert event.contains(engine, "connect", _sqlite_pragmas) is False)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
