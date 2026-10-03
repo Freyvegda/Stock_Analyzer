@@ -71,12 +71,13 @@ Daily bars are **never stored**: `/stock/{symbol}/ohlc` fetches 5y of daily bars
 through a process-memory TTL cache (900 s) and slices/aggregates on the way out
 (no `prices` writes in Phase 1.6).
 
-**Universe + profile write path (Phase 1.6b):** the screen run refreshes
-fundamentals for **every** universe symbol whose newest `ok` row is not from today
-(plus symbols with no row) — one run fills the shared DB for all users, and a
-same-day rerun costs zero network calls. `GET /stocks` seeds `stocks` from the
-provider only when the table is empty (identity only — no fundamentals fetch).
-Every successful fundamentals write also upserts `company_profiles` (below) in the
+**Universe + profile write path (Phase 1.6b; refresh moved to the background job in Phase 1.8):**
+the run job refreshes fundamentals for **every** universe symbol whose newest `ok` row is not
+from today (plus symbols with no row) — one job fills the shared DB for all users, and a
+same-day rerun costs zero network calls. The synchronous `POST /screen/run` itself makes zero
+`fundamentals()` calls (Phase 1.8) and returns the stored snapshot immediately. `GET /stocks`
+seeds `stocks` from the provider only when the table is empty (identity only — no fundamentals
+fetch). Every successful fundamentals write also upserts `company_profiles` (below) in the
 same transaction.
 
 ### company_profiles (Phase 1.6b)
@@ -141,11 +142,13 @@ One row per saved screen inside a job (active included; API orders active first)
 | error | Text? | per-screen failure message |
 | run_id | Int?, FK → screen_runs.id | persisted shortlist once done; NULL when the job failed before writing one |
 
-Rules: one running job per user; keep the latest 20 jobs — older `run_jobs` + their
-`run_job_items` are pruned when a new job is created. A `running` job whose worker died with
-the process is swept to `interrupted` on the next jobs read (live in-process jobs registered
-by the worker are skipped), and a rerun after interruption is cheap thanks to same-day stored
-rows. Both tables are append-only job history; `screen_runs` rows are never pruned.
+Rules: one running job per user; keep the latest 20 jobs **per user** — older `run_jobs` + their
+`run_job_items` are pruned when a new job is created. Job-history survival after a screen delete
+relies on SQLite not enforcing FKs by default (the plain no-cascade FKs would block that delete on
+Postgres). A `running` job whose worker died with the process is swept to `interrupted` on the next
+jobs read (live in-process jobs registered by the worker are skipped), and a rerun after
+interruption is cheap thanks to same-day stored rows. Both tables are append-only job history;
+`screen_runs` rows are never pruned.
 
 ### documents
 Filing metadata; files on disk.
@@ -200,7 +203,7 @@ Model outputs. Composite PK allows multiple models per stock/day.
 ## Access Patterns
 
 - All DB access through `SessionLocal()` sessions (FastAPI dependency or context manager)
-- Screen run: newest `ok` row per symbol = `ORDER BY symbol ASC, date DESC`, first per symbol (`latest_ok_fundamentals`); the stored snapshot is gated for rejection detail, then every symbol whose snapshot is not from today is refreshed (plus symbols with no row)
+- Screen run (Phase 1.8): `POST /screen/run` gates the stored snapshot synchronously (`latest_ok_fundamentals` = grouped `MAX(date)` subquery per symbol) and persists a `screen_runs` row + a `run_jobs` row with one queued item per saved screen — zero `fundamentals()` calls; the background worker then refreshes every symbol whose snapshot is not from today (active-gate survivors first, then descending `market_cap`), persists `fundamentals` + `company_profiles` every 25 fetches, and re-evaluates every saved screen (active last, one `screen_runs` row each); `GET /screen/jobs/latest` reads `run_jobs` + `run_job_items` (`WHERE user_id = ? ORDER BY id DESC LIMIT 1`)
 - Universe list: `GET /stocks` reads `stocks` + the newest `ok` row per symbol, seeds `stocks` lazily when empty, and computes each row's verdict from the caller's criteria on read
 - Stock detail: same newest-`ok` lookup per symbol; no stored row -> lazy fetch + `merge`; candles are cache-only (`app/stock/candles.py`) — the DB is not involved in `/stock/{symbol}/ohlc` writes
 - Engine/session/Base in `app/db/database.py`; `init_db()` creates tables — NO migrations tool for MVP (dev DB is disposable; delete file to reset)

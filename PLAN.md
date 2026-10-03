@@ -94,6 +94,8 @@ D:\CODES\Projects\stock-analyzer\
 - `users(id PK, username unique, password_hash, created_at)` — Phase 1.5
 - `screening_sets(id PK, user_id FK, name, criteria_json, thesis, shortlist_size, is_active, updated_at)` — Phase 1.7 (retires `user_criteria`)
 - `screen_runs(id PK, run_date, user_id FK, set_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5, per-screen since Phase 1.7
+- `run_jobs(id PK, user_id FK, set_id FK, started_at, finished_at, status[running|done|failed|interrupted], universe_total, universe_done, universe_failed, error)` — Phase 1.8
+- `run_job_items(id PK, job_id FK, set_id FK, status[queued|running|done|failed], started_at, finished_at, error, run_id FK)` — Phase 1.8
 - `documents(id PK, symbol, type[concall|results|presentation|audit], period, url, local_path, parse_status)`
 - `doc_analysis(document_id PK, method[gemini|fallback], sentiment, guidance, red_flags_json, summary)`
 - `prices(symbol, date, open, high, low, close, volume, PK(symbol,date))`
@@ -146,6 +148,12 @@ D:\CODES\Projects\stock-analyzer\
 - Criteria page: screen picker + dialog-free inline editor (category sub-accordions); criterion bookmarks (ribbon toggle, pinned rows, "Bookmarked only" filter, 3D ribbon rail); Edit Criteria expands it; Run saves the draft first
 - Navbar search: always-visible 3D-glass bar at every width (no icon trigger — owner ruling 2026-09-29), Ctrl/Cmd+K focuses
 - Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
+
+### Phase 1.8 — Cached-first run + background job (run performance)
+- `POST /screen/run` returns the stored-snapshot shortlist in seconds (zero `fundamentals()` calls) and queues one background job; a second run while busy → 409 + `job_id`
+- Job refreshes every stale universe symbol (active-screen gate survivors first, then descending market cap), re-runs every saved screen (active refined last), and tracks progress in `run_jobs`/`run_job_items`; `GET /screen/jobs/latest` polls status + counters; edits/deletes/activation of a busy screen → 409
+- Performance: `latest_ok_fundamentals` grouped `MAX(date)`; bulk batch persist every 25 fetches; yfinance 15 s timeout + 3 jittered attempts; cached ROE/ROCE reuse skips statement fetches; SQLite `WAL` + `busy_timeout=5000`
+- Spec `docs/superpowers/specs/2026-10-03-run-performance-design.md`; plans `plan/phase-1.8-run-performance/`
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

@@ -8,7 +8,7 @@ Before writing or changing code in this repo, in this order:
    - `graphify explain "<node>"` — what a node is + neighbors
    - `graphify path "A" "B"` — how two modules connect
    - After changing code: `graphify update .` to refresh the graph
-2. **`plan/`** — phase-wise plans. Work ONLY inside the current phase folder (`phase-1-fundamental-screen/`, `phase-1.5/`, `phase-1.6-stock-detail/`, `phase-1.6b-universe-search/`, `phase-1.7/`, `phase-2-document-analysis/`, `phase-3-price-model/`, `phase-4-backtest/`). Each has `backend.md`, `frontend.md`, `database.md` — read all three for the phase.
+2. **`plan/`** — phase-wise plans. Work ONLY inside the current phase folder (`phase-1-fundamental-screen/`, `phase-1.5/`, `phase-1.6-stock-detail/`, `phase-1.6b-universe-search/`, `phase-1.7/`, `phase-1.8-run-performance/`, `phase-2-document-analysis/`, `phase-3-price-model/`, `phase-4-backtest/`). Each has `backend.md`, `frontend.md`, `database.md` — read all three for the phase.
 3. **Layer context files** — `backend/BACKEND.md`, `frontend/FRONTEND.md`, `backend/app/db/DATABASE.md`. Architectural rules there are binding.
 4. **`PLAN.md`** (root) — overall design, locked decisions, cost constraints.
 
