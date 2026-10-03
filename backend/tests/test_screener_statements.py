@@ -16,12 +16,33 @@ def test_parse_fixture_numbers():
     out = stmt.parse_statements(fixture_html())
     assert out["revenue"] == 100000.0
     assert out["net_income"] == 15000.0
-    assert out["ebit"] == 20000.0
-    assert out["equity"] == 75000.0
+    assert out["ebitda"] == 20000.0
+    assert out["ebit"] == 18000.0  # op + other income - depreciation
+    assert out["equity"] == 75000.0  # capital + reserves
     assert out["total_debt"] == 15000.0
     assert out["operating_cashflow"] == 18000.0
+    assert out["dividends_paid"] == 3000.0  # payout 20% of net income
     assert out["revenue_prev"] == 90000.0
     assert out["earnings_prev"] == 12000.0
+    assert out["promoters_pct"] == 0.5025
+    assert out["institutions_pct"] == 0.37
+
+
+def test_quarterly_table_skipped_for_annuals():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Dec 2025</th><th>Mar 2026</th></tr>"
+        "<tr><td>Sales +</td><td>1</td><td>2</td></tr>"
+        "</table><table>"
+        "<tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>"
+        "<tr><td>Sales +</td><td>90</td><td>100</td></tr>"
+        "<tr><td>Total Assets</td><td>50</td><td>60</td></tr>"
+        "<tr><td>Total Equity</td><td>40</td><td>45</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 100.0
+    assert out["revenue_prev"] == 90.0
 
 
 def test_missing_tables_yield_nones():

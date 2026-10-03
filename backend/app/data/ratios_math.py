@@ -27,6 +27,8 @@ BASE_FIELDS: frozenset[str] = frozenset(
         "earnings_prev",
         "cogs",
         "symbol",
+        "promoters_pct",
+        "institutions_pct",
     }
 )
 
@@ -114,19 +116,18 @@ def compute_ratios(base: dict) -> dict:
     )
     raw["revenueGrowth"] = (
         _round((revenue - revenue_prev) / revenue_prev)
-        if revenue is not None and revenue_prev
+        if revenue is not None and revenue_prev is not None and revenue_prev > 0
         else None
     )
     raw["earningsGrowth"] = (
         _round((net_income - earnings_prev) / earnings_prev)
-        if net_income is not None and earnings_prev
+        if net_income is not None and earnings_prev is not None and earnings_prev > 0
         else None
     )
     # Fraction here, engine ×100. dividendYield stays % (catalog scale 1.0).
     raw["payoutRatio"] = _round(_div(dividends, net_income)) if net_income else None
-    raw["dividendYield"] = (
-        _round(_div(dividends, market_cap) * 100) if market_cap else None
-    )
+    _div_yield = _div(dividends, market_cap)
+    raw["dividendYield"] = _round(_div_yield * 100) if _div_yield is not None else None
     raw["priceToSalesTrailing12Months"] = _round(_div(market_cap, revenue)) if revenue else None
 
     enterprise_value = None
@@ -148,6 +149,9 @@ def compute_ratios(base: dict) -> dict:
     raw["netIncomeToCommon"] = _round(None if net_income is None else net_income * 1e7)
     raw["totalCash"] = _round(None if _num(base.get("cash")) is None else _num(base.get("cash")) * 1e7)
     raw["totalDebt"] = _round(None if debt is None else debt * 1e7)
+    # Holdings arrive as fractions; catalog scales ×100 on read.
+    raw["heldPercentInsiders"] = _round(_num(base.get("promoters_pct")))
+    raw["heldPercentInstitutions"] = _round(_num(base.get("institutions_pct")))
 
     return {
         "symbol": base.get("symbol"),

@@ -83,6 +83,19 @@ def test_negative_capital_employed_yields_none_roce():
     assert out["roce"] is None
 
 
+def test_negative_prev_yields_none_growth():
+    from app.data.ratios_math import compute_ratios, BASE_FIELDS
+    assert "revenue_prev" in BASE_FIELDS
+    b = {
+        "price": 100.0, "shares_outstanding": 10.0,
+        "revenue": 1000.0, "revenue_prev": -500.0,
+        "net_income": 50.0, "earnings_prev": -100.0,
+    }
+    out = compute_ratios(b)
+    assert out["raw"].get("revenueGrowth") is None
+    assert out["raw"].get("earningsGrowth") is None
+
+
 def test_base_fields_whitelisted():
     assert "price" in BASE_FIELDS
     assert "net_income" in BASE_FIELDS

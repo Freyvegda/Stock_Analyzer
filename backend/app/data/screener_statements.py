@@ -28,9 +28,9 @@ _LABEL_MAP = {
     "pat": "net_income",
     "profit after tax": "net_income",
     "ebit": "ebit",
-    "operating profit": "ebit",
     "pbit": "ebit",
     "ebitda": "ebitda",
+    "operating profit": "ebitda",
     "raw material cost": "cogs",
     "cost of materials": "cogs",
     "cogs": "cogs",
@@ -51,14 +51,31 @@ _LABEL_MAP = {
     "bank balance": "cash",
     "operating cash flow": "operating_cashflow",
     "cash from operations": "operating_cashflow",
+    "cash from operating activity": "operating_cashflow",
     "capex": "capex",
     "fixed assets purchased": "capex",
     "dividend paid": "dividends_paid",
+    "dividend payout %": "_payout_pct",
     "equity capital": "_equity_capital",
     "face value": "_face_value",
+    "reserves": "_reserves",
+    "other income": "_other_income",
+    "depreciation": "_depreciation",
+    "promoters": "_promoters",
+    "fiis": "_fiis",
+    "diis": "_diis",
 }
 
+
+def _normalize_label(label: str) -> str:
+    """Screener parent rows carry a trailing '+' (expandable); strip it."""
+    return (label or "").strip().lower().rstrip("+").strip()
+
 _ANNUAL_RE = re.compile(r"(mar|fy)?\s*20\d\d", re.IGNORECASE)
+_QUARTER_RE = re.compile(r"(jun|sep|dec)\s*20\d\d", re.IGNORECASE)
+
+#: Holdings labels stay readable on quarterly shareholding tables.
+_HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis"})
 _NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing", re.IGNORECASE)
 
 #: Money fields (Rs cr base) vs per-share/price fields (never unit-scaled).
@@ -199,30 +216,34 @@ def parse_statements(html: str) -> dict:
         if not table_rows:
             continue
         header = [c.get_text(" ", strip=True) for c in table_rows[0].find_all(["td", "th"])]
+        quarterly = any(_QUARTER_RE.search(cell or "") for cell in header[1:])
         indexes = _annual_indexes(header) if len(header) > 1 else [1]
         for row in table_rows[1:]:
             cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
             if len(cells) < 2:
                 continue
-            label = cells[0].strip().lower()
-            field = _LABEL_MAP.get(label)
+            field = _LABEL_MAP.get(_normalize_label(cells[0]))
             if field is None:
                 continue
+            if quarterly and field not in _HOLDING_FIELDS:
+                continue  # quarterly results table: no annual statements here
             values = [_to_float(cells[i]) if i < len(cells) else None for i in indexes]
             values = [v for v in values if v is not None]
             if values:
                 found.setdefault(field, values)
 
     def latest(key: str) -> float | None:
+        # Columns run oldest-first; the latest annual is last.
         vals = found.get(key)
-        return vals[0] if vals else None
+        return vals[-1] if vals else None
 
     def prev(key: str) -> float | None:
         vals = found.get(key)
-        return vals[1] if vals and len(vals) > 1 else None
+        return vals[-2] if vals and len(vals) > 1 else None
 
     equity_capital = latest("_equity_capital")
     face_value = latest("_face_value")
+    reserves = latest("_reserves")
     shares = None
     if equity_capital and face_value and face_value > 0:
         shares = equity_capital * scale * 1e7 / face_value / 1e7  # cr shares
@@ -236,12 +257,44 @@ def parse_statements(html: str) -> dict:
         value = latest(key)
         return None if value is None else value * scale
 
+    equity = money("equity")
+    if equity is None and (equity_capital is not None or reserves is not None):
+        parts = [v for v in (equity_capital, reserves) if v is not None]
+        equity = sum(parts) * scale if len(parts) == 2 else None
+
+    ebitda = money("ebitda")
+    ebit = money("ebit")
+    if ebit is None:
+        operating = money("ebitda")
+        other = money("_other_income")
+        depreciation = money("_depreciation")
+        if operating is not None and other is not None and depreciation is not None:
+            ebit = operating + other - depreciation
+
+    dividends = money("dividends_paid")
+    if dividends is None:
+        payout = latest("_payout_pct")
+        net_income = money("net_income")
+        if payout is not None and net_income is not None:
+            dividends = payout / 100 * net_income
+
+    def holding(key: str) -> float | None:
+        # Screener shows percents; raw holds fractions (engine ×100).
+        value = latest(key)
+        return None if value is None else value / 100
+
+    promoters = holding("_promoters")
+    institutions = None
+    fiis, diis = holding("_fiis"), holding("_diis")
+    if fiis is not None or diis is not None:
+        institutions = (fiis or 0.0) + (diis or 0.0)
+
     return {
         "revenue": money("revenue"),
         "net_income": money("net_income"),
-        "ebit": money("ebit"),
-        "ebitda": money("ebitda"),
-        "equity": money("equity"),
+        "ebit": ebit,
+        "ebitda": ebitda,
+        "equity": equity,
         "total_assets": money("total_assets"),
         "current_assets": money("current_assets"),
         "current_liabilities": money("current_liabilities"),
@@ -251,11 +304,13 @@ def parse_statements(html: str) -> dict:
         "shares_outstanding": shares,
         "operating_cashflow": money("operating_cashflow"),
         "capex": money("capex"),
-        "dividends_paid": money("dividends_paid"),
+        "dividends_paid": dividends,
         "revenue_prev": (lambda v: None if v is None else v * scale)(prev("revenue")),
         "earnings_prev": (lambda v: None if v is None else v * scale)(prev("net_income")),
         "cogs": money("cogs"),
         "price": price,
+        "promoters_pct": promoters,
+        "institutions_pct": institutions,
     }
 
 
@@ -264,20 +319,33 @@ def _cache_path(symbol: str, cache_dir: str) -> str:
 
 
 def _download(symbol: str) -> str:
-    url = f"https://www.screener.in/company/{symbol.strip().upper()}/"
+    """Company page HTML, consolidated first (falls back on 404).
+
+    Screener renders standalone figures on the main page; Nifty 500
+    screening wants consolidated. Standalone-only companies 404 on the
+    consolidated path and fall back to the main page.
+    """
+    symbol = symbol.strip().upper()
+    urls = [
+        f"https://www.screener.in/company/{symbol}/consolidated/",
+        f"https://www.screener.in/company/{symbol}/",
+    ]
     last_error: Exception | None = None
-    for attempt in range(3):
-        try:
-            resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
-            if resp.status_code in (403, 429):
-                raise ScreenerBlockedError(f"screener blocked {symbol}: {resp.status_code}")
-            resp.raise_for_status()
-            return resp.text
-        except ScreenerBlockedError:
-            raise
-        except Exception as e:  # noqa: BLE001 — retry then propagate
-            last_error = e
-            time.sleep(1.0 * (attempt + 1))
+    for url_index, url in enumerate(urls):
+        for attempt in range(3):
+            try:
+                resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
+                if resp.status_code == 404 and url_index == 0:
+                    break  # standalone-only company: fall back to main page
+                if resp.status_code in (403, 429):
+                    raise ScreenerBlockedError(f"screener blocked {symbol}: {resp.status_code}")
+                resp.raise_for_status()
+                return resp.text
+            except ScreenerBlockedError:
+                raise
+            except Exception as e:  # noqa: BLE001 — retry then propagate
+                last_error = e
+                time.sleep(1.0 * (attempt + 1))
     raise last_error  # type: ignore[misc]
 
 
