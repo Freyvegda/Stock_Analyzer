@@ -1,5 +1,5 @@
 import app.auth.security as security
-from app.auth.security import hash_password, session_secret, verify_password
+from app.auth.security import auth_secret, hash_password, verify_password
 
 
 def test_hash_verify_round_trip():
@@ -20,15 +20,13 @@ def test_malformed_hash_returns_false():
     assert not verify_password("x", "not-a-hash")
 
 
-def test_session_secret_created_once_and_stable(tmp_path, monkeypatch):
-    monkeypatch.setattr(security, "SECRET_PATH", str(tmp_path / ".session_secret"))
-    first = session_secret()
+def test_auth_secret_created_once_and_stable(tmp_path, monkeypatch):
+    monkeypatch.setattr(security, "SECRET_PATH", str(tmp_path / ".auth_secret"))
+    first = auth_secret()
     assert first and len(first) >= 32
-    assert session_secret() == first
-    assert (tmp_path / ".session_secret").read_text(encoding="utf-8") == first
+    assert auth_secret() == first
+    assert (tmp_path / ".auth_secret").read_text(encoding="utf-8") == first
 
-
-import json
 
 import pytest
 from sqlalchemy import create_engine
@@ -38,7 +36,6 @@ from app.auth import service
 from app.auth.service import UserExistsError
 from app.db.database import Base
 from app.db.models import User
-from app.screener.criteria import default_criteria
 
 
 @pytest.fixture
@@ -84,9 +81,7 @@ def test_get_user(db):
     assert service.get_user(db, 999) is None
 
 
-# --- HTTP: auth routes, session cookie, router gating ---
-
-from tests.conftest import create_session_cookie
+# --- HTTP: auth routes, router gating ---
 
 
 def test_state_reports_no_users_initially(client, test_db):
@@ -97,6 +92,7 @@ def test_setup_creates_account_and_session(client, test_db):
     res = client.post("/auth/setup", json={"username": "Alice", "password": "password123"})
     assert res.status_code == 201
     assert res.json()["user"]["username"] == "alice"
+    client.headers["Authorization"] = f"Bearer {res.json()['access_token']}"
     assert client.get("/auth/me").json()["username"] == "alice"
     state = client.get("/auth/state").json()
     assert state["users_exist"] is True and state["user"]["username"] == "alice"
@@ -125,6 +121,7 @@ def test_login_ok_and_generic_failure(client, test_db):
     assert wrong.json()["detail"] == unknown.json()["detail"] == "Invalid username or password"
     ok = client.post("/auth/login", json={"username": "ALICE", "password": "password123"})
     assert ok.status_code == 200
+    client.headers["Authorization"] = f"Bearer {ok.json()['access_token']}"
     assert client.get("/auth/me").json()["username"] == "alice"
 
 
@@ -138,19 +135,6 @@ def test_me_without_session(client, test_db):
     res = client.get("/auth/me")
     assert res.status_code == 401
     assert res.json()["detail"] == "Not authenticated"
-
-
-def test_signed_cookie_authenticates_directly(client, test_db):
-    user = service.create_user(test_db, "alice", "password123")
-    client.cookies.set("sa_session", create_session_cookie(user))
-    assert client.get("/auth/me").json() == user
-
-
-def test_tampered_cookie_is_rejected(client, test_db):
-    user = service.create_user(test_db, "alice", "password123")
-    cookie = create_session_cookie(user)
-    client.cookies.set("sa_session", cookie[:-2] + "xx")
-    assert client.get("/auth/me").status_code == 401
 
 
 def test_pipeline_routers_require_auth(client, test_db):

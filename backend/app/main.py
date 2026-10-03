@@ -3,28 +3,22 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.sessions import SessionMiddleware
 
 from app.api import auth, backtest, docs, screen, signals, stock, stocks
 from app.auth.deps import current_user
-from app.auth.security import SESSION_MAX_AGE, session_secret
 from app.screener.criteria import ConfigError
 
 app = FastAPI(title="Stock Analyzer", version="0.1.0")
 
+# No SessionMiddleware: auth is a bearer access token plus an HttpOnly refresh
+# cookie, both set by the auth router. `allow_credentials` stays because the
+# refresh cookie rides the same origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=session_secret(),
-    session_cookie="sa_session",
-    max_age=SESSION_MAX_AGE,
-    same_site="lax",
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])

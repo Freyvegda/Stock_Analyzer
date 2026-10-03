@@ -3,8 +3,9 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Box, Button, Field, Flex, IconButton, Input, Spinner, Stack, Text } from '@chakra-ui/react'
 import { Eye, EyeOff } from 'lucide-react'
 import { ApiError, api } from '@/api/client'
-import type { AuthState, AuthUser } from '@/api/types'
+import type { AuthBundle, AuthState } from '@/api/types'
 import { useAuth } from '@/auth/AuthContext'
+import { setAccessToken } from '@/auth/tokenStore'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { LoginBrandPanel } from '@/components/LoginBrandPanel'
 import { LoginGarden } from '@/components/LoginGarden'
@@ -80,9 +81,10 @@ export default function Login() {
     setError(null)
     try {
       const path = isSetup ? '/auth/setup' : '/auth/login'
-      const user = await api.post<AuthUser>(path, { username: username.trim(), password })
-      setUser(user)
-      navigate('/')
+      const bundle = await api.post<AuthBundle>(path, { username: username.trim(), password })
+      setAccessToken(bundle.access_token)
+      setUser(bundle.user)
+      navigate('/fundamentals/criteria')
     } catch (err) {
       if (isSetup && err instanceof ApiError && err.status === 409) {
         setError('Account already exists — log in instead')
@@ -257,7 +259,7 @@ export default function Login() {
                   textTransform="uppercase"
                   color="fg.muted"
                 >
-                  Session · HttpOnly cookie
+                  JWT · rotating refresh
                 </Text>
               </Stack>
             </Box>

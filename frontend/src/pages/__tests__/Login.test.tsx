@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import Login from '../Login'
 import { AuthProvider } from '../../auth/AuthContext'
+import { clearAccessToken, getAccessToken } from '../../auth/tokenStore'
 import { Provider } from '../../components/ui/provider'
 
 // The garden scene is three.js; its own suite covers the gates. Here it stays inert
@@ -20,6 +21,14 @@ interface Stub {
 
 const ANONYMOUS_ME = {
   'GET /api/auth/me': { status: 401, body: { detail: 'Not authenticated' } },
+}
+
+/** Login/setup answer with a token bundle; the refresh token is cookie-only. */
+const BUNDLE = {
+  user: { id: 1, username: 'solo' },
+  access_token: 'test-access-token',
+  token_type: 'bearer',
+  expires_in: 900,
 }
 
 function stubFetch(handlers: Record<string, Stub>) {
@@ -47,7 +56,8 @@ function renderLogin() {
         <MemoryRouter initialEntries={['/login']}>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<div>fundamentals home</div>} />
+            {/* Signing in lands in the app, not the landing page. */}
+            <Route path="/fundamentals/criteria" element={<div>fundamentals home</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -55,7 +65,10 @@ function renderLogin() {
   )
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  clearAccessToken()
+})
 
 describe('Login', () => {
   it('shows the create-account card on first visit', async () => {
@@ -121,7 +134,7 @@ describe('Login', () => {
     const fetchMock = stubFetch({
       ...ANONYMOUS_ME,
       'GET /api/auth/state': { body: { users_exist: false, user: null } },
-      'POST /api/auth/setup': { status: 201, body: { id: 1, username: 'solo' } },
+      'POST /api/auth/setup': { status: 201, body: BUNDLE },
     })
     renderLogin()
     await userEvent.type(await screen.findByLabelText(/username/i), 'solo')
@@ -151,6 +164,23 @@ describe('Login', () => {
     expect(screen.getByLabelText(/username/i)).toHaveValue('solo')
   })
 
+  it('stores the access token and lands in the app after signing in', async () => {
+    stubFetch({
+      ...ANONYMOUS_ME,
+      'GET /api/auth/state': { body: { users_exist: true, user: null } },
+      'POST /api/auth/login': { body: BUNDLE },
+    })
+    renderLogin()
+    await userEvent.type(await screen.findByLabelText(/username/i), 'solo')
+    await userEvent.type(screen.getByLabelText(/^password$/i), 'password123')
+    await userEvent.click(screen.getByRole('button', { name: /^log in$/i }))
+
+    expect(await screen.findByText('fundamentals home')).toBeInTheDocument()
+    // memory only — never written to storage a script could read
+    expect(getAccessToken()).toBe('test-access-token')
+    expect(window.localStorage.getItem('access_token')).toBeNull()
+  })
+
   it('keeps the login card and shows the generic 401 detail', async () => {
     stubFetch({
       ...ANONYMOUS_ME,
@@ -176,7 +206,7 @@ describe('Login', () => {
     stubFetch({
       ...ANONYMOUS_ME,
       'GET /api/auth/state': { body: { users_exist: false, user: null } },
-      'POST /api/auth/setup': { status: 201, body: { id: 1, username: 'solo' }, gate },
+      'POST /api/auth/setup': { status: 201, body: BUNDLE, gate },
     })
     renderLogin()
     await userEvent.type(await screen.findByLabelText(/username/i), 'solo')

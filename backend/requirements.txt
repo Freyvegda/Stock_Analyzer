@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 itsdangerous
+pyjwt
 pydantic
 yfinance
 pandas
