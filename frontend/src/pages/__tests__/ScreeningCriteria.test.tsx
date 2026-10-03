@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -74,14 +74,61 @@ const row = {
 
 const emptyRun = { run_id: 1, run_date: '2026-09-26', shortlisted: [] }
 
+const doneJob = {
+  id: 9,
+  set_id: 1,
+  status: 'done',
+  started_at: '2026-10-03T10:00:00.000Z',
+  finished_at: '2026-10-03T10:00:05.000Z',
+  error: null,
+  universe_total: 500,
+  universe_done: 500,
+  universe_failed: 0,
+  items: [],
+}
+
+const runningJob = {
+  id: 10,
+  set_id: 1,
+  status: 'running',
+  started_at: '2026-10-03T10:00:00.000Z',
+  finished_at: null,
+  error: null,
+  universe_total: 500,
+  universe_done: 40,
+  universe_failed: 0,
+  items: [
+    {
+      set_id: 1,
+      name: 'Default',
+      status: 'running',
+      run_id: null,
+      error: null,
+      started_at: '2026-10-03T10:00:00.000Z',
+      finished_at: null,
+    },
+    {
+      set_id: 2,
+      name: 'Quality',
+      status: 'done',
+      run_id: 2,
+      error: null,
+      started_at: '2026-10-03T09:59:00.000Z',
+      finished_at: '2026-10-03T09:59:30.000Z',
+    },
+  ],
+}
+
 function mockLoads(
   latest: unknown = emptyRun,
   sets: ScreeningSet[] = [setA, setB],
+  job: unknown = null,
 ) {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/screen/sets') return Promise.resolve(sets)
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -127,8 +174,73 @@ describe('ScreeningCriteria', () => {
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     expect(await screen.findByTestId('sakura-leaf-loader')).toBeInTheDocument()
+    expect(screen.getByText('Preparing cached results…')).toBeInTheDocument()
+    expect(screen.queryByText(/fetching fundamentals/i)).not.toBeInTheDocument()
     expect(screen.getByTestId('elapsed')).toHaveTextContent('00:00')
     expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
+  })
+
+  // The real sync path marks the active item done before returning, so a busy
+  // active item is a recovery net (reload/race) rather than the normal state.
+  it('locks the active screen while its job runs: editor, rename and delete controls disabled', async () => {
+    mockLoads(emptyRun, [setA, setB], runningJob)
+    renderFundamentals()
+    expect(await screen.findByTestId('panel-locked')).toHaveTextContent(
+      'Screen is running — editing unlocks when the job finishes.',
+    )
+    expect(screen.getByRole('button', { name: /edit criteria/i })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Default' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Rename Default' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Close Default' })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'Quality' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Close Quality' })).toBeEnabled()
+    expect(screen.getByTestId('tab-running-1')).toBeInTheDocument()
+    expect(screen.queryByTestId('tab-running-2')).not.toBeInTheDocument()
+  })
+
+  it('disables Run Screen and paints the progress panel on the run card while the job runs', async () => {
+    mockLoads(emptyRun, [setA, setB], runningJob)
+    renderFundamentals()
+    expect(await screen.findByTestId('run-progress')).toBeInTheDocument()
+    expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
+    expect(screen.queryByTestId('sakura-leaf-loader')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('elapsed')).not.toBeInTheDocument()
+  })
+
+  it('locks an already-open editor when the active screen becomes busy', async () => {
+    let releaseJob: (value: unknown) => void = () => {}
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') {
+        return new Promise((resolve) => {
+          releaseJob = resolve
+        })
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderFundamentals()
+    await screen.findByText('PE ≤ 25×')
+    await userEvent.click(screen.getByRole('button', { name: /edit criteria/i }))
+    expect(await screen.findByLabelText('PE value')).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+
+    await act(async () => {
+      releaseJob({ job: runningJob })
+    })
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled(),
+    )
+    expect(screen.getByLabelText('PE value')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bookmark PE' })).toBeDisabled()
+    expect(screen.getByLabelText('PE value').closest('fieldset')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /edit criteria/i })).toBeDisabled()
+    expect(screen.getByTestId('panel-locked')).toHaveTextContent(
+      'Screen is running — editing unlocks when the job finishes.',
+    )
   })
 
   it('jumps to the top 10 page when a run finishes while on the criteria page', async () => {
@@ -142,13 +254,12 @@ describe('ScreeningCriteria', () => {
           latestCalls === 1 ? emptyRun : { run_id: 2, run_date: '2026-09-26', shortlisted: [row] },
         )
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [row],
-      failed_count: 0,
-      total: 500,
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500 },
+      job: doneJob,
     })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
@@ -168,8 +279,11 @@ describe('ScreeningCriteria', () => {
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     await userEvent.click(screen.getByRole('link', { name: 'Stocks' }))
     expect(await screen.findByText('stocks stub')).toBeInTheDocument()
-    release({ run_id: 2, shortlisted: [row], failed_count: 0, total: 500 })
-    await waitFor(() => expect(mockedApi.get).toHaveBeenCalledTimes(4))
+    release({
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500 },
+      job: doneJob,
+    })
+    await waitFor(() => expect(mockedApi.get).toHaveBeenCalledTimes(5))
     expect(screen.queryByRole('heading', { name: 'Top 10 Results' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('link', { name: 'Screen Criteria' }))
     await waitFor(() =>
@@ -183,11 +297,14 @@ describe('ScreeningCriteria', () => {
   it('warns when a run falls back to stored fundamentals', async () => {
     mockLoads()
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [],
-      failed_count: 3,
-      total: 500,
-      stale: true,
+      run: {
+        run_id: 2,
+        shortlisted: [],
+        failed_count: 3,
+        total: 500,
+        stale: true,
+      },
+      job: doneJob,
     })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
@@ -199,6 +316,7 @@ describe('ScreeningCriteria', () => {
   it('shows the panel error when screens loading fails', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error('sets exploded'))
     })
     renderFundamentals()
@@ -215,9 +333,13 @@ describe('ScreeningCriteria', () => {
         if (latestCalls === 1) return Promise.resolve(emptyRun)
         return Promise.reject(new ApiError(401, 'Not authenticated'))
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
-    mockedApi.post.mockResolvedValue({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })
+    mockedApi.post.mockResolvedValue({
+      run: { run_id: 2, shortlisted: [], failed_count: 0, total: 0 },
+      job: doneJob,
+    })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     await waitFor(() => expect(latestCalls).toBe(2))
@@ -351,10 +473,8 @@ describe('ScreeningCriteria', () => {
       ],
     })
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [],
-      failed_count: 0,
-      total: 500,
+      run: { run_id: 2, shortlisted: [], failed_count: 0, total: 500 },
+      job: doneJob,
     })
     renderFundamentals()
     await screen.findByText('PE ≤ 25×')
@@ -382,6 +502,7 @@ describe('ScreeningCriteria', () => {
       }
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     mockedApi.post.mockImplementation((path: string) =>
@@ -408,6 +529,7 @@ describe('ScreeningCriteria', () => {
       }
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     renderFundamentals()

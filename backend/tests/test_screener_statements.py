@@ -28,6 +28,22 @@ def test_parse_fixture_numbers():
     assert out["institutions_pct"] == 0.37
 
 
+def test_legacy_partial_columns_skipped_annuals_kept():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Jun 2015</th><th>Mar 2016 9m</th><th>Mar 2024</th><th>Mar 2025</th><th>TTM</th></tr>"
+        "<tr><td>Sales +</td><td>10</td><td>20</td><td>90</td><td>100</td><td>110</td></tr>"
+        "<tr><td>Net Profit +</td><td>1</td><td>2</td><td>12</td><td>15</td><td>16</td></tr>"
+        "<tr><td>Total Equity</td><td>5</td><td>6</td><td>70</td><td>75</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 100.0
+    assert out["revenue_prev"] == 90.0
+    assert out["net_income"] == 15.0
+    assert out["equity"] == 75.0
+
+
 def test_bank_labels_map_to_debt_and_ebitda():
     html = (
         "<html><body><table>"

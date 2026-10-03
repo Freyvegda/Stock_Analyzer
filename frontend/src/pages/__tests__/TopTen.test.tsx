@@ -58,11 +58,35 @@ const row = {
   market_cap: 1200000,
 }
 
+const runningJob = {
+  id: 10,
+  set_id: 1,
+  status: 'running',
+  started_at: '2026-10-03T10:00:00.000Z',
+  finished_at: null,
+  error: null,
+  universe_total: 500,
+  universe_done: 40,
+  universe_failed: 0,
+  items: [
+    {
+      set_id: 1,
+      name: 'Default',
+      status: 'running',
+      run_id: null,
+      error: null,
+      started_at: '2026-10-03T10:00:00.000Z',
+      finished_at: null,
+    },
+  ],
+}
+
 function renderTopTen(latest: unknown, path = '/fundamentals/top10') {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/screen/sets') return Promise.resolve([setA])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
   return render(
@@ -95,14 +119,21 @@ describe('TopTen', () => {
   it('names the extra screens a run evaluated, failures included', async () => {
     renderTopTen({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] }, '/fundamentals/criteria')
     mockedApi.post.mockResolvedValue({
-      run_id: 5,
-      shortlisted: [],
-      failed_count: 0,
-      total: 3,
+      run: {
+        run_id: 5,
+        shortlisted: [],
+        failed_count: 0,
+        total: 3,
+        extra_runs: [
+          { set_id: 2, name: 'Quality', run_id: 6, shortlisted: 7, error: null },
+          { set_id: 3, name: 'Value', run_id: null, shortlisted: null, error: 'boom' },
+        ],
+      },
       extra_runs: [
         { set_id: 2, name: 'Quality', run_id: 6, shortlisted: 7, error: null },
         { set_id: 3, name: 'Value', run_id: null, shortlisted: null, error: 'boom' },
       ],
+      job: null,
     })
     await screen.findByText('PE ≤ 25×')
 
@@ -122,6 +153,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return gate
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -163,6 +195,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(404, 'No screen run yet'))
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -188,6 +221,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(500, 'latest exploded'))
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -207,16 +241,20 @@ describe('TopTen', () => {
     expect(screen.queryByText(/no screen run yet/i)).not.toBeInTheDocument()
   })
 
-  it('shows progress while a run is in flight and no rows are loaded yet', async () => {
+  it('shows the progress panel while the run job is in flight', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') {
         return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
-    mockedApi.post.mockReturnValue(new Promise(() => {}))
+    mockedApi.post.mockResolvedValue({
+      run: { run_id: 2, shortlisted: [], failed_count: 0, total: 500 },
+      job: runningJob,
+    })
     render(
       <Provider>
         <StatusProvider>
@@ -232,8 +270,44 @@ describe('TopTen', () => {
       </Provider>,
     )
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
-    await userEvent.click(screen.getByRole('link', { name: 'Top 10 Results' }))
-    expect(await screen.findByText(/run in progress/i)).toBeInTheDocument()
-    expect(screen.getByTestId('top10-elapsed')).toHaveTextContent('00:00')
+    expect(await screen.findByTestId('run-progress')).toBeInTheDocument()
+    expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
+    expect(screen.queryByText(/run in progress/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the stale badge alongside the progress panel when the run used stored fundamentals', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        return Promise.resolve({ run_id: 2, run_date: '2026-09-26', shortlisted: [row] })
+      }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    mockedApi.post.mockResolvedValue({
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500, stale: true },
+      job: runningJob,
+    })
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/criteria']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="criteria" element={<ScreeningCriteria />} />
+                <Route path="top10" element={<TopTen />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+    expect(await screen.findByTestId('stale-badge')).toHaveTextContent(
+      'cached — refreshing in background',
+    )
+    expect(screen.getByTestId('run-progress')).toBeInTheDocument()
+    expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
   })
 })

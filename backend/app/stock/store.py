@@ -70,6 +70,22 @@ _IDENTITY_KEYS = frozenset(
 )
 
 
+def profile_values(info: dict, updated_at: str) -> dict:
+    """Column values for one `company_profiles` row. Shared by the single-row
+    `upsert_profile` and the bulk path, which sets attributes on rows it already
+    loaded instead of merging per symbol."""
+    info = info or {}
+    return {
+        "industry": _clean(info.get("industry")),
+        "sector": _clean(info.get("sector")),
+        "description": _clean(info.get("longBusinessSummary")),
+        "website": _clean(info.get("website")),
+        "employees": _employees(info),
+        "hq": _hq(info),
+        "updated_at": updated_at,
+    }
+
+
 def upsert_profile(session, symbol: str, info: dict, updated_at: str) -> None:
     """Queue a `company_profiles` upsert (no commit). Odd `.info` values degrade
     to `None` instead of failing the fetch that carried them.
@@ -80,18 +96,7 @@ def upsert_profile(session, symbol: str, info: dict, updated_at: str) -> None:
     info = info or {}
     if not any(key in info for key in _IDENTITY_KEYS):
         return
-    session.merge(
-        CompanyProfile(
-            symbol=symbol,
-            industry=_clean(info.get("industry")),
-            sector=_clean(info.get("sector")),
-            description=_clean(info.get("longBusinessSummary")),
-            website=_clean(info.get("website")),
-            employees=_employees(info),
-            hq=_hq(info),
-            updated_at=updated_at,
-        )
-    )
+    session.merge(CompanyProfile(symbol=symbol, **profile_values(info, updated_at)))
 
 
 def read_profile(session, symbol: str) -> dict:

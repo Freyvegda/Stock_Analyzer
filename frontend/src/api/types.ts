@@ -238,3 +238,39 @@ export interface StockListResponse {
   total: number
   rows: StockListRow[]
 }
+
+export type RunJobStatus = 'running' | 'done' | 'failed' | 'interrupted'
+export type RunJobItemStatus = 'queued' | 'running' | 'done' | 'failed'
+
+export interface RunJobItem {
+  set_id: number
+  name: string
+  status: RunJobItemStatus
+  run_id: number | null
+  error: string | null
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface RunJob {
+  id: number
+  set_id: number
+  status: RunJobStatus
+  started_at: string
+  finished_at: string | null
+  error: string | null
+  universe_total: number
+  universe_done: number
+  universe_failed: number
+  items: RunJobItem[]
+}
+
+export interface RunResponse {
+  run: ScreenRunResult
+  extra_runs: ExtraRun[]
+  job: RunJob
+}
+
+export interface JobsLatestResponse {
+  job: RunJob | null
+}

@@ -12,8 +12,12 @@ class DataProvider(ABC):
         """Return [{symbol, name, sector, market_cap}] for the index universe."""
 
     @abstractmethod
-    def fundamentals(self, symbol: str) -> dict:
-        """Return ratio dict: pe, pb, roe, roce, debt_to_equity, ..."""
+    def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
+        """Return ratio dict: pe, pb, roe, roce, debt_to_equity, ...
+
+        ``cached`` is the previous stored payload; providers may reuse its
+        statement-derived values to avoid the extra annual-statement fetches.
+        """
 
     @abstractmethod
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:

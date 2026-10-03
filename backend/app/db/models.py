@@ -113,6 +113,47 @@ class ScreenRun(Base):
     shortlisted_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class RunJob(Base):
+    """Background job driving one cached-first screen run (Phase 1.8).
+
+    Append-only progress record: ``screen_runs`` stays the shortlist audit, this
+    table tracks the async refresh job (counters, status, interruption).
+    """
+
+    __tablename__ = "run_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("screening_sets.id"), nullable=False)
+    started_at: Mapped[str] = mapped_column(String, nullable=False)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)  # running|done|failed|interrupted
+    universe_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    universe_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    universe_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class RunJobItem(Base):
+    """One screen inside a ``run_jobs`` job — progress + persisted run link (Phase 1.8).
+
+    ``set_id`` is a plain FK (no cascade) so job history survives screen deletion;
+    ``run_id`` lands once that screen's shortlist is persisted and stays NULL when
+    the job failed before writing one.
+    """
+
+    __tablename__ = "run_job_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("run_jobs.id"), nullable=False, index=True)
+    set_id: Mapped[int] = mapped_column(ForeignKey("screening_sets.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)  # queued|running|done|failed
+    started_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("screen_runs.id"), nullable=True)
+
+
 class Document(Base):
     __tablename__ = "documents"
 

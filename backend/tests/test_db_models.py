@@ -1,10 +1,10 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import sessionmaker
 
 from app.db import models  # noqa: F401 — register tables
-from app.db.database import Base
+from app.db.database import Base, _sqlite_pragmas, configure_sqlite
 
 
 def make_engine(tmp_path):
@@ -91,3 +91,42 @@ def test_screening_set_defaults(tmp_path):
         assert row.shortlist_size == 10
         assert row.is_active is False
         assert row.thesis is None
+
+
+def test_job_tables_exist(tmp_path):
+    insp = inspect(make_engine(tmp_path))
+    assert insp.has_table("run_jobs")
+    assert insp.has_table("run_job_items")
+    indexes = insp.get_indexes("run_job_items")
+    assert any(i["column_names"] == ["job_id"] for i in indexes)
+
+
+def test_run_job_item_fks_are_nullable(tmp_path):
+    insp = inspect(make_engine(tmp_path))
+    item_cols = {c["name"]: c for c in insp.get_columns("run_job_items")}
+    assert item_cols["run_id"]["nullable"] is True
+    assert item_cols["job_id"]["nullable"] is False
+    assert item_cols["set_id"]["nullable"] is False
+    assert item_cols["status"]["nullable"] is False
+    job_cols = {c["name"]: c for c in insp.get_columns("run_jobs")}
+    assert job_cols["finished_at"]["nullable"] is True
+    assert job_cols["error"]["nullable"] is True
+    assert job_cols["status"]["nullable"] is False
+
+
+def test_configure_sqlite_sets_wal_and_busy_timeout(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path}/pragmas.db")
+    configure_sqlite(engine)
+    assert event.contains(engine, "connect", _sqlite_pragmas)
+    with engine.connect() as conn:
+        assert conn.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
+        assert conn.exec_driver_sql("PRAGMA busy_timeout").scalar() == 5000
+    engine.dispose()
+
+
+def test_configure_sqlite_skips_other_dialects(tmp_path, monkeypatch):
+    engine = create_engine(f"sqlite:///{tmp_path}/other.db")
+    monkeypatch.setattr(engine.dialect, "name", "postgresql")
+    configure_sqlite(engine)
+    assert event.contains(engine, "connect", _sqlite_pragmas) is False
+    engine.dispose()

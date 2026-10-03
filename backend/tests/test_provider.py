@@ -245,6 +245,92 @@ def test_fundamentals_negative_equity_gives_no_roe(monkeypatch):
     assert f["roe"] is None  # loss-making + negative equity must not look profitable
 
 
+def tracking_statements_ticker(calls, info=None, income=None, balance=None):
+    """Fake ticker whose annual statements record every access into ``calls``."""
+
+    class FakeTicker:
+        def __init__(self, ticker: str):
+            self.ticker = ticker
+
+        @property
+        def info(self):
+            return info if info is not None else {}
+
+        @property
+        def financials(self):
+            calls.append("financials")
+            return income
+
+        @property
+        def balance_sheet(self):
+            calls.append("balance_sheet")
+            return balance
+
+    return FakeTicker
+
+
+def test_cached_roe_roce_skip_statements(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls))
+
+    f = YFinanceProvider().fundamentals("AAA", cached={"roe": 22.0, "roce": 30.0})
+
+    assert calls == []  # statement access never happened
+    assert f["roe"] == 22.0
+    assert f["roce"] == 30.0
+
+
+def test_info_values_skip_statements_without_cache(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, info=INFO))
+
+    f = YFinanceProvider().fundamentals("AAA")
+
+    assert calls == []  # both ratios came from .info
+    assert f["roe"] == 41.0
+    assert f["roce"] == 50.2
+
+
+def test_statements_fetched_without_cache(monkeypatch):
+    import pandas as pd
+
+    calls: list[str] = []
+    income = pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
+    balance = pd.DataFrame(
+        {"2025": [5000.0, 1000.0, 1000.0]},
+        index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
+    )
+    monkeypatch.setattr(
+        yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, income=income, balance=balance)
+    )
+
+    f = YFinanceProvider().fundamentals("AAA", cached=None)
+
+    assert calls == ["financials", "balance_sheet"]
+    assert f["roe"] == 20.0  # 200 / 1000 * 100
+    assert f["roce"] == 25.0  # 1000 / (5000 - 1000) * 100
+
+
+def test_cached_none_values_still_fetch_statements(monkeypatch):
+    import pandas as pd
+
+    calls: list[str] = []
+    income = pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
+    balance = pd.DataFrame(
+        {"2025": [5000.0, 1000.0, 1000.0]},
+        index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
+    )
+    monkeypatch.setattr(
+        yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, income=income, balance=balance)
+    )
+
+    f = YFinanceProvider().fundamentals("AAA", cached={"roe": None, "roce": None})
+
+    assert calls == ["financials", "balance_sheet"]  # cached Nones are not reusable
+    assert f["roe"] == 20.0
+    assert f["roce"] == 25.0
+
+
 def fake_history_ticker(frame, calls=None):
     class FakeTicker:
         def __init__(self, ticker: str):
@@ -338,3 +424,39 @@ def test_filings_is_not_implemented():
     provider = YFinanceProvider()
     with pytest.raises(NotImplementedError):
         provider.filings("AAA")
+
+
+def test_retry_recovers_after_two_failures(monkeypatch):
+    monkeypatch.setattr(yfinance_impl.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("boom")
+        return 7
+
+    assert yfinance_impl._retry(flaky) == 7
+    assert calls["n"] == 3
+
+
+def test_retry_reraises_after_attempts(monkeypatch, caplog):
+    monkeypatch.setattr(yfinance_impl.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def always_fail():
+        calls["n"] += 1
+        raise RuntimeError("still down")
+
+    with pytest.raises(RuntimeError, match="still down"):
+        yfinance_impl._retry(always_fail, label="AAA")
+
+    assert calls["n"] == yfinance_impl.FETCH_ATTEMPTS
+    assert "AAA" in caplog.text  # retry warnings carry the symbol for attribution
+
+
+def test_call_with_timeout_raises_on_hang():
+    import time
+
+    with pytest.raises(TimeoutError):
+        yfinance_impl._call_with_timeout(lambda: time.sleep(0.2), timeout=0.01)

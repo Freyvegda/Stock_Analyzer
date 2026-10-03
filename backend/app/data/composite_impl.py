@@ -95,7 +95,7 @@ class CompositeProvider(DataProvider):
         self.stale = bool(getattr(inner, "stale", False))
         return stocks
 
-    def fundamentals(self, symbol: str) -> dict:
+    def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
         """Statements + quote price + math; yFinance tail only when enabled."""
         symbol = (symbol or "").strip().upper()
         statements = fetch_statements(

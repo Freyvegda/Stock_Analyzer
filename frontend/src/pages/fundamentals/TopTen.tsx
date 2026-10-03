@@ -3,18 +3,18 @@
  * layout's shared run state (no fetch of its own).
  */
 
-import { Flex, Text } from '@chakra-ui/react'
+import { Badge, Flex, Text } from '@chakra-ui/react'
 import { Link, useOutletContext } from 'react-router-dom'
+import { RunProgress } from '@/components/RunProgress'
 import { ShortlistTable } from '@/components/ShortlistTable'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { DotPattern } from '@/components/ui/DotPattern'
 import { NumberTicker } from '@/components/ui/NumberTicker'
 import { Num } from '@/components/ui/Num'
-import { formatElapsed } from '@/lib/format'
 import type { FundamentalsOutletContext } from './FundamentalsLayout'
 
 export default function TopTen() {
-  const { rows, summary, lastRunDate, latestLoaded, latestError, running, elapsed, extraRuns } =
+  const { rows, summary, lastRunDate, latestLoaded, latestError, running, extraRuns, job, stale } =
     useOutletContext<FundamentalsOutletContext>()
 
   const todayIso = (() => {
@@ -83,6 +83,14 @@ export default function TopTen() {
         </Text>
       ) : null}
 
+      {stale ? (
+        <Badge data-testid="stale-badge" variant="outline" color="fg.muted">
+          cached — refreshing in background
+        </Badge>
+      ) : null}
+
+      {job !== null ? <RunProgress job={job} /> : null}
+
       {latestError !== null ? (
         <Text role="alert" color="fg.error" fontSize="sm">
           {latestError}
@@ -96,15 +104,6 @@ export default function TopTen() {
             <ShortlistTable rows={rows} loading={!latestLoaded} />
           </div>
         </BlurFade>
-      ) : null}
-
-      {running ? (
-        <Text fontSize="sm" color="fg.muted">
-          Screen run in progress — results appear here when it finishes.{' '}
-          <span data-testid="top10-elapsed">
-            <Num>{formatElapsed(elapsed)}</Num>
-          </span>
-        </Text>
       ) : null}
 
       {emptyRun ? (

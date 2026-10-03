@@ -8,7 +8,9 @@
  * into (Enter creates, Esc/click-away cancels); the pencil flips the active tab
  * into rename-in-place (Enter saves, Esc reverts). Delete keeps an under-strip
  * confirm group. Roving tabindex + Arrow/Home/End; dirty drafts get an sr-only
- * "(unsaved changes)" description. No dialogs.
+ * "(unsaved changes)" description. No dialogs. A screen with a queued/running
+ * item in the latest run shows a pulsing dot and locks its select/rename/delete
+ * controls until the job finishes.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -22,6 +24,8 @@ export interface ScreenTabsProps {
   active: ScreeningSet | null
   dirty?: boolean
   busy?: boolean
+  /** Screens with a queued|running item in the latest job — their controls lock. */
+  busySetIds?: Set<number>
   onSelect: (set: ScreeningSet) => void
   onCreate: (name: string) => Promise<void>
   onRename: (set: ScreeningSet, name: string) => Promise<void>
@@ -29,6 +33,8 @@ export interface ScreenTabsProps {
 }
 
 export const TABPANEL_ID = 'screen-tabpanel'
+
+const NO_BUSY: Set<number> = new Set()
 
 export function tabId(setId: number): string {
   return `screen-tab-${setId}`
@@ -39,6 +45,7 @@ export function ScreenTabs({
   active,
   dirty = false,
   busy = false,
+  busySetIds = NO_BUSY,
   onSelect,
   onCreate,
   onRename,
@@ -151,6 +158,7 @@ export function ScreenTabs({
     if (event.key === 'Enter') {
       event.preventDefault()
       if (renaming === null || renameName.trim() === '') return
+      if (busySetIds.has(renaming.id)) return
       void run(() => onRename(renaming, renameName.trim()), focusActiveTab)
     } else if (event.key === 'Escape') {
       event.preventDefault()
@@ -165,6 +173,7 @@ export function ScreenTabs({
           {sets.map((set, index) => {
             const isActive = set.id === active?.id
             const isRenaming = renaming?.id === set.id
+            const isBusy = busySetIds.has(set.id)
             const tabIndex = isActive || (active === null && index === 0) ? 0 : -1
             return (
               <Box key={set.id} className="tab-wrap">
@@ -175,6 +184,7 @@ export function ScreenTabs({
                       variant="flushed"
                       aria-label={`Rename ${set.name}`}
                       value={renameName}
+                      disabled={disabled || isBusy}
                       onChange={(e) => setRenameName(e.target.value)}
                       onKeyDown={onRenameKeyDown}
                       onBlur={() => {
@@ -200,15 +210,23 @@ export function ScreenTabs({
                     aria-label={set.name}
                     aria-describedby={isActive && dirty ? `screen-dirty-${set.id}` : undefined}
                     tabIndex={tabIndex}
+                    disabled={disabled || isBusy}
                     data-active={isActive ? 'true' : 'false'}
                     data-dirty={isActive && dirty ? 'true' : undefined}
                     className={isActive ? 'glass-tab pr-12' : 'glass-tab pr-7'}
                     onClick={() => {
-                      if (!disabled) onSelect(set)
+                      if (!disabled && !isBusy) onSelect(set)
                     }}
                     onKeyDown={(event) => onTabKeyDown(event, index)}
                   >
                     <span className="min-w-0 truncate">{set.name}</span>
+                    {isBusy ? (
+                      <span
+                        aria-hidden="true"
+                        data-testid={`tab-running-${set.id}`}
+                        className="vault-pulse h-2.5 w-2.5 shrink-0"
+                      />
+                    ) : null}
                     {isActive && dirty ? (
                       <>
                         <span
@@ -229,7 +247,7 @@ export function ScreenTabs({
                       size="2xs"
                       variant="ghost"
                       aria-label={`Rename ${set.name}`}
-                      disabled={disabled}
+                      disabled={disabled || isBusy}
                       onClick={() => {
                         setRenaming(set)
                         setRenameName(set.name)
@@ -244,7 +262,7 @@ export function ScreenTabs({
                       size="2xs"
                       variant="ghost"
                       aria-label={`Close ${set.name}`}
-                      disabled={disabled}
+                      disabled={disabled || isBusy}
                       onClick={() => {
                         setConfirmDelete(set)
                         setDrafting(false)
@@ -261,7 +279,7 @@ export function ScreenTabs({
                       size="2xs"
                       variant="ghost"
                       aria-label={`Close ${set.name}`}
-                      disabled={disabled}
+                      disabled={disabled || isBusy}
                       onClick={() => {
                         setConfirmDelete(set)
                         setDrafting(false)
@@ -329,7 +347,9 @@ export function ScreenTabs({
             size="sm"
             colorPalette="loss"
             loading={working}
-            disabled={disabled}
+            disabled={
+              disabled || (confirmDelete !== null && busySetIds.has(confirmDelete.id))
+            }
             onClick={() => void run(() => onDelete(confirmDelete), focusActiveTab)}
           >
             Delete

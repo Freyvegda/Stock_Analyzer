@@ -5,7 +5,7 @@
 ## Purpose
 
 Python + FastAPI service. Runs 4-stage pipeline for Indian-market (Nifty 500) analysis:
-1. **Screen** — gate the stored snapshot (newest ok row per symbol + `stocks.market_cap`) with the caller's DB-stored criteria, refresh only stale symbols via the composite provider (Stooq + screener + math), filter to ~10 (YAML retired in Phase 1.5)
+1. **Screen** — `POST /screen/run` instantly gates the stored snapshot (newest ok row per symbol + `stocks.market_cap`) with the active screen's DB-stored criteria plus the 3 most-used other screens (zero `fundamentals()` calls, `triggered_by=manual|auto`) and returns ~10 rows; a background job then refreshes every stale symbol via the composite provider (Stooq + screener + math) and re-runs all saved screens, active last (Phase 1.8; YAML retired in Phase 1.5)
 2. **Docs** — fetch + parse PDFs (concalls, quarterly results, investor presentations, audit reports) for shortlisted stocks only, analyze with Gemini Flash (free tier) with keyword fallback
 3. **Model** — XGBoost on 5yr daily OHLC features -> buy/sell/hold signals per shortlisted stock
 4. **Backtest** — walk-forward (3y train / 1q test, rolling 2019-2024), report CAGR/Sharpe/max-drawdown vs Nifty 500
@@ -15,8 +15,8 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 ## Stack
 
 - Python 3.10, FastAPI, uvicorn
-- SQLAlchemy 2.x + SQLite (`data/stockanalyzer.db`) — schema must stay Postgres-compatible (no SQLite-only types)
-- yfinance (legacy fallback, off by default), Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements), NSE/BSE announcement endpoints (PDFs)
+- SQLAlchemy 2.x + SQLite (`data/stockanalyzer.db`) — schema must stay Postgres-compatible (no SQLite-only types); engine sets WAL + `busy_timeout` pragmas on connect (Phase 1.8)
+- Composite provider (default): Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements + ratios_math), yfinance legacy fallback off by default (`ENABLE_YFINANCE=1` opts in), NSE/BSE announcement endpoints (PDFs)
 - pdfplumber (PDF text), google-generativeai (Gemini Flash), xgboost + scikit-learn, pandas, pyyaml, httpx
 - pytest (tests must run OFFLINE — mock all network)
 
@@ -28,7 +28,7 @@ backend/
 │   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
-│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (active + 3 most-used batch), GET /screen/latest
+│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (snapshot batch active + 3 most-used, then background job), GET /screen/jobs/latest, GET /screen/latest
 │   │   ├── stock.py       # GET /stock/{symbol}, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
 │   │   ├── stocks.py      # GET /stocks — universe list with per-user verdicts
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
@@ -53,7 +53,8 @@ backend/
 │   │   ├── catalog.py     # RATIO_CATALOG — source of truth for valid criteria keys
 │   │   ├── criteria.py    # pydantic screening-set + criteria models, defaults, validation (ConfigError)
 │   │   ├── engine.py      # criteria filtering + ranking -> shortlist (pure)
-│   │   └── service.py     # staged batch: prepare once, evaluate per screen; sets CRUD (rule 6)
+│   │   ├── service.py     # snapshot batch (prepare once, evaluate active + most-used) + stored-snapshot run + job create/prune/project, sets CRUD (rule 6)
+│   │   └── runner.py      # background job worker: stale-universe refresh + all-screens rerun, active refined last (Phase 1.8)
 │   ├── stock/             # stock detail + universe (Phase 1.6/1.6b)
 │   │   ├── candles.py     # pure range slicing + 15d/1mo aggregation + in-memory TTL cache
 │   │   ├── digest.py      # pure detail sections: main ratios, balance, performance, other
@@ -74,7 +75,7 @@ backend/
 │   │   └── walkforward.py
 │   └── db/
 │       ├── database.py    # engine, SessionLocal, Base, init_db()
-│       └── models.py      # 11 tables — see DATABASE.md
+│       └── models.py      # 13 tables — see DATABASE.md
 ├── scripts/               # manual, online-only checks (verify_catalog.py)
 ├── tests/
 ├── requirements.txt
@@ -83,7 +84,7 @@ backend/
 
 ## Architectural Rules (do not break)
 
-1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/stooq directly. Methods: `list_stocks()`, `fundamentals(symbol)`, `ohlc(symbol, years=5)`, `filings(symbol)`. Default is `composite_impl.build_default_provider()` (Stooq + screener + math, yFinance off unless `ENABLE_YFINANCE=1`). Prices persist as `data/prices/{SYM}.csv` + statements as `data/statements/{SYM}.json` — OHLC never bloats SQLite.
+1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/stooq directly. Methods: `list_stocks()`, `fundamentals(symbol, cached=None)`, `ohlc(symbol, years=5)`, `filings(symbol)`. `cached` is the previously stored payload; providers may reuse its statement-derived ROE/ROCE instead of refetching. Default is `composite_impl.build_default_provider()` (Stooq + screener + math, yFinance off unless `ENABLE_YFINANCE=1`). Prices persist as `data/prices/{SYM}.csv` + statements as `data/statements/{SYM}.json` — OHLC never bloats SQLite.
 2. **Model interface** (`app/models/base.py`) — `train(symbol, rows)`, `predict(symbol, rows) -> signal`. XGBoost is primary; LSTM is an optional experiment behind the same interface. NO custom transformer (overfits ~1250 daily rows).
 3. **Pipeline stages are independent endpoints**, triggered manually from UI buttons. Each stage idempotent: same-day rerun overwrites, never duplicates (composite PKs).
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
@@ -110,13 +111,13 @@ backend/
 ```
 Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
-  -> engine.py staged gates on the snapshot -> shortlist (~10 symbols)
-  -> fundamentals(symbol) for EVERY symbol whose snapshot is not from today (composite: screener statements + Stooq quote + ratios_math) -> fundamentals table
-     (data_status ok|failed) + company_profiles upsert; same-day reruns cost zero calls
-  -> fresh values re-checked; a failed fetch keeps the stored row -> screen_runs.shortlisted_json (~10 symbols)
-  -> POST /screen/run batch (Phase 1.8): one prepare stage, then the active screen (triggered_by=manual)
-     + up to 3 most-used other screens (triggered_by=auto, from the last 10 manual runs) stored as
-     separate runs; extras reuse the same candidates and cost zero extra network
+  -> POST /screen/run: engine.py gates the snapshot for the active screen (manual) + up to 3 most-used others (auto) — zero fundamentals calls -> screen_runs rows + run_jobs row (one queued item per saved screen, triggering items done) -> 200 {run, extra_runs, job}
+  -> background runner: fundamentals(symbol, cached=stored row) for EVERY symbol whose snapshot is
+     not from today (composite: screener statements + Stooq quote + ratios_math) -> fundamentals (ok|failed) + company_profiles upsert; gate survivors ordered
+     first, counters flushed every 25 fetches; a failed fetch keeps the stored row
+  -> every saved screen re-evaluated on the fresh snapshot (active last) -> one screen_runs row each
+  -> GET /screen/jobs/latest: status + universe counters + per-screen items; stale running jobs swept
+     to interrupted on read; an extra most-used screen failing is caught and reported as `extra_runs[].error`
   -> GET /stocks: whole stored universe + caller's verdict (pass|fail|no_data), computed on read
   -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + reports for the
      active screen and the 3 most-used screens
@@ -132,8 +133,10 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 
 ## Error Handling
 
-- Network calls: httpx with timeouts + retry w/ backoff; provider fetch wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
+- Network calls: httpx with timeouts + retry w/ backoff (screener politeness: 429 backoff, 2 workers); provider fetch wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
 - Batch runs: an extra most-used screen failing is caught and reported as `extra_runs[].error`; the active result and the other extras still persist
+- Run jobs: per-stock fetch failure increments `universe_failed` and continues; a per-screen failure marks only that item `failed` and never stops the job; a global failure marks the job `failed` with `error` and fails its queued/running items (already-served cached data stays intact); a `running` job whose worker died with the process is swept to `interrupted` on the next jobs read (in-process live jobs are registered and skipped)
+- Run concurrency: one job per user — a second `POST /screen/run` returns 409 `Run already in progress` + `job_id`; PUT/DELETE/activate on a screen with queued/running items returns 409 `Screen is mid-run`
 - Stock detail: stored-first (zero network when a snapshot exists); refresh failure serves the stored row with `warning` + `refreshed=false`; a failed fetch never overwrites a same-day ok row; candles fall back to the in-memory cache and are never persisted
 - Universe: `GET /stocks` seeds `stocks` from the provider only when the table is empty; upstream seeding failures ride the global httpx → 502 handler; a stock with no stored row lists as `no_data`
 - PDF parse failure: log, `parse_status=failed`, continue; UI shows "n/m docs parsed"
@@ -157,9 +160,9 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 | 1 | Screener | POST /screen/run shortlists from live yfinance data; ratio unit tests pass vs hand-computed fixtures |
 | 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria` (superseded by `screening_sets` in 1.7), dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
 | 1.6 | Stock detail page | `/stock/{symbol}` serves shared stored snapshot + per-user report + cached candles (1d/15d/1mo, never persisted); tests green offline |
-| 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol; detail serves profile + digest sections; tests green offline |
+| 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol (moved to the Phase 1.8 background job); detail serves profile + digest sections; tests green offline |
 | 1.7 | Saved screens + navbar search | `screening_sets` CRUD/activate; runs + latest scoped to the active screen; criteria page edits inline (no dialog); navbar glass search always visible; tests green offline |
-| 1.8 | Multi-screen runs + criteria accordion | `POST /screen/run` stores 1 manual + ≤3 auto runs on one prepared snapshot; stock detail serves `reports` for active + most-used screens; tests green offline |
+| 1.8 | Multi-screen runs + instant cached run + background job | `POST /screen/run` returns the stored snapshot for the active screen (manual) + ≤3 most-used others (auto) in seconds (zero `fundamentals()` calls) and queues a per-user refresh job (active refined last); stock detail serves `reports` for active + most-used screens; `GET /screen/jobs/latest` + busy-screen 409s; tests green offline |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |
 | 3 | Price model | Signals generated for shortlist; model trains on synthetic data in tests |
 | 4 | Backtest | Walk-forward report vs Nifty 500; offline integration test green |

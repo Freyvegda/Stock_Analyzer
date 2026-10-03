@@ -5,7 +5,7 @@
 ## Purpose
 
 React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (Fundamental Analysis · Documents · Model & Backtest); Fundamental Analysis carries its own side rail:
-1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: Chrome-style glass tabs for saved screens (`GET /screen/sets`; inline new/rename/close, one active, dirty dot) sitting in ONE card stack with the active screen's enabled-ratio badges and the dialog-free inline criteria editor (rotor category dial, one category at a time, per-criterion bookmark ribbons + 3D ribbon rail, thesis), then the Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). The badge row is the cross-category summary — the dial shows one category at a time. `/fundamentals/top10`: the active screen's latest run (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
+1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: Chrome-style glass tabs for saved screens (`GET /screen/sets`; inline new/rename/close, one active, dirty dot) sitting in ONE card stack with the active screen's enabled-ratio badges and the dialog-free inline criteria editor (rotor category dial, one category at a time, per-criterion bookmark ribbons + 3D ribbon rail, thesis), then the Run Screen card: `POST /screen/run` returns in seconds with `{run, job}` — the cached shortlist (`run`) paints immediately, and `RunProgress` tracks the background `job` with per-screen chips + a universe counter. A 2 s `GET /screen/jobs/latest` poll keeps progress live and restores it after a reload; a `done` job refreshes `/screen/latest` once, while `failed|interrupted` keeps the cached rows and toasts a warning. The card auto-jumps to Top 10 right after the POST returns if the user is still on the criteria page; the leaf loader + elapsed show only while that POST is in flight. A screen with a queued/running job item shows a running dot and its editor/rename/delete/activate lock (backend 409 `"Screen is mid-run"`). The badge row is the cross-category summary — the dial shows one category at a time. `/fundamentals/top10`: the active screen's latest run (`GET /screen/latest`), the job's `RunProgress` panel whenever a job exists, and a `cached — refreshing in background` badge while the painted rows predate the job's refresh. `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
 2. **Stock detail** (`/stock/:symbol`) — two equal-height halves (company description, clipped with "More" opening the full profile dialog | per-user verdict with score and criteria checks), then the price chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), then main fundamental ratios, "What it has" (market cap first), "What it's done" and all other ratios; Refresh button in the header
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
@@ -51,9 +51,10 @@ dense and tabular.
   candle tape of its own path (pure, three-free helpers in `three/leafTrace.ts`: blade,
   curl, wind clock, price curve, candle slots/fade), lazy chunk, WebGL-gated (CSS
   `vault-pulse` fallback), static under reduced motion, hidden below `md`; contexts: run card
-  120 (centred, hint + elapsed beneath, the only animation during a run), login 120,
-  criteria dialog 80. The run button swaps to "Running…" + disables; no border crawl around
-  the card.
+  120 (centred, hint + elapsed beneath, shown only while `POST /screen/run` is in flight —
+  background-job progress is the `RunProgress` panel, not the loader), login 120,
+  criteria dialog 80. The run button swaps to "Running…" + disables while the run is
+  starting or its job is active; no border crawl around the card.
 - Background: `Bonfire` (`src/components/three/Bonfire.tsx`) is the signed-in ambient layer —
   a bottom-right campfire that emits the app's ember pixels (dense around the fire, a thin
   tail wandering across the screen); theme-aware (palette + burn profile crossfade on theme
@@ -71,7 +72,7 @@ frontend/src/
 ├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
 │   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", bearer + 401 refresh/replay
-│   └── types.ts        # AuthUser, RatioSpec, Criterion, ScreeningSet, screen types
+│   └── types.ts        # AuthUser, RatioSpec, Criterion, ScreeningSet, screen + run-job types
 ├── auth/
 │   ├── AuthContext.tsx # user state, re-bootstrap from the refresh cookie, logout, auth:unauthorized
 │   └── tokenStore.ts   # in-memory access token + single-flighted refresh (never localStorage)
@@ -106,7 +107,8 @@ frontend/src/
     ├── CriteriaEditor.tsx   # dialog-free inline editor: rotor category dial, criterion flashcards, 3D ribbon rail
     ├── CategoryDial.tsx     # rotary "dialling telephone" category selector (plate, rotor, finger holes, hub)
     ├── CriterionCard.tsx    # one criterion as a glass flashcard (ribbon, switch, value chip, remove)
-    ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (draft tab, rename-in-place, dirty dot)
+    ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (draft tab, rename-in-place, dirty dot, busy dot + locked controls mid-run)
+    ├── RunProgress.tsx      # background-job panel: per-screen status chips + universe counter (presentation-only)
     ├── StockReportsAccordion.tsx  # "Criteria pass" accordion: one live report per screen (active + most used)
     ├── StocksTable.tsx  # universe table: sortable columns, verdict chips, links
     └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})
@@ -116,11 +118,12 @@ frontend/src/
 
 - Dev server proxies `/api/*` -> `http://localhost:8000/*` (vite.config.ts `server.proxy`). ALWAYS call via `api.get('/screen/latest')` etc. — never hardcode `localhost:8000`.
 - Auth endpoints: `GET /auth/state`, `POST /auth/setup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. Login and setup 401s are handled inline and are exempt from the global `auth:unauthorized` event.
-- Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/sets` (list; each item `{id, name, criteria, thesis, shortlist_size, is_active, updated_at}`), `POST /screen/sets` (`{name, criteria?, thesis?}`; becomes active), `PUT /screen/sets/{id}` (`{name?, criteria?, thesis?}`), `DELETE /screen/sets/{id}` (400 on the last screen), `POST /screen/sets/{id}/activate`. Criteria items are `{key, enabled, value, bookmarked?}`; `shortlist_size` is server-owned. The single-criteria `GET/PUT /screen/criteria` endpoints and the old YAML-config endpoints are retired — do not reintroduce them. `POST /screen/run` evaluates the active screen plus up to 3 most-used screens in one batch and returns `extra_runs: [{set_id, name, run_id, shortlisted, error}]` alongside the active result; Top 10 shows the active run and names the extras under the summary.
+- Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/sets` (list; each item `{id, name, criteria, thesis, shortlist_size, is_active, updated_at}`), `POST /screen/sets` (`{name, criteria?, thesis?}`; becomes active), `PUT /screen/sets/{id}` (`{name?, criteria?, thesis?}`), `DELETE /screen/sets/{id}` (400 on the last screen), `POST /screen/sets/{id}/activate`. Criteria items are `{key, enabled, value, bookmarked?}`; `shortlist_size` is server-owned. While a screen has `queued|running` items in the newest job, `PUT`/`DELETE` and `/activate` for it return 409 `"Screen is mid-run"`. The single-criteria `GET/PUT /screen/criteria` endpoints and the old YAML-config endpoints are retired — do not reintroduce them. `POST /screen/run` evaluates the active screen plus up to 3 most-used screens in one snapshot batch and returns `{run, extra_runs, job}` — `run` is the cached-first snapshot (`{run_id, shortlisted, failed_count, failed_symbols, failed_details, stale, total}`), `extra_runs: [{set_id, name, run_id, shortlisted, error}]` names the other screens, `job` is the background refresh job; Top 10 shows the active run, names the extras under the summary, and tracks the job panel.
 - Stock endpoints: `GET /stock/{symbol}` (shared snapshot + `reports` for the active and most-used screens + profile + digest sections `main_ratios`/`has`/`done`/`other_groups`), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
+- Run endpoints (Phase 1.8): 409 `{"detail": "Run already in progress", "job_id"}` while the newest job is running. `GET /screen/jobs/latest` -> `{job | null}` (newest job, stale `running` jobs swept to `interrupted`); `GET /screen/latest` is unchanged but now refreshes once when the job completes.
 - Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side; the navbar `NavSearch` lazily reuses the same endpoint on first focus/open (one fetch per shell mount) and filters client-side too.
 - Backend endpoints (see BACKEND.md): `/auth/*`, `/screen/*`, `/docs/*`, `/model/*`, `/backtest/*`, `/health`.
-- All pipeline stages triggered by button clicks (manual pipeline — no polling/scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
+- All pipeline stages triggered by button clicks (manual pipeline — the only polling is the 2 s `/screen/jobs/latest` poll while a run job is active; no scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
 - Handle `{"status":"not_implemented","phase":N}` placeholders gracefully until phases land.
 
 ## Conventions
@@ -151,6 +154,7 @@ frontend/src/
 | 1.6b | `/stocks` browse page (search + sector/verdict filters, sortable, verdict chips) with nav link; stock detail gains description, "What it has", "Main fundamental ratios", "What it's done", "All other ratios" |
 | 1.6c | Nav stock search (`NavSearch`, Ctrl/Cmd+K glass panel, verdict chips, keyboard-complete) + detail layout revision: description \| verdict halves (equal height, clipped description with More dialog) → chart → main ratios → has (market cap first) → done → other; Candle Ridge hero retired |
 | 1.7 | Saved screens + inline criteria editor + navbar search: `/screen/sets` CRUD/activate (one active drives run, Top 10, verdicts), dialog-free editor with category sub-accordions and criterion bookmark ribbons (3D ribbon rail), always-visible glass search bar |
+| 1.8 | Run performance: `POST /screen/run` paints cached results in seconds + returns `{run, job}`, `RunProgress` background panel (per-screen chips + universe counter) with a 2 s `/screen/jobs/latest` poll that survives reload, completion refreshes `/screen/latest` once, `failed|interrupted` keeps cached rows + warns, busy-screen locks (running dot; editor/rename/delete/activate 409) and the Top 10 stale badge |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |
