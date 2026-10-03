@@ -1,15 +1,20 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useOutletContext } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import FundamentalsLayout from '../fundamentals/FundamentalsLayout'
+import FundamentalsLayout, {
+  type FundamentalsOutletContext,
+} from '../fundamentals/FundamentalsLayout'
 import ScreeningCriteria from '../fundamentals/ScreeningCriteria'
+import TopTen from '../fundamentals/TopTen'
 import { api } from '../../api/client'
 import { AuthProvider } from '../../auth/AuthContext'
 import { RequireAuth } from '../../components/RequireAuth'
+import { RunProgress } from '../../components/RunProgress'
+import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { StatusProvider, StatusRail } from '../../components/StatusRail'
-import type { RatioSpec, ScreeningSet } from '../../api/types'
+import type { RatioSpec, RunJob, ScreeningSet } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -69,12 +74,108 @@ const row = {
 
 const run = { run_id: 1, run_date: '2026-09-26', shortlisted: [row] }
 
+function job(overrides: Partial<RunJob> = {}): RunJob {
+  return {
+    id: 7,
+    set_id: 1,
+    status: 'running',
+    started_at: '2026-10-03T10:00:00.000Z',
+    finished_at: null,
+    error: null,
+    universe_total: 500,
+    universe_done: 10,
+    universe_failed: 0,
+    items: [
+      {
+        set_id: 1,
+        name: 'Default',
+        status: 'running',
+        run_id: null,
+        error: null,
+        started_at: '2026-10-03T10:00:00.000Z',
+        finished_at: null,
+      },
+      {
+        set_id: 2,
+        name: 'Quality',
+        status: 'queued',
+        run_id: null,
+        error: null,
+        started_at: null,
+        finished_at: null,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+const doneJob = job({
+  status: 'done',
+  finished_at: '2026-10-03T10:05:00.000Z',
+  universe_done: 500,
+  items: [
+    {
+      set_id: 1,
+      name: 'Default',
+      status: 'done',
+      run_id: 2,
+      error: null,
+      started_at: '2026-10-03T10:00:00.000Z',
+      finished_at: '2026-10-03T10:02:00.000Z',
+    },
+    {
+      set_id: 2,
+      name: 'Quality',
+      status: 'done',
+      run_id: 3,
+      error: null,
+      started_at: '2026-10-03T10:02:00.000Z',
+      finished_at: '2026-10-03T10:05:00.000Z',
+    },
+  ],
+})
+
+/** Reads the outlet context and renders the real RunProgress panel, so the
+ * layout tests assert the same projection F3 will place in the pages. */
+function RunProbe() {
+  const { job: currentJob, busySetIds, stale, starting } =
+    useOutletContext<FundamentalsOutletContext>()
+  return (
+    <div>
+      <span data-testid="probe-starting">{String(starting)}</span>
+      <span data-testid="probe-stale">{String(stale)}</span>
+      <span data-testid="probe-busy">
+        {[...busySetIds].sort((a, b) => a - b).join(',')}
+      </span>
+      {currentJob !== null ? <RunProgress job={currentJob} /> : null}
+    </div>
+  )
+}
+
+function renderLayout(path = '/fundamentals/criteria') {
+  return render(
+    <Provider>
+      <StatusProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/fundamentals" element={<FundamentalsLayout />}>
+              <Route path="criteria" element={<ScreeningCriteria />} />
+              <Route path="top10" element={<><TopTen /><RunProbe /></>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </StatusProvider>
+    </Provider>,
+  )
+}
+
 function mockLoads() {
   mockedApi.get.mockImplementation((path: string) => {
     if (path === '/auth/me') return Promise.resolve({ id: 1, username: 'solo' })
     if (path === '/screen/sets') return Promise.resolve([setA, setB])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(run)
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -154,5 +255,142 @@ describe('FundamentalsLayout', () => {
       expect(mockedApi.get.mock.calls.filter(([path]) => path === '/screen/latest').length).toBe(2),
     )
     expect(await screen.findByText('PE ≤ 15×')).toBeInTheDocument()
+  })
+
+  it('posts /screen/run once and shows cached results while the job runs', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        return Promise.resolve({ run_id: 2, run_date: '2026-09-26', shortlisted: [row] })
+      }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    mockedApi.post.mockResolvedValue({
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500 },
+      job: job(),
+    })
+    renderLayout()
+    await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
+
+    expect(await screen.findByTestId('job-chip-1')).toBeInTheDocument()
+    expect(screen.getByTestId('probe-busy')).toHaveTextContent('1,2')
+    expect(screen.getByTestId('probe-starting')).toHaveTextContent('false')
+    expect(screen.getByTestId('probe-stale')).toHaveTextContent('false')
+    expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
+    expect(
+      mockedApi.post.mock.calls.filter(([path]) => path === '/screen/run').length,
+    ).toBe(1)
+  })
+
+  it('restores a running job from the mount fetch and marks its screens busy', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.resolve(run)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: job() })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderLayout('/fundamentals/top10')
+
+    expect(await screen.findByTestId('job-chip-1')).toBeInTheDocument()
+    expect(screen.getByTestId('probe-busy')).toHaveTextContent('1,2')
+    expect(mockedApi.post).not.toHaveBeenCalled()
+  })
+
+  it('refreshes /screen/latest once when the poll reports done and stops polling', async () => {
+    vi.useFakeTimers()
+    try {
+      let jobsCalls = 0
+      let latestCalls = 0
+      mockedApi.get.mockImplementation((path: string) => {
+        if (path === '/screen/sets') return Promise.resolve([setA, setB])
+        if (path === '/screen/ratios') return Promise.resolve(catalog)
+        if (path === '/screen/latest') {
+          latestCalls += 1
+          return Promise.resolve({
+            run_id: latestCalls,
+            run_date: '2026-09-26',
+            shortlisted: [row],
+          })
+        }
+        if (path === '/screen/jobs/latest') {
+          jobsCalls += 1
+          return Promise.resolve({ job: jobsCalls === 1 ? job() : doneJob })
+        }
+        return Promise.reject(new Error(`unexpected GET ${path}`))
+      })
+      renderLayout('/fundamentals/top10')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
+      expect(latestCalls).toBe(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      expect(jobsCalls).toBe(2)
+      expect(latestCalls).toBe(2)
+      expect(screen.getByTestId('job-status')).toHaveTextContent('Refreshed')
+      expect(screen.getByTestId('probe-busy').textContent).toBe('')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000)
+      })
+      expect(jobsCalls).toBe(2)
+      expect(latestCalls).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps cached rows and warns when the poll reports failure', async () => {
+    vi.useFakeTimers()
+    try {
+      let jobsCalls = 0
+      let latestCalls = 0
+      mockedApi.get.mockImplementation((path: string) => {
+        if (path === '/screen/sets') return Promise.resolve([setA, setB])
+        if (path === '/screen/ratios') return Promise.resolve(catalog)
+        if (path === '/screen/latest') {
+          latestCalls += 1
+          return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+        }
+        if (path === '/screen/jobs/latest') {
+          jobsCalls += 1
+          return Promise.resolve({
+            job:
+              jobsCalls === 1
+                ? job()
+                : job({
+                    status: 'failed',
+                    error: 'job exploded',
+                    finished_at: '2026-10-03T10:05:00.000Z',
+                  }),
+          })
+        }
+        return Promise.reject(new Error(`unexpected GET ${path}`))
+      })
+      renderLayout('/fundamentals/top10')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
+      expect(latestCalls).toBe(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      expect(jobsCalls).toBe(2)
+      expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
+      expect(latestCalls).toBe(1)
+      expect(toaster.create).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Screen run failed', type: 'warning' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

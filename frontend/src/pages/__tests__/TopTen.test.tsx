@@ -63,6 +63,7 @@ function renderTopTen(latest: unknown) {
     if (path === '/screen/sets') return Promise.resolve([setA])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
   return render(
@@ -101,6 +102,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return gate
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -142,6 +144,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(404, 'No screen run yet'))
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -167,6 +170,7 @@ describe('TopTen', () => {
       if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(500, 'latest exploded'))
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(
@@ -193,6 +197,7 @@ describe('TopTen', () => {
       if (path === '/screen/latest') {
         return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     mockedApi.post.mockReturnValue(new Promise(() => {}))

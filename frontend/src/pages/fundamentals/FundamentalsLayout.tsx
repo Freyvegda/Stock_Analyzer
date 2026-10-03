@@ -2,15 +2,21 @@
  * Fundamentals layout: side rail + content column, and the single owner of
  * saved-screen + screen-run state. Children read it through the outlet context
  * so a run survives side-nav navigation; the rail itself never unmounts.
+ *
+ * A run now paints the cached shortlist in seconds and then tracks its
+ * background job with a 2 s `/screen/jobs/latest` poll, so progress survives
+ * page reloads; completion refreshes the rows once, failure keeps them.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '@/api/client'
 import type {
+  JobsLatestResponse,
   LatestScreen,
   RatioSpec,
-  ScreenRunResult,
+  RunJob,
+  RunResponse,
   ScreeningSet,
   ScreeningSetChanges,
   ShortlistRow,
@@ -35,7 +41,17 @@ export interface FundamentalsOutletContext {
   lastRunDate: string | null
   latestLoaded: boolean
   latestError: string | null
+  /** Latest run job, restored on mount and updated by the 2 s poll. */
+  job: RunJob | null
+  /** Screens with a `queued|running` item while the job runs; empty otherwise. */
+  busySetIds: Set<number>
+  /** The painted rows came from the stored snapshot of a still-running job. */
+  stale: boolean
+  /** `POST /screen/run` is in flight (cached rows are not painted yet). */
+  starting: boolean
+  /** `starting || job?.status === 'running'`. */
   running: boolean
+  /** Total seconds of the current job, or the local starting timer. */
   elapsed: number
   runError: string | null
   reloadSets: () => Promise<void>
@@ -53,11 +69,15 @@ export default function FundamentalsLayout() {
   const [rows, setRows] = useState<ShortlistRow[]>([])
   const [summary, setSummary] = useState<RunSummary | null>(null)
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
-  const [running, setRunning] = useState(false)
+  const [job, setJob] = useState<RunJob | null>(null)
+  const [starting, setStarting] = useState(false)
+  const [stale, setStale] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [latestLoaded, setLatestLoaded] = useState(false)
   const [latestError, setLatestError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  const completedJobRef = useRef<number | null>(null)
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -65,6 +85,17 @@ export default function FundamentalsLayout() {
   useEffect(() => {
     locationRef.current = location.pathname
   }, [location.pathname])
+
+  const running = starting || job?.status === 'running'
+
+  const busySetIds = useMemo(() => {
+    if (job === null || job.status !== 'running') return new Set<number>()
+    return new Set(
+      job.items
+        .filter((item) => item.status === 'queued' || item.status === 'running')
+        .map((item) => item.set_id),
+    )
+  }, [job])
 
   const statusFact =
     summary !== null
@@ -81,9 +112,25 @@ export default function FundamentalsLayout() {
       setElapsed(0)
       return
     }
-    const id = window.setInterval(() => setElapsed((seconds) => seconds + 1), 1000)
+    setNow(Date.now())
+    const id = window.setInterval(() => {
+      setElapsed((seconds) => seconds + 1)
+      setNow(Date.now())
+    }, 1000)
     return () => window.clearInterval(id)
   }, [running])
+
+  /** Whole seconds of a job: live from `started_at` while it runs, total
+   * duration once it finished. */
+  function jobElapsedSeconds(current: RunJob): number {
+    const started = Date.parse(current.started_at)
+    if (Number.isNaN(started)) return 0
+    const end = current.finished_at !== null ? Date.parse(current.finished_at) : now
+    if (Number.isNaN(end)) return 0
+    return Math.max(0, Math.floor((end - started) / 1000))
+  }
+
+  const totalElapsed = job !== null ? jobElapsedSeconds(job) : elapsed
 
   async function loadSets() {
     try {
@@ -125,12 +172,63 @@ export default function FundamentalsLayout() {
     }
   }
 
+  /** Best-effort: a page reload mid-job restores the progress panel; a failure
+   * just leaves the panel hidden. */
+  async function loadJob() {
+    try {
+      const res = await api.get<JobsLatestResponse>('/screen/jobs/latest')
+      setJob(res.job)
+    } catch {
+      // Progress is not worth an error banner.
+    }
+  }
+
+  /** One terminal transition per job id: `done` refreshes once, `failed` and
+   * `interrupted` warn and keep whatever rows are painted. */
+  function applyJobUpdate(next: RunJob) {
+    setJob(next)
+    if (next.status === 'running') return
+    if (completedJobRef.current === next.id) return
+    completedJobRef.current = next.id
+    if (next.status === 'done') {
+      setStale(false)
+      void loadLatest()
+      return
+    }
+    toaster.create({
+      title: next.status === 'failed' ? 'Screen run failed' : 'Screen run interrupted',
+      description:
+        next.error ??
+        (next.status === 'failed'
+          ? 'The background run failed — showing cached results'
+          : 'The background run stopped before finishing — showing cached results'),
+      type: 'warning',
+    })
+  }
+
   useEffect(() => {
     void loadSets()
     void loadRatios()
     void loadLatest()
+    void loadJob()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (job === null || job.status !== 'running') return
+    const id = window.setInterval(() => {
+      void (async () => {
+        try {
+          const res = await api.get<JobsLatestResponse>('/screen/jobs/latest')
+          if (res.job !== null) applyJobUpdate(res.job)
+        } catch {
+          // Polling is best-effort; the cached run is already on screen.
+        }
+      })()
+    }, 2000)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status, job?.id])
 
   async function reloadSets() {
     await loadSets()
@@ -169,16 +267,18 @@ export default function FundamentalsLayout() {
   }
 
   async function runScreen() {
-    setRunning(true)
+    setStarting(true)
     setError(null)
     try {
-      const res = await api.post<ScreenRunResult>('/screen/run', {})
+      const res = await api.post<RunResponse>('/screen/run', {})
       setSummary({
-        shortlisted: res.shortlisted.length,
-        failed: res.failed_count,
-        total: res.total,
+        shortlisted: res.run.shortlisted.length,
+        failed: res.run.failed_count,
+        total: res.run.total,
       })
-      if (res.stale) {
+      setStale(res.run.stale ?? false)
+      setJob(res.job)
+      if (res.run.stale) {
         toaster.create({
           title: 'Showing stored fundamentals',
           description: 'Live refresh was unavailable — results use the last saved data',
@@ -193,7 +293,7 @@ export default function FundamentalsLayout() {
         // Session died mid-run: rethrow so the outer handler stays quiet; the
         // client's auth:unauthorized event redirects to /login.
         if (e instanceof ApiError && e.status === 401) throw e
-        setRows(res.shortlisted)
+        setRows(res.run.shortlisted)
         toaster.create({
           title: 'Showing screen result',
           description: 'Could not load enriched rows from the latest run',
@@ -211,7 +311,7 @@ export default function FundamentalsLayout() {
       setError(message)
       toaster.create({ title: 'Screen run failed', description: message, type: 'error' })
     } finally {
-      setRunning(false)
+      setStarting(false)
     }
   }
 
@@ -225,8 +325,12 @@ export default function FundamentalsLayout() {
     lastRunDate,
     latestLoaded,
     latestError,
+    job,
+    busySetIds,
+    stale,
+    starting,
     running,
-    elapsed,
+    elapsed: totalElapsed,
     runError: error,
     reloadSets,
     activateSet,

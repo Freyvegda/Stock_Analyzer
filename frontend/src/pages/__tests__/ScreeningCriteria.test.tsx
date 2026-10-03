@@ -74,6 +74,19 @@ const row = {
 
 const emptyRun = { run_id: 1, run_date: '2026-09-26', shortlisted: [] }
 
+const doneJob = {
+  id: 9,
+  set_id: 1,
+  status: 'done',
+  started_at: '2026-10-03T10:00:00.000Z',
+  finished_at: '2026-10-03T10:00:05.000Z',
+  error: null,
+  universe_total: 500,
+  universe_done: 500,
+  universe_failed: 0,
+  items: [],
+}
+
 function mockLoads(
   latest: unknown = emptyRun,
   sets: ScreeningSet[] = [setA, setB],
@@ -82,6 +95,7 @@ function mockLoads(
     if (path === '/screen/sets') return Promise.resolve(sets)
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
+    if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -142,13 +156,12 @@ describe('ScreeningCriteria', () => {
           latestCalls === 1 ? emptyRun : { run_id: 2, run_date: '2026-09-26', shortlisted: [row] },
         )
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [row],
-      failed_count: 0,
-      total: 500,
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500 },
+      job: doneJob,
     })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
@@ -168,8 +181,11 @@ describe('ScreeningCriteria', () => {
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     await userEvent.click(screen.getByRole('link', { name: 'Stocks' }))
     expect(await screen.findByText('stocks stub')).toBeInTheDocument()
-    release({ run_id: 2, shortlisted: [row], failed_count: 0, total: 500 })
-    await waitFor(() => expect(mockedApi.get).toHaveBeenCalledTimes(4))
+    release({
+      run: { run_id: 2, shortlisted: [row], failed_count: 0, total: 500 },
+      job: doneJob,
+    })
+    await waitFor(() => expect(mockedApi.get).toHaveBeenCalledTimes(5))
     expect(screen.queryByRole('heading', { name: 'Top 10 Results' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('link', { name: 'Screen Criteria' }))
     await waitFor(() =>
@@ -183,11 +199,14 @@ describe('ScreeningCriteria', () => {
   it('warns when a run falls back to stored fundamentals', async () => {
     mockLoads()
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [],
-      failed_count: 3,
-      total: 500,
-      stale: true,
+      run: {
+        run_id: 2,
+        shortlisted: [],
+        failed_count: 3,
+        total: 500,
+        stale: true,
+      },
+      job: doneJob,
     })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
@@ -199,6 +218,7 @@ describe('ScreeningCriteria', () => {
   it('shows the panel error when screens loading fails', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error('sets exploded'))
     })
     renderFundamentals()
@@ -215,9 +235,13 @@ describe('ScreeningCriteria', () => {
         if (latestCalls === 1) return Promise.resolve(emptyRun)
         return Promise.reject(new ApiError(401, 'Not authenticated'))
       }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
-    mockedApi.post.mockResolvedValue({ run_id: 2, shortlisted: [], failed_count: 0, total: 0 })
+    mockedApi.post.mockResolvedValue({
+      run: { run_id: 2, shortlisted: [], failed_count: 0, total: 0 },
+      job: doneJob,
+    })
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     await waitFor(() => expect(latestCalls).toBe(2))
@@ -351,10 +375,8 @@ describe('ScreeningCriteria', () => {
       ],
     })
     mockedApi.post.mockResolvedValue({
-      run_id: 2,
-      shortlisted: [],
-      failed_count: 0,
-      total: 500,
+      run: { run_id: 2, shortlisted: [], failed_count: 0, total: 500 },
+      job: doneJob,
     })
     renderFundamentals()
     await screen.findByText('PE ≤ 25×')
@@ -382,6 +404,7 @@ describe('ScreeningCriteria', () => {
       }
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     mockedApi.post.mockImplementation((path: string) =>
@@ -408,6 +431,7 @@ describe('ScreeningCriteria', () => {
       }
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     renderFundamentals()
