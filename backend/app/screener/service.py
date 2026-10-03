@@ -260,6 +260,60 @@ def run_screen(
     )
 
 
+def run_screen_batch(provider: DataProvider, session_factory, user: dict) -> dict:
+    """One Run Screen: the active set (manual) plus the 3 most-used others (auto).
+
+    All screens evaluate the same prepared candidates, so the batch costs one
+    network stage. An extra screen failing is caught and reported; the active
+    result always comes back.
+    """
+    active = get_active_set(session_factory, user["id"])
+    prepared = _prepare(provider, session_factory)
+    result = _evaluate_and_store(
+        session_factory,
+        user["id"],
+        prepared,
+        active["criteria"],
+        active["shortlist_size"],
+        active["id"],
+        "manual",
+    )
+    extras: list[dict] = []
+    for row in most_used_sets(session_factory, user["id"], limit=3, exclude_id=active["id"]):
+        try:
+            extra = _evaluate_and_store(
+                session_factory,
+                user["id"],
+                prepared,
+                row["criteria"],
+                row["shortlist_size"],
+                row["id"],
+                "auto",
+            )
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": extra["run_id"],
+                    "shortlisted": len(extra["shortlisted"]),
+                    "error": None,
+                }
+            )
+        except Exception as e:  # noqa: BLE001 — one extra never kills the batch
+            logger.warning("extra screen run failed for set %s: %s", row["id"], e)
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": None,
+                    "shortlisted": None,
+                    "error": str(e),
+                }
+            )
+    result["extra_runs"] = extras
+    return result
+
+
 def _projection(row: ScreeningSet) -> dict:
     return {
         "id": row.id,
