@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '@/api/client'
 import type {
+  ExtraRun,
   LatestScreen,
   RatioSpec,
   ScreenRunResult,
@@ -38,6 +39,7 @@ export interface FundamentalsOutletContext {
   running: boolean
   elapsed: number
   runError: string | null
+  extraRuns: ExtraRun[] | null
   reloadSets: () => Promise<void>
   activateSet: (id: number) => Promise<void>
   createSet: (name: string) => Promise<ScreeningSet>
@@ -58,6 +60,7 @@ export default function FundamentalsLayout() {
   const [latestLoaded, setLatestLoaded] = useState(false)
   const [latestError, setLatestError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [extraRuns, setExtraRuns] = useState<ExtraRun[] | null>(null)
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -144,12 +147,14 @@ export default function FundamentalsLayout() {
       ),
     )
     setSummary(null)
+    setExtraRuns(null)
     await loadLatest()
   }
 
   async function createSet(name: string) {
     const created = await api.post<ScreeningSet>('/screen/sets', { name })
     setSummary(null)
+    setExtraRuns(null)
     await loadSets()
     await loadLatest()
     return created
@@ -164,6 +169,7 @@ export default function FundamentalsLayout() {
   async function deleteSet(id: number) {
     await api.delete<void>(`/screen/sets/${id}`)
     setSummary(null)
+    setExtraRuns(null)
     await loadSets()
     await loadLatest()
   }
@@ -178,6 +184,7 @@ export default function FundamentalsLayout() {
         failed: res.failed_count,
         total: res.total,
       })
+      setExtraRuns(res.extra_runs ?? [])
       if (res.stale) {
         toaster.create({
           title: 'Showing stored fundamentals',
@@ -228,6 +235,7 @@ export default function FundamentalsLayout() {
     running,
     elapsed,
     runError: error,
+    extraRuns,
     reloadSets,
     activateSet,
     createSet,
