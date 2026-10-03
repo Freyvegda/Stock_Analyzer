@@ -245,6 +245,59 @@ def test_fundamentals_negative_equity_gives_no_roe(monkeypatch):
     assert f["roe"] is None  # loss-making + negative equity must not look profitable
 
 
+def test_cached_roe_roce_skip_statements(monkeypatch):
+    class ExplodingStatements(fake_ticker_class({})):
+        @property
+        def financials(self):
+            raise AssertionError("statements must not be fetched when cached ratios exist")
+
+        @property
+        def balance_sheet(self):
+            raise AssertionError("statements must not be fetched when cached ratios exist")
+
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", ExplodingStatements)
+
+    f = YFinanceProvider().fundamentals("AAA", cached={"roe": 22.0, "roce": 30.0})
+
+    assert f["roe"] == 22.0
+    assert f["roce"] == 30.0
+
+
+def test_statements_fetched_without_cache(monkeypatch):
+    import pandas as pd
+
+    calls: list[str] = []
+
+    class TrackingTicker:
+        def __init__(self, ticker: str):
+            self.ticker = ticker
+
+        @property
+        def info(self):
+            return {}
+
+        @property
+        def financials(self):
+            calls.append("financials")
+            return pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
+
+        @property
+        def balance_sheet(self):
+            calls.append("balance_sheet")
+            return pd.DataFrame(
+                {"2025": [5000.0, 1000.0, 1000.0]},
+                index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
+            )
+
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", TrackingTicker)
+
+    f = YFinanceProvider().fundamentals("AAA", cached=None)
+
+    assert calls == ["financials", "balance_sheet"]
+    assert f["roe"] == 20.0  # 200 / 1000 * 100
+    assert f["roce"] == 25.0  # 1000 / (5000 - 1000) * 100
+
+
 def fake_history_ticker(frame, calls=None):
     class FakeTicker:
         def __init__(self, ticker: str):
@@ -338,3 +391,38 @@ def test_filings_is_not_implemented():
     provider = YFinanceProvider()
     with pytest.raises(NotImplementedError):
         provider.filings("AAA")
+
+
+def test_retry_recovers_after_two_failures(monkeypatch):
+    monkeypatch.setattr(yfinance_impl.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("boom")
+        return 7
+
+    assert yfinance_impl._retry(flaky) == 7
+    assert calls["n"] == 3
+
+
+def test_retry_reraises_after_attempts(monkeypatch):
+    monkeypatch.setattr(yfinance_impl.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def always_fail():
+        calls["n"] += 1
+        raise RuntimeError("still down")
+
+    with pytest.raises(RuntimeError, match="still down"):
+        yfinance_impl._retry(always_fail)
+
+    assert calls["n"] == yfinance_impl.FETCH_ATTEMPTS
+
+
+def test_call_with_timeout_raises_on_hang():
+    import time
+
+    with pytest.raises(TimeoutError):
+        yfinance_impl._call_with_timeout(lambda: time.sleep(0.2), timeout=0.01)

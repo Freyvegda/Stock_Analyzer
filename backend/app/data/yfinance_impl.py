@@ -10,13 +10,20 @@ ROCE = EBIT / (Total Assets − Current Liabilities), ROE = Net Income / Equity.
 
 import csv
 import io
+import logging
 import os
+import random
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 import httpx
 import pandas as pd
 import yfinance as yf
 
 from app.data.provider import DataProvider
+
+logger = logging.getLogger(__name__)
 
 NIFTY500_CSV_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
 CACHE_PATH = os.path.abspath(
@@ -26,6 +33,34 @@ CACHE_PATH = os.path.abspath(
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 MIN_UNIVERSE_SIZE = 100  # a real Nifty 500 CSV has ~500; fewer means a bad response
+
+FETCH_TIMEOUT_SECONDS = 15.0
+FETCH_ATTEMPTS = 3
+RETRY_BASE_DELAY = 0.5
+
+# One hung fetch must not queue behind another; 16 matches the job worker count.
+_EXECUTOR = ThreadPoolExecutor(max_workers=16)
+
+
+def _call_with_timeout(fn, timeout: float = FETCH_TIMEOUT_SECONDS):
+    """Run ``fn`` in the watchdog pool, raising TimeoutError after ``timeout``s."""
+    future = _EXECUTOR.submit(fn)
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        raise TimeoutError(f"fetch timed out after {timeout}s")
+
+
+def _retry(fn, attempts: int = FETCH_ATTEMPTS):
+    """Call ``fn`` up to ``attempts`` times with exponential backoff + jitter."""
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception:
+            if attempt == attempts - 1:
+                raise
+            logger.warning("fetch attempt %d/%d failed; retrying", attempt + 1, attempts)
+            time.sleep(RETRY_BASE_DELAY * 2**attempt + random.uniform(0, RETRY_BASE_DELAY))
 
 
 def _parse_stocks(text: str) -> list[dict]:
@@ -97,9 +132,10 @@ class YFinanceProvider(DataProvider):
             f.write(resp.text)
         return stocks
 
-    def fundamentals(self, symbol: str) -> dict:
+    def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
         ticker = yf.Ticker(f"{symbol}.NS")
-        info = ticker.info or {}
+        info = _retry(lambda: _call_with_timeout(lambda: ticker.info)) or {}
+        cached = cached or {}
 
         def ratio(key: str, scale: float = 1.0):
             v = info.get(key)
@@ -108,8 +144,14 @@ class YFinanceProvider(DataProvider):
         roe = ratio("returnOnEquity", 100.0)
         roce = ratio("returnOnCapitalEmployed", 100.0)
 
+        # Annual-statement figures from the previous snapshot: reuse, don't refetch.
+        if roe is None:
+            roe = cached.get("roe")
+        if roce is None:
+            roce = cached.get("roce")
+
         if roe is None or roce is None:
-            income, balance = _statements(ticker)
+            income, balance = _retry(lambda: _call_with_timeout(lambda: _statements(ticker)))
             if roe is None:
                 net_income = _latest_value(income, _NET_INCOME)
                 equity = _latest_value(balance, _EQUITY)

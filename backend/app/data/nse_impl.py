@@ -7,7 +7,7 @@ class NSEProvider(DataProvider):
     def list_stocks(self) -> list[dict]:
         raise NotImplementedError
 
-    def fundamentals(self, symbol: str) -> dict:
+    def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
         raise NotImplementedError
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:

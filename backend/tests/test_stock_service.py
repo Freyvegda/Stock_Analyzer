@@ -46,7 +46,7 @@ class FakeProvider:
         self.fundamentals_calls: list[str] = []
         self.ohlc_calls: list[tuple[str, int]] = []
 
-    def fundamentals(self, symbol: str) -> dict:
+    def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
         self.fundamentals_calls.append(symbol)
         if symbol in self.fail_fundamentals:
             raise RuntimeError(f"fetch failed for {symbol}")

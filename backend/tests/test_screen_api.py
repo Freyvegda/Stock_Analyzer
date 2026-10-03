@@ -27,7 +27,7 @@ class FakeProvider:
             {"symbol": "CCC", "name": "Gamma", "sector": "FMCG", "market_cap": None},
         ]
 
-    def fundamentals(self, symbol):
+    def fundamentals(self, symbol, cached=None):
         if symbol == "CCC" or symbol in self.fail_symbols:
             raise RuntimeError(f"fetch failed for {symbol}")
         if symbol in self.partial_symbols:
@@ -54,7 +54,7 @@ class MapProvider(FakeProvider):
         self.fail = set(fail)
         self.calls: list[str] = []
 
-    def fundamentals(self, symbol):
+    def fundamentals(self, symbol, cached=None):
         self.calls.append(symbol)
         if symbol in self.fail:
             raise RuntimeError(f"fetch failed for {symbol}")
@@ -64,7 +64,7 @@ class MapProvider(FakeProvider):
 class DeadFundamentalsProvider(FakeProvider):
     """Every fundamentals() call fails, like Yahoo throttling the whole batch."""
 
-    def fundamentals(self, symbol):
+    def fundamentals(self, symbol, cached=None):
         raise RuntimeError("yfinance unavailable")
 
 
