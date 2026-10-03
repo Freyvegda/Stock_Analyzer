@@ -11,6 +11,8 @@
 
 import { BoxGeometry, BufferAttribute, BufferGeometry } from 'three'
 
+import { pathSlabs, type PathPlan } from './pagodaScene'
+
 /** A geometry with a position and a uniform scale, ready to merge. */
 export interface PlacedPart {
   geometry: BufferGeometry
@@ -165,4 +167,42 @@ export function toriiParts(gate: {  position: { x: number; y: number; z: number 
     scale: 1,
   })
   return parts
+}
+
+/** Slab thickness. The kerb is a touch thicker, so the edge reads. */
+export const PAVING_THICKNESS = 0.05
+/** Width of the kerb stones flanking the paving. */
+export const KERB_WIDTH = 0.07
+
+/**
+ * The stone walk, as one merged buffer: a run of slabs with a kerb either side.
+ *
+ * The slabs are flush with `plan.y` — the line the gates stand on and the
+ * camera walks — and the kerbs sit just proud of them, which is what stops the
+ * paving reading as a flat ribbon of colour. One buffer, one draw call.
+ */
+export function pavingGeometry(plan: PathPlan): BufferGeometry {
+  const parts: PlacedPart[] = []
+  for (const slab of pathSlabs(plan)) {
+    parts.push({
+      geometry: new BoxGeometry(slab.halfWidth * 2, PAVING_THICKNESS, slab.depth),
+      offset: [0, plan.y - PAVING_THICKNESS / 2, slab.z],
+      scale: 1,
+    })
+  }
+  const span = plan.nearZ - plan.farZ
+  const midZ = (plan.nearZ + plan.farZ) / 2
+  const kerbHeight = PAVING_THICKNESS * 1.3
+  for (const side of [-1, 1]) {
+    parts.push({
+      geometry: new BoxGeometry(KERB_WIDTH, kerbHeight, span),
+      offset: [
+        side * (plan.halfWidth + KERB_WIDTH / 2),
+        plan.y - kerbHeight / 2 + 0.01,
+        midZ,
+      ],
+      scale: 1,
+    })
+  }
+  return mergePlaced(parts)
 }

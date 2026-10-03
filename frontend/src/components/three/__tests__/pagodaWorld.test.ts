@@ -10,11 +10,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  PATH_AMPL,
   SCROLL_SPAN,
   pathCentre,
   pathPlan,
-  pathRibbon,
+  pathSlabs,
   tierStage,
   towerPose,
 } from '../pagodaScene'
@@ -24,6 +23,7 @@ import {
   WORLD_LIMITS,
   WORLD_LAYER_ORDER,
   GATE_BLUR_PX,
+  GATE_SOFT_REACH,
   RIVER_MEANDER,
   birdFlock,
   celestialBody,
@@ -348,7 +348,12 @@ describe('riverRibbon', () => {
 
 describe('the gate path', () => {
   const plan = pathPlan()
-  const ribbon = pathRibbon(plan)
+  const slabs = pathSlabs(plan)
+  const joint = (i: number) => {
+    const far = slabs[i - 1]
+    const near = slabs[i]
+    return near.z - near.depth / 2 - (far.z + far.depth / 2)
+  }
 
   it('runs from the viewer to the pagoda steps and arrives on the centre line', () => {
     // The walk ends at the plinth, straight on axis, so the last steps line up
@@ -359,40 +364,45 @@ describe('the gate path', () => {
     for (let z = plan.farZ; z >= 0; z -= 0.2) expect(pathCentre(z)).toBe(0)
   })
 
-  it('bows out over the walk, so the path is a path and not a ruler', () => {
-    let reach = 0
+  it('runs straight down the middle, so the walk does not wander off the axis', () => {
+    // The first build bowed the path sideways to make it "a path, not a ruler".
+    // In a straight approach with the camera walking the line, the bow read as
+    // the ground swinging underfoot and the paving as a wedge. The walk is a
+    // straight run: every station is on the axis.
     for (let z = plan.farZ; z <= plan.nearZ; z += 0.1) {
-      reach = Math.max(reach, Math.abs(pathCentre(z)))
-    }
-    expect(reach).toBeGreaterThan(0.25)
-    expect(reach).toBeLessThanOrEqual(PATH_AMPL + 1e-9)
-  })
-
-  it('is continuous — no kink between stations', () => {
-    for (let z = plan.farZ; z <= plan.nearZ; z += 0.1) {
-      expect(Math.abs(pathCentre(z + 0.1) - pathCentre(z))).toBeLessThan(0.05)
+      expect(pathCentre(z), `station at z=${z.toFixed(1)}`).toBe(0)
     }
   })
 
-  it('lays the walkway with a full width at every station', () => {
-    expect(ribbon.length % 6).toBe(0)
-    const stations = ribbon.length / 6
-    expect(stations).toBeGreaterThan(4)
-    for (let s = 0; s < stations; s += 1) {
-      expect(ribbon[s * 6 + 3] - ribbon[s * 6]).toBeCloseTo(plan.halfWidth * 2, 6)
-      expect(ribbon[s * 6 + 1]).toBeCloseTo(plan.y, 6)
+  it('lays a jointed run of stone slabs from the steps to the viewer', () => {
+    expect(slabs.length).toBeGreaterThan(6)
+    for (let i = 0; i < slabs.length; i += 1) {
+      expect(slabs[i].depth).toBeGreaterThan(0.2)
+      expect(slabs[i].halfWidth).toBeCloseTo(plan.halfWidth, 9)
+      if (i > 0) {
+        expect(
+          slabs[i].z,
+          `slab ${i} does not march from the steps toward the viewer`,
+        ).toBeGreaterThan(slabs[i - 1].z)
+        expect(joint(i), `joint ${i} is raggedy`).toBeGreaterThan(0)
+        expect(joint(i), `joint ${i} is a canyon`).toBeLessThanOrEqual(0.05)
+      }
     }
-    for (let s = 1; s < stations; s += 1) {
-      expect(ribbon[s * 6 + 2], `station ${s}`).toBeLessThan(ribbon[(s - 1) * 6 + 2])
-    }
+    // The run covers the whole walk: first slab at the steps, last at the camera.
+    const firstEdge = slabs[0].z - slabs[0].depth / 2
+    const lastEdge = slabs[slabs.length - 1].z + slabs[slabs.length - 1].depth / 2
+    expect(firstEdge).toBeCloseTo(plan.farZ, 9)
+    expect(lastEdge).toBeCloseTo(plan.nearZ, 9)
   })
 
-  it('stays inside a vertex budget a low-end device can carry', () => {
-    expect(ribbon.length / 3).toBeLessThanOrEqual(80)
+  it('keeps the run to a slab count a low-end device can carry', () => {
+    // The paving is merged into one buffer; the cap is the promise that it stays
+    // one draw call's worth of stone.
+    expect(slabs.length).toBeLessThanOrEqual(20)
   })
 
   it('is deterministic', () => {
-    expect(pathRibbon(pathPlan())).toEqual(ribbon)
+    expect(pathSlabs(pathPlan())).toEqual(slabs)
   })
 })
 
@@ -500,17 +510,26 @@ describe('toriiPath', () => {
   })
 
   it('spaces the gates for a fly-through, not a picket fence', () => {
-    // The camera advances one rest point per storey; a gate has to sit between
-    // each pair of rests or the scroll never passes through one. Even spacing
-    // keeps that true for every storey, not just the last.
+    // The camera advances one rest point per storey; a rest has to fit between
+    // two gates clear of the gate blur on both sides, so the gap must beat
+    // twice the blur reach. Wider than that and the row stops reading as one
+    // walk of gates in the distance.
     const gaps: number[] = []
     for (let i = 1; i < gates.length; i += 1) {
       gaps.push(gates[i - 1].position.z - gates[i].position.z)
     }
     const first = gaps[0]
     for (const gap of gaps) expect(gap).toBeCloseTo(first, 5)
-    expect(first).toBeGreaterThan(0.8)
-    expect(first).toBeLessThan(1.6)
+    expect(first).toBeGreaterThan(2 * GATE_SOFT_REACH + 0.1)
+    expect(first).toBeLessThan(1.2)
+  })
+
+  it('stands every gate on the paving surface, not floating over it', () => {
+    // The paving slabs are flush with `pathPlan().y`; the gates are planted on
+    // that same line so a gate base can never hover above the stone.
+    for (const g of gates) {
+      expect(g.position.y, `gate at z=${g.position.z}`).toBeCloseTo(pathPlan().y, 9)
+    }
   })
 
   it('is deterministic', () => {

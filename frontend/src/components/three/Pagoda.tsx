@@ -2,6 +2,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Color,
+  DoubleSide,
   MeshStandardMaterial,
   type Group,
 } from 'three'
@@ -178,7 +179,15 @@ function Scene({
     return layout.map(
       (): StoreyMaterials => ({
         body: new MeshStandardMaterial({ color: p.body, roughness: 0.88, metalness: 0.02 }),
-        roof: new MeshStandardMaterial({ color: p.roof, roughness: 0.62, metalness: 0.08 }),
+        // Two-sided: the walk views the tower from below its eaves, and a
+        // front-side-only roof is an open shell from underneath — you see
+        // straight through the slope to the tile courses floating inside.
+        roof: new MeshStandardMaterial({
+          color: p.roof,
+          roughness: 0.62,
+          metalness: 0.08,
+          side: DoubleSide,
+        }),
         trim: new MeshStandardMaterial({ color: p.trim, roughness: 0.55, metalness: 0.12 }),
         deck: new MeshStandardMaterial({ color: p.deck, roughness: 0.8 }),
         soffit: new MeshStandardMaterial({ color: p.soffit, roughness: 0.8 }),

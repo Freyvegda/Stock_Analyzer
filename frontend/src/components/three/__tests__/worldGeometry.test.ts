@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { BoxGeometry } from 'three'
 
 import { mountainRidges, toriiPath } from '../pagodaWorld'
-import { mergePlaced, ribbonStrip, ridgeStrip, toriiParts } from '../worldGeometry'
+import { groundSheet } from '../pagodaWorld'
+import { pathPlan } from '../pagodaScene'
+import { mergePlaced, pavingGeometry, ribbonStrip, ridgeStrip, toriiParts } from '../worldGeometry'
 
 /**
  * The world's geometry assembly.
@@ -142,6 +144,38 @@ describe('ribbonStrip', () => {
 
   it('refuses a vertex list that is not station pairs', () => {
     expect(() => ribbonStrip([0, 0, 0])).toThrow()
+  })
+})
+
+describe('pavingGeometry', () => {
+  const plan = pathPlan()
+  const paving = pavingGeometry(plan)
+
+  it('merges the whole walk into one buffer of slabs and kerbs', () => {
+    const count = paving.getAttribute('position').count
+    expect(count).toBeGreaterThan(24)
+    expect(triangles(paving).length).toBeGreaterThan(12)
+  })
+
+  it('spans the walk from the steps to the viewer at the surface line', () => {
+    paving.computeBoundingBox()
+    const bb = paving.boundingBox!
+    expect(bb.min.z).toBeCloseTo(plan.farZ, 6)
+    expect(bb.max.z).toBeCloseTo(plan.nearZ, 6)
+    // Slabs flush with the walk surface; only the kerb stands slightly proud.
+    expect(bb.max.y).toBeGreaterThanOrEqual(plan.y - 1e-9)
+    expect(bb.max.y).toBeLessThanOrEqual(plan.y + 0.02)
+  })
+
+  it('keeps the paving above the ground sheet, so it never sinks through', () => {
+    paving.computeBoundingBox()
+    expect(paving.boundingBox!.min.y).toBeGreaterThan(groundSheet().y)
+  })
+
+  it('is deterministic', () => {
+    const again = pavingGeometry(pathPlan())
+    expect(again.getAttribute('position').count).toBe(paving.getAttribute('position').count)
+    expect(again.getIndex()!.count).toBe(paving.getIndex()!.count)
   })
 })
 

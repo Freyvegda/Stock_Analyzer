@@ -28,7 +28,9 @@ import {
   hangingLanterns,
   pagodaRoofVertices,
   roofCourses,
+  roofRadiusAt,
   storeyOpenings,
+  tierDetail,
   type HangingLantern,
   type TierGeometry,
 } from './pagodaScene'
@@ -155,10 +157,11 @@ export interface StoreyGeometry {
  */
 export function buildStorey(tier: TierGeometry, ground: boolean): StoreyGeometry {
   const openings = storeyOpenings(tier, ground)
+  const detail = tierDetail(tier)
   const half = tier.bodyWidth / 2
   const post = half * 0.92
-  const balconyWidth = tier.roofHalfSpan * 1.78
-  const balconyY = tier.bodyHeight * 0.92
+  const balconyWidth = detail.balconyWidth
+  const balconyY = detail.balconyY
 
   const body = place(new BoxGeometry(tier.bodyWidth, tier.bodyHeight, tier.bodyWidth), [
     0,
@@ -213,24 +216,39 @@ export function buildStorey(tier: TierGeometry, ground: boolean): StoreyGeometry
     }
   }
 
-  // Veranda rails and their balusters.
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      trim.push(
-        box(
-          0.018,
-          0.09,
-          balconyWidth,
-          sx * (balconyWidth / 2),
-          balconyY + 0.045,
-          sz * (balconyWidth / 2),
-        ),
-      )
+  // Veranda rails and their balusters, at the storey's floor — the base of the
+  // wall, just above the roof below. The ground storey carries no rail: the
+  // plinth balustrade is its balustrade, and a rail there would fence the door.
+  if (!ground) {
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        trim.push(
+          box(
+            0.018,
+            detail.railingHeight,
+            balconyWidth,
+            sx * (balconyWidth / 2),
+            balconyY + detail.railingHeight / 2,
+            sz * (balconyWidth / 2),
+          ),
+        )
+      }
     }
-  }
-  for (let b = 0; b < 5; b += 1) {
-    const x = ((b + 1) / 6 - 0.5) * balconyWidth
-    trim.push(box(0.012, 0.06, 0.012, x, balconyY + 0.03, balconyWidth / 2))
+    // Balusters on the faces the camera can reach: front and both sides.
+    const bays = Math.max(3, Math.round(detail.balusters * 0.7))
+    const railMidY = balconyY + detail.railingHeight * 0.33
+    for (let b = 0; b < bays; b += 1) {
+      const t = ((b + 1) / (bays + 1) - 0.5) * balconyWidth
+      trim.push(box(0.012, detail.railingHeight * 0.66, 0.012, t, railMidY, balconyWidth / 2))
+    }
+    for (const sx of [-1, 1]) {
+      for (let b = 0; b < 3; b += 1) {
+        const t = ((b + 1) / 4 - 0.5) * balconyWidth
+        trim.push(
+          box(0.012, detail.railingHeight * 0.66, 0.012, sx * (balconyWidth / 2), railMidY, t),
+        )
+      }
+    }
   }
 
   // The roof surface.
@@ -246,16 +264,21 @@ export function buildStorey(tier: TierGeometry, ground: boolean): StoreyGeometry
   roof.setIndex(roofParts.indices)
   roof.computeVertexNormals()
 
-  const eave = box(tier.roofHalfSpan * 1.86, 0.03, tier.roofHalfSpan * 1.86, 0, -0.016, 0)
+  // The eave: a thick bracket band under the roof, not a paper-thin plate. From
+  // below — where the walk sees it — this is the roof's visible underside.
+  const eave = box(tier.roofHalfSpan * 1.86, 0.05, tier.roofHalfSpan * 1.86, 0, -0.025, 0)
 
   // Courses and hip ridges. Roof-local: measured from the eave line, and lifted
-  // with the roof.
+  // with the roof. The ridges are sized from the surface height they sit at, so
+  // they stop at the roof's edge instead of overshooting it.
   const roofTrim: BufferGeometry[] = []
-  for (const c of roofCourses(tier.roofHalfSpan)) {
+  for (const c of roofCourses(tier.roofHalfSpan, tier.roofRise)) {
     roofTrim.push(layFlat(new TorusGeometry(c.radius * 0.7, c.step * 0.35, 4, 4), [0, c.y, 0]))
   }
+  const ridgeY = tier.roofRise * 0.42
+  const ridgeHalf = roofRadiusAt(tier.roofHalfSpan, tier.roofRise, ridgeY)
   for (const rot of [0, Math.PI / 2]) {
-    roofTrim.push(box(tier.roofHalfSpan * 1.5, 0.022, 0.05, 0, tier.roofRise * 0.42, 0, rot))
+    roofTrim.push(box(ridgeHalf * 2, 0.022, 0.05, 0, ridgeY, 0, rot))
   }
 
   // Lanterns stay separate: each swings on its own phase, so they cannot be

@@ -11,7 +11,7 @@
  * the one thing that would silently break that.
  */
 
-import { PAGODA_SEED, clamp, pathCentre, smoothstep } from './pagodaScene'
+import { PAGODA_SEED, clamp, pathCentre, pathPlan, smoothstep } from './pagodaScene'
 
 /**
  * Hard caps on every population in the scene.
@@ -402,7 +402,7 @@ export function riverRibbon(band: RiverBand, t: number): number[] {
 
 // --- the walkway lives in pagodaScene.ts -------------------------------------
 //
-// `pathPlan`, `pathCentre` and `pathRibbon` are exported from `pagodaScene.ts`
+// `pathPlan`, `pathCentre` and `pathSlabs` are exported from `pagodaScene.ts`
 // with the scroll story: the camera *is* the walker, and the gates below stand
 // on that line. They are not re-declared here — one definition, one direction
 // of import.
@@ -432,19 +432,20 @@ export interface Torii {
 }
 
 /**
- * A row of gates running down the centre line, spaced for the camera fly-through.
+ * A row of gates standing in the middle distance, in front of the pagoda.
  *
- * The row is finite by design: the camera advances one rest point per storey
- * (see `towerPose`), and each gate sits between two rests so every move passes
- * through one. A gate closer than the nearest rest (z > 5) would loom at the
- * hero; one beyond the last rest would never be passed. The far end stops short
- * of the plinth so no gate stands inside the building.
+ * The user's picture: the walk goes from one gate to the next, and the pagoda
+ * is seen in the distance beyond them. So the row is finite and clustered —
+ * the camera advances one rest point per storey (see `towerPose`) and each
+ * gate sits between two rests, every move passing through exactly one. A gate
+ * behind the hero camera would loom at the lens; one nearer the building would
+ * stop the row reading as distance.
  */
 export function toriiPath(): Torii[] {
   const rand = rng(PAGODA_SEED ^ 0x5c4d)
   const gates: Torii[] = []
-  const near = 5.5
-  const far = 2.8
+  const near = 5.6
+  const far = 3.5
   for (let i = 0; i < WORLD_LIMITS.torii; i += 1) {
     const at = i / (WORLD_LIMITS.torii - 1)
     const z = near - at * (near - far)
@@ -452,8 +453,8 @@ export function toriiPath(): Torii[] {
       index: i,
       // On the walkway's own centre line, so walking the path walks through
       // every gate. The gates are the path's milestones, not a fence.
-      position: { x: pathCentre(z), y: -0.16, z },
-      scale: 0.5 - at * 0.24 + (rand() - 0.5) * 0.03,
+      position: { x: pathCentre(z), y: pathPlan().y, z },
+      scale: 0.45 - at * 0.15 + (rand() - 0.5) * 0.03,
       lit: true,
     })
   }
@@ -461,7 +462,7 @@ export function toriiPath(): Torii[] {
 }
 
 /** How far along the path a gate's softness reaches. Under half a gate gap. */
-export const GATE_SOFT_REACH = 0.4
+export const GATE_SOFT_REACH = 0.28
 
 /**
  * How soft the vista is as the camera crosses a gate, 0..1.
