@@ -28,6 +28,30 @@ def test_parse_fixture_numbers():
     assert out["institutions_pct"] == 0.37
 
 
+def test_bank_labels_map_to_debt_and_ebitda():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>"
+        "<tr><td>Revenue +</td><td>900</td><td>1000</td></tr>"
+        "<tr><td>Net Profit +</td><td>120</td><td>150</td></tr>"
+        "<tr><td>Financing Profit</td><td>300</td><td>350</td></tr>"
+        "<tr><td>Other Income +</td><td>50</td><td>60</td></tr>"
+        "<tr><td>Depreciation</td><td>20</td><td>25</td></tr>"
+        "</table><table>"
+        "<tr><th></th><th>Mar 2025</th></tr>"
+        "<tr><td>Equity Capital</td><td>600</td></tr>"
+        "<tr><td>Face Value</td><td>2</td></tr>"
+        "<tr><td>Reserves</td><td>74400</td></tr>"
+        "<tr><td>Borrowing</td><td>15000</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 1000.0
+    assert out["ebitda"] == 350.0
+    assert out["ebit"] == 385.0  # 350 + 60 - 25
+    assert out["total_debt"] == 15000.0
+
+
 def test_quarterly_table_skipped_for_annuals():
     html = (
         "<html><body><table>"
