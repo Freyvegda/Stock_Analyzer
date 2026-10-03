@@ -123,3 +123,116 @@ def test_yfinance_off_by_default(monkeypatch):
     assert build_default_provider().enable_yfinance is False
     monkeypatch.setenv("ENABLE_YFINANCE", "1")
     assert build_default_provider().enable_yfinance is True
+
+
+def _partial_statements_no_shares():
+    s = statements()
+    s["shares_outstanding"] = None
+    s["price"] = None
+    return s
+
+
+def _yf_partial_fill():
+    return {
+        "symbol": "RELIANCE",
+        "pe": 22.5,
+        "pb": 3.1,
+        "roe": 999.0,  # must not overwrite good math value
+        "roce": None,
+        "debt_to_equity": None,
+        "market_cap": 750000.0,
+        "raw": {"beta": 1.2, "returnOnAssets": 0.09},
+    }
+
+
+def test_partial_nulls_filled_from_yfinance_only_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: _partial_statements_no_shares())
+    monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: None)
+    monkeypatch.setattr(comp_mod, "_fresh_cached_close", lambda *a, **k: None)
+
+    calls = []
+
+    class FakeYF:
+        def fundamentals(self, symbol, cached=None):
+            calls.append(symbol)
+            return _yf_partial_fill()
+
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", lambda: FakeYF())
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    # pe/pb/mcap were None from math (no price/shares) -> filled from yfinance
+    assert out["pe"] == 22.5
+    assert out["pb"] == 3.1
+    assert out["market_cap"] == 750000.0
+    # good math values preserved, not overwritten by yfinance 999
+    assert out["roe"] is not None and out["roe"] != 999.0
+    assert calls == ["RELIANCE"]
+
+
+def test_yfinance_failure_keeps_math_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: _partial_statements_no_shares())
+    monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: None)
+    monkeypatch.setattr(comp_mod, "_fresh_cached_close", lambda *a, **k: None)
+
+    class DeadYF:
+        def fundamentals(self, symbol, cached=None):
+            raise RuntimeError("yfinance down")
+
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", lambda: DeadYF())
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    # math roe still present, missing pe stays None, no raise
+    assert out["roe"] is not None
+    assert out["pe"] is None
+
+
+def test_no_yfinance_call_when_all_present(tmp_path, monkeypatch):
+    have = dict(statements(), price=2500.0)
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: have)
+    monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: (_ for _ in ()).throw(AssertionError("quote must not run")))
+    monkeypatch.setattr(comp_mod, "_fresh_cached_close", lambda *a, **k: 2500.0)
+
+    def boom():
+        raise AssertionError("yfinance must not run when nothing missing")
+
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", boom)
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    assert out["pe"] is not None
+    assert out["market_cap"] == 2500.0 * 300.0
+
+
+def test_calculator_derives_pe_when_yfinance_partial_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: _partial_statements_no_shares())
+    monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: None)
+    monkeypatch.setattr(comp_mod, "_fresh_cached_close", lambda *a, **k: None)
+
+    class PartialYF:
+        def fundamentals(self, symbol, cached=None):
+            return {
+                "symbol": symbol, "pe": None, "pb": 3.0, "roe": None,
+                "roce": None, "debt_to_equity": None, "market_cap": None,
+                "raw": {},
+            }
+
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", lambda: PartialYF())
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    # math roe 20.0 + yfinance pb 3.0 -> calculator pe 15.0, no extra network
+    assert out["pb"] == 3.0
+    assert out["pe"] == round(3.0 * 100 / 20.0, 4)
+
+
+def test_statements_base_fills_roe_when_info_rate_limited(tmp_path, monkeypatch):
+    have = dict(statements(), price=2500.0)
+    have["net_income"] = None  # math roe None, pb + mcap present
+    monkeypatch.setattr(comp_mod, "fetch_statements", lambda *a, **k: have)
+    monkeypatch.setattr(comp_mod, "_fetch_quote", lambda symbol: None)
+    monkeypatch.setattr(comp_mod, "_fresh_cached_close", lambda *a, **k: 2500.0)
+
+    class ThrottledYF:
+        def fundamentals(self, symbol, cached=None):
+            raise RuntimeError("yfinance 429 Too Many Requests")
+
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", lambda: ThrottledYF())
+    monkeypatch.setattr(
+        comp_mod, "yfinance_statements_base", lambda symbol: {"net_income": 15000.0}
+    )
+    out = make_provider(tmp_path).fundamentals("RELIANCE")
+    assert out["roe"] == round(15000.0 / 75000.0 * 100, 4)
