@@ -213,7 +213,11 @@ git commit -m "perf: yfinance timeout+retry and cached ROE/ROCE reuse"
   - `busy_set_ids(session_factory, user_id: int) -> set[int]` — sweeps stale `running` jobs
     to `interrupted` first, then returns `set_id`s with `queued|running` items in the newest
     job; empty when no running job.
-  - `mark_interrupted_jobs(session_factory) -> None` — any `running` job → `interrupted`.
+  - `mark_interrupted_jobs(session_factory) -> None` — any `running` job **not registered as
+    active** → `interrupted`.
+  - `register_active_job(job_id: int) -> None` / `unregister_active_job(job_id: int) -> None`
+    — module-level `_ACTIVE_JOB_IDS: set[int]`, mutated by the worker (B5). The sweep skips
+    these ids so polling a live job never marks it interrupted.
   - `mark_item(session_factory, job_id: int, set_id: int, status: str, run_id: int | None = None, error: str | None = None) -> None`.
   - Job projection shape: `{id, set_id, status, started_at, finished_at, error,
     universe_total, universe_done, universe_failed, items: [{set_id, name, status, run_id,
@@ -231,6 +235,9 @@ def test_create_job_prunes_to_keep_jobs(test_db, sign_in):
 def test_latest_job_marks_running_as_interrupted(test_db, sign_in):
     # seed run_jobs(status="running") then latest_job -> status "interrupted",
     # finished_at not None; busy_set_ids() == set()
+def test_active_job_is_not_swept_as_interrupted(test_db, sign_in):
+    # seed running job; register_active_job(id); latest_job -> still "running";
+    # unregister_active_job(id); latest_job -> "interrupted"
 def test_mark_item_sets_status_run_id_and_error(test_db, sign_in):
 def test_latest_job_is_per_user(test_db, sign_in):
 ```
@@ -240,14 +247,15 @@ def test_latest_job_is_per_user(test_db, sign_in):
 Run: `.\.venv\Scripts\python.exe -m pytest tests/test_run_jobs.py -q`
 Expected: FAIL — functions missing.
 
-- [ ] **Step 3: Implement in `service.py`**
+- [ ] **Step 3: Implement**
 
 Use `RunJob` / `RunJobItem` from `app.db.models`. `latest_job` opens one session, calls the
-interrupted sweep + commit, then projects. Pruning deletes `run_job_items` of the pruned
-jobs first (`delete()` query by `job_id.in_(...)`), then the jobs. `mark_item` uses the
-passed `status` verbatim and stamps `started_at`/`finished_at` on `running`/terminal
-transitions. No commits inside helpers apart from their own session blocks — the worker (B5)
-writes batches itself.
+interrupted sweep + commit, then projects. The sweep (`mark_interrupted_jobs`) skips ids in
+the module-level `_ACTIVE_JOB_IDS` set; `register_active_job` / `unregister_active_job` are
+plain set mutations. Pruning deletes `run_job_items` of the pruned jobs first
+(`delete()` query by `job_id.in_(...)`), then the jobs. `mark_item` uses the passed `status`
+verbatim and stamps `started_at`/`finished_at` on `running`/terminal transitions. No commits
+inside helpers apart from their own session blocks — the worker (B5) writes batches itself.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -356,6 +364,8 @@ git commit -m "refactor: stored-snapshot screen + bulk fetch persist primitives"
 
 Worker steps (spec §Run flow 6–10):
 
+0. `service.register_active_job(job_id)` first; `unregister_active_job` in a `finally` so
+   the interrupted sweep can tell live jobs from crashed ones.
 1. Open a session: load the job and its user's sets. `stocks = provider.list_stocks()`;
    compute `refresh_symbols` (not-today or no snapshot). Order: active-screen gate survivors
    first (evaluate against the stored criteria), then the rest by descending `market_cap`
@@ -469,11 +479,13 @@ def test_run_returns_cached_run_and_job(client, sign_in, provider, test_db):
     # body["run"]["shortlisted"] == ["AAA"] with seeded stored rows; body["job"]["status"]
     # == "running"; job items have the active set done with run_id; provider.calls == []
 def test_second_run_while_running_409(client, sign_in, provider, test_db):
-    # seed run_jobs(status="running") + item -> POST -> 409, detail string + job_id int
+    # seed run_jobs(status="running") + item, service.register_active_job(seeded_id)
+    # -> POST -> 409, detail string + job_id int; unregister in teardown
 def test_jobs_latest_null_when_never_ran_and_shape_after_run(client, sign_in, provider, test_db):
 # test_sets_api.py
 def test_update_delete_activate_busy_screen_409(client, sign_in, test_db):
-    # seed running run_job + queued item for the target set -> PUT / DELETE / activate all 409
+    # seed running run_job + queued item for the target set,
+    # service.register_active_job(job_id) -> PUT / DELETE / activate all 409
 def test_activate_other_screen_allowed_while_busy(client, sign_in, test_db):
 ```
 
