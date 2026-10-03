@@ -508,6 +508,37 @@ def test_screen_failure_isolated(test_db, sign_in):
     assert job_row(test_db, job_id)["status"] == "done"
 
 
+def test_active_refinement_failure_keeps_job_done(test_db, sign_in, monkeypatch):
+    """Spec §Run flow 9: a failing active refinement fails its item, not the job."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}])
+    active = service.get_active_set(test_db, user["id"])
+    p = MapProvider(data={"AAA": GOOD, "BBB": BAD, "CCC": BAD})
+    # The API persists the cached snapshot run before the job exists; that run
+    # must survive a failing refinement.
+    cached = service.run_snapshot_screen(
+        p, test_db, user, active["criteria"], active["shortlist_size"], active["id"]
+    )
+
+    original = runner._persist_screen
+
+    def refinement_boom(session_factory, user_id, set_id, meta, stocks, provider_stale, today):
+        if set_id == active["id"]:
+            raise RuntimeError("refinement exploded")
+        return original(session_factory, user_id, set_id, meta, stocks, provider_stale, today)
+
+    monkeypatch.setattr(runner, "_persist_screen", refinement_boom)
+    job_id = run_job(test_db, user, p, set_id=active["id"])
+
+    job = job_row(test_db, job_id)
+    assert job["status"] == "done" and job["error"] is None and job["finished_at"] is not None
+    item = get_item(test_db, job_id, active["id"])
+    assert item["status"] == "failed" and "refinement exploded" in item["error"]
+    latest = service.latest_screen(test_db, user["id"])  # cached pre-refinement run
+    assert latest["run_id"] == cached["run_id"]
+    assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]
+
+
 def test_global_failure_marks_job_failed(test_db, sign_in):
     user = sign_in()
     active = service.get_active_set(test_db, user["id"])

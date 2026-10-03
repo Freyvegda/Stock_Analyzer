@@ -252,6 +252,7 @@ def _run_screens(
 
     # The active screen runs last: its fresh-data run refines the cached sync run
     # persisted by the API (that item is already ``done``; only run_id changes).
+    # Isolated like every queued screen: a refinement failure never fails the job.
     active_meta = sets.get(active_set_id)
     if active_meta is None:
         service.mark_item(
@@ -262,9 +263,16 @@ def _run_screens(
             error=f"screening set {active_set_id} not found",
         )
         return
-    run_id = _persist_screen(
-        session_factory, user_id, active_set_id, active_meta, stocks, provider_stale, today
-    )
+    try:
+        run_id = _persist_screen(
+            session_factory, user_id, active_set_id, active_meta, stocks, provider_stale, today
+        )
+    except Exception as e:  # noqa: BLE001 — one failing screen never stops the job
+        # Spec §Run flow 9: the refinement fails its item; the cached pre-refinement
+        # run stays served and the job still finishes ``done``.
+        logger.warning("active screen %s in job %s failed: %s", active_set_id, job_id, e)
+        service.mark_item(session_factory, job_id, active_set_id, "failed", error=str(e))
+        return
     service.mark_item(session_factory, job_id, active_set_id, "done", run_id=run_id)
 
 

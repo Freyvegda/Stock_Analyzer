@@ -14,9 +14,11 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:
     # WAL: readers stay unblocked while a background job writes.
     # busy_timeout: wait out short writer locks instead of "database is locked".
     cursor = dbapi_conn.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
-    cursor.close()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    finally:
+        cursor.close()
 
 
 def configure_sqlite(engine) -> None:

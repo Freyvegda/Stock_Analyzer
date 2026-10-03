@@ -17,7 +17,6 @@ Run flow (shared universe, one network stage, Phase 1.8):
 """
 
 import json
-import logging
 from datetime import date, datetime, timezone
 
 from sqlalchemy import and_, func
@@ -40,9 +39,7 @@ from app.screener.criteria import (
     default_criteria,
 )
 from app.screener.engine import rank_shortlist, screen_rows
-from app.stock.store import profile_values, trim_raw, upsert_profile
-
-logger = logging.getLogger(__name__)
+from app.stock.store import profile_values, trim_raw
 
 # Job history kept per user (older jobs + their items are pruned on create).
 KEEP_JOBS = 20
@@ -504,7 +501,11 @@ def _sweep_stale_jobs(session) -> None:
 
 
 def mark_interrupted_jobs(session_factory) -> None:
-    """Sweep every stale ``running`` job to ``interrupted`` (boot / first read)."""
+    """Sweep every stale ``running`` job to ``interrupted``.
+
+    Public documented interface; the operational trigger is the read-path sweep
+    (``latest_job`` / ``busy_set_ids``), not ``init_db``.
+    """
     with session_factory() as session:
         _sweep_stale_jobs(session)
         session.commit()

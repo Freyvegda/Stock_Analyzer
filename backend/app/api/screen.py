@@ -97,6 +97,9 @@ def run_screen(user: dict = Depends(current_user)):
     init_db()
     job = service.latest_job(SessionLocal, user["id"])  # sweeps stale runs first
     if job is not None and job["status"] == "running":
+        # TOCTOU accepted: two concurrent POSTs can both read "not running" and
+        # create jobs. Single-user local tool — the single worker serializes
+        # execution and the second job's latest_job read reports it running.
         return JSONResponse(
             status_code=409,
             content={"detail": "Run already in progress", "job_id": job["id"]},
@@ -116,8 +119,14 @@ def run_screen(user: dict = Depends(current_user)):
     # Register before the first read: without it, this endpoint's own
     # ``latest_job`` would sweep the fresh job to ``interrupted`` (R6).
     service.register_active_job(job["id"])
-    service.mark_item(SessionLocal, job["id"], stored["id"], "done", run_id=run["run_id"])
-    runner.submit_job(job["id"], provider, SessionLocal)
+    try:
+        service.mark_item(SessionLocal, job["id"], stored["id"], "done", run_id=run["run_id"])
+        runner.submit_job(job["id"], provider, SessionLocal)
+    except Exception:
+        # Never leave the job registered when the kick fails: else the sweep
+        # skips it forever and the account is wedged until a restart.
+        service.unregister_active_job(job["id"])
+        raise
     return {"run": run, "job": service.latest_job(SessionLocal, user["id"])}
 
 

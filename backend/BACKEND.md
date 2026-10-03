@@ -140,7 +140,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 | 1 | Screener | POST /screen/run shortlists from live yfinance data; ratio unit tests pass vs hand-computed fixtures |
 | 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria` (superseded by `screening_sets` in 1.7), dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
 | 1.6 | Stock detail page | `/stock/{symbol}` serves shared stored snapshot + per-user report + cached candles (1d/15d/1mo, never persisted); tests green offline |
-| 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol; detail serves profile + digest sections; tests green offline |
+| 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol (moved to the Phase 1.8 background job); detail serves profile + digest sections; tests green offline |
 | 1.7 | Saved screens + navbar search | `screening_sets` CRUD/activate; runs + latest scoped to the active screen; criteria page edits inline (no dialog); navbar glass search always visible; tests green offline |
 | 1.8 | Instant cached run + background job | `POST /screen/run` returns the stored shortlist in seconds (zero `fundamentals()` calls) and queues a per-user job that refreshes stale symbols, re-runs all saved screens (active refined last); `GET /screen/jobs/latest` + busy-screen 409s; tests green offline |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |

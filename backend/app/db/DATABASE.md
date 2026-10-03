@@ -123,7 +123,7 @@ Append-only background job behind a cached-first run — one row per `POST /scre
 | status | String NOT NULL | `running` \| `done` \| `failed` \| `interrupted` |
 | universe_total | Int NOT NULL default 0 | stale universe symbols planned for refresh |
 | universe_done | Int NOT NULL default 0 | successful refreshes |
-| universe_failed | Int NOT NULL default 0 | `data_status=failed` refreshes |
+| universe_failed | Int NOT NULL default 0 | failed fetch attempts |
 | error | Text? | job-level failure message |
 
 Counters live here, not as per-symbol rows — symbol outcome already lives in

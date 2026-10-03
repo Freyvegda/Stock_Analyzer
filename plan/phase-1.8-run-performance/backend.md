@@ -381,6 +381,9 @@ Worker steps (spec §Run flow 6–10):
    each screen in try/except → `mark_item(failed, error=str(e))`, continue.
 4. Active screen last (refinement): re-run the active set, persist a second `ScreenRun`,
    update its item's `run_id` (status stays `done`), then job `done` + `finished_at`.
+   Wrapped in the same try/except as the queued screens (spec §Run flow 9): a refinement
+   failure marks the active item `failed` with the error, the cached pre-refinement run
+   stays served, and the job still finishes `done`.
 5. Global `except Exception` around steps 1–4: job `failed` + `error`; any `queued|running`
    item → `failed` with the same error.
 
@@ -402,6 +405,9 @@ def test_job_done_when_every_fetch_fails(test_db, sign_in):
     # cached shortlist still persisted
 def test_screen_failure_isolated(test_db, sign_in):
     # corrupt criteria_json on one set -> that item failed, other item done, job done
+def test_active_refinement_failure_keeps_job_done(test_db, sign_in):
+    # cached snapshot run persisted first; refinement raises -> active item failed with
+    # the error, job done, latest_screen still returns the cached pre-refinement run
 def test_global_failure_marks_job_failed(test_db, sign_in):
     # provider.list_stocks raises -> job failed with error, no queued items left
 def test_refresh_order_puts_survivors_first(test_db, sign_in):

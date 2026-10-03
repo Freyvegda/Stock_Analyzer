@@ -216,6 +216,24 @@ def test_jobs_latest_null_when_never_ran_and_shape_after_run(client, sign_in, pr
     assert latest["items"][0]["run_id"] == body["run"]["run_id"]
 
 
+def test_submit_failure_unregisters_job(client, sign_in, provider, test_db, monkeypatch):
+    """A submit explosion must not wedge the account: the job sweeps to interrupted."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    provider(MapProvider(data={}))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("executor refused")
+
+    monkeypatch.setattr(screen_api.runner, "submit_job", boom)
+    with pytest.raises(RuntimeError, match="executor refused"):
+        client.post("/screen/run")
+
+    latest = client.get("/screen/jobs/latest").json()["job"]
+    assert latest["status"] == "interrupted"
+    assert latest["finished_at"] is not None
+
+
 def test_latest_is_per_user(client, sign_in, provider, test_db):
     a = sign_in("alice")
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
