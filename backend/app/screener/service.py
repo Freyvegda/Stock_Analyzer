@@ -18,6 +18,7 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
+from sqlalchemy import and_, func
 from sqlalchemy.exc import IntegrityError
 
 from app.data.provider import DataProvider
@@ -71,16 +72,18 @@ def latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamental
     """Newest ``data_status='ok'`` row per symbol — the stored reference snapshot."""
     if not symbols:
         return {}
+    newest = (
+        session.query(Fundamental.symbol, func.max(Fundamental.date).label("date"))
+        .filter(Fundamental.symbol.in_(symbols), Fundamental.data_status == "ok")
+        .group_by(Fundamental.symbol)
+        .subquery()
+    )
     rows = (
         session.query(Fundamental)
-        .filter(Fundamental.symbol.in_(symbols), Fundamental.data_status == "ok")
-        .order_by(Fundamental.symbol.asc(), Fundamental.date.desc())
+        .join(newest, and_(Fundamental.symbol == newest.c.symbol, Fundamental.date == newest.c.date))
         .all()
     )
-    latest: dict[str, Fundamental] = {}
-    for row in rows:
-        latest.setdefault(row.symbol, row)
-    return latest
+    return {row.symbol: row for row in rows}
 
 
 def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) -> dict:

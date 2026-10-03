@@ -1,7 +1,13 @@
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.db import models  # noqa: F401 — register tables
+from app.db.database import Base
+from app.db.models import Fundamental
 from app.screener.criteria import ConfigError
 from app.screener.engine import apply_screen, evaluate_screen, rank_shortlist, screen_rows
+from app.screener.service import latest_ok_fundamentals
 
 CRITERIA = [
     {"key": "pe", "enabled": True, "value": 25},
@@ -140,3 +146,49 @@ def test_bookmark_flag_does_not_change_screening():
     marked, marked_rejected = evaluate_screen(rows, bookmarked)
     assert marked == plain
     assert marked_rejected == plain_rejected
+
+
+@pytest.fixture
+def session_factory(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path}/screener.db")
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)
+
+
+def test_latest_ok_ignores_failed_and_older_rows(session_factory):
+    # newest `ok` row per symbol: failed rows and older ok rows must not win
+    with session_factory() as session:
+        session.add_all(
+            [
+                Fundamental(symbol="AAA", date="2026-09-01", data_status="ok"),
+                Fundamental(symbol="AAA", date="2026-09-02", data_status="failed"),
+                Fundamental(symbol="AAA", date="2026-09-03", data_status="ok"),
+                Fundamental(symbol="BBB", date="2026-09-01", data_status="ok"),
+            ]
+        )
+        session.commit()
+        latest = latest_ok_fundamentals(session, ["AAA", "BBB"])
+
+    assert set(latest) == {"AAA", "BBB"}
+    assert latest["AAA"].date == "2026-09-03"
+    assert latest["BBB"].date == "2026-09-01"
+
+
+def test_latest_ok_ignores_newest_failed_row(session_factory):
+    # a failed row newer than the last `ok` row must not be selected
+    with session_factory() as session:
+        session.add_all(
+            [
+                Fundamental(symbol="AAA", date="2026-09-01", data_status="ok"),
+                Fundamental(symbol="AAA", date="2026-09-02", data_status="failed"),
+            ]
+        )
+        session.commit()
+        latest = latest_ok_fundamentals(session, ["AAA"])
+
+    assert latest["AAA"].date == "2026-09-01"
+
+
+def test_latest_ok_empty_symbols_returns_empty(session_factory):
+    with session_factory() as session:
+        assert latest_ok_fundamentals(session, []) == {}
