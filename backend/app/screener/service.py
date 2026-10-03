@@ -22,7 +22,7 @@ from sqlalchemy import and_, func
 from sqlalchemy.exc import IntegrityError
 
 from app.data.provider import DataProvider
-from app.db.models import Fundamental, ScreeningSet, ScreenRun, Stock
+from app.db.models import Fundamental, RunJob, RunJobItem, ScreeningSet, ScreenRun, Stock
 from app.screener.criteria import (
     ConfigError,
     criteria_from_json,
@@ -37,6 +37,13 @@ logger = logging.getLogger(__name__)
 # yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
 WORKERS = 8
 
+# Job history kept per user (older jobs + their items are pruned on create).
+KEEP_JOBS = 20
+
+# Jobs whose worker thread is alive in this process; the interrupted sweep skips
+# these so polling a live job never marks it interrupted.
+_ACTIVE_JOB_IDS: set[int] = set()
+
 
 class SetNotFoundError(Exception):
     """Raised when a screening set does not exist for the caller (404)."""
@@ -46,7 +53,7 @@ class LastSetError(Exception):
     """Raised when deleting the caller's last screening set (400)."""
 
 
-def _now() -> str:
+def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -266,7 +273,7 @@ def _seed_active_set(session, user_id: int) -> ScreeningSet:
             thesis=None,
             shortlist_size=10,
             is_active=True,
-            updated_at=_now(),
+            updated_at=now_iso(),
         )
         session.add(row)
         try:
@@ -353,7 +360,7 @@ def create_set(
             thesis=thesis,
             shortlist_size=10,
             is_active=True,
-            updated_at=_now(),
+            updated_at=now_iso(),
         )
         session.add(row)
         session.commit()
@@ -373,7 +380,7 @@ def update_set(session_factory, user_id: int, set_id: int, changes: dict) -> dic
             row.criteria_json = criteria_to_json(changes["criteria"])
         if "thesis" in changes:
             row.thesis = changes["thesis"]
-        row.updated_at = _now()
+        row.updated_at = now_iso()
         session.commit()
         return _projection(row)
 
@@ -431,3 +438,176 @@ def latest_screen(session_factory, user_id: int) -> dict | None:
         for row in shortlist:
             row.update(meta.get(row["symbol"], {}))
         return {"run_id": run.id, "run_date": run.run_date, "shortlisted": shortlist}
+
+
+# --- Run jobs (Phase 1.8) ----------------------------------------------------
+
+
+def register_active_job(job_id: int) -> None:
+    """Mark a job's worker as alive in this process (interrupted sweep skips it)."""
+    _ACTIVE_JOB_IDS.add(job_id)
+
+
+def unregister_active_job(job_id: int) -> None:
+    _ACTIVE_JOB_IDS.discard(job_id)
+
+
+def _sweep_stale_jobs(session) -> None:
+    """Mark unregistered ``running`` jobs ``interrupted`` (worker died)."""
+    query = session.query(RunJob).filter(RunJob.status == "running")
+    if _ACTIVE_JOB_IDS:
+        query = query.filter(~RunJob.id.in_(_ACTIVE_JOB_IDS))
+    query.update(
+        {RunJob.status: "interrupted", RunJob.finished_at: now_iso()},
+        synchronize_session=False,
+    )
+
+
+def mark_interrupted_jobs(session_factory) -> None:
+    """Sweep every stale ``running`` job to ``interrupted`` (boot / first read)."""
+    with session_factory() as session:
+        _sweep_stale_jobs(session)
+        session.commit()
+
+
+def _project_job(session, job: RunJob) -> dict:
+    """Job projection; items active-first then by set id, deleted sets named ``""``."""
+    rows = (
+        session.query(RunJobItem, ScreeningSet)
+        .outerjoin(ScreeningSet, ScreeningSet.id == RunJobItem.set_id)
+        .filter(RunJobItem.job_id == job.id)
+        .all()
+    )
+    items = sorted(
+        rows,
+        key=lambda pair: (0 if pair[1] is not None and pair[1].is_active else 1, pair[0].set_id),
+    )
+    return {
+        "id": job.id,
+        "set_id": job.set_id,
+        "status": job.status,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+        "error": job.error,
+        "universe_total": job.universe_total,
+        "universe_done": job.universe_done,
+        "universe_failed": job.universe_failed,
+        "items": [
+            {
+                "set_id": item.set_id,
+                "name": screen.name if screen is not None else "",
+                "status": item.status,
+                "run_id": item.run_id,
+                "error": item.error,
+                "started_at": item.started_at,
+                "finished_at": item.finished_at,
+            }
+            for item, screen in items
+        ],
+    }
+
+
+def _prune_jobs(session, user_id: int) -> None:
+    """Keep the latest ``KEEP_JOBS`` jobs; prune items before their jobs."""
+    job_ids = [
+        row.id
+        for row in session.query(RunJob.id)
+        .filter(RunJob.user_id == user_id)
+        .order_by(RunJob.id.desc())
+        .all()
+    ]
+    doomed = job_ids[KEEP_JOBS:]
+    if not doomed:
+        return
+    session.query(RunJobItem).filter(RunJobItem.job_id.in_(doomed)).delete(
+        synchronize_session=False
+    )
+    session.query(RunJob).filter(RunJob.id.in_(doomed)).delete(synchronize_session=False)
+
+
+def create_job(session_factory, user_id: int, set_id: int) -> dict:
+    """Start one job: sweep stale runs, insert it + a queued item per user set,
+    prune history, and return the projection."""
+    with session_factory() as session:
+        _sweep_stale_jobs(session)
+        job = RunJob(
+            user_id=user_id,
+            set_id=set_id,
+            started_at=now_iso(),
+            status="running",
+        )
+        session.add(job)
+        session.flush()  # job.id for its items
+        for row in _user_sets(session, user_id):
+            session.add(RunJobItem(job_id=job.id, set_id=row.id, status="queued"))
+        session.flush()
+        _prune_jobs(session, user_id)
+        projection = _project_job(session, job)
+        session.commit()
+        return projection
+
+
+def latest_job(session_factory, user_id: int) -> dict | None:
+    """Newest job projection for the caller; stale running jobs swept first."""
+    with session_factory() as session:
+        _sweep_stale_jobs(session)
+        session.commit()
+        job = (
+            session.query(RunJob)
+            .filter(RunJob.user_id == user_id)
+            .order_by(RunJob.id.desc())
+            .first()
+        )
+        return _project_job(session, job) if job is not None else None
+
+
+def busy_set_ids(session_factory, user_id: int) -> set[int]:
+    """Sets with queued/running items in the caller's newest running job."""
+    with session_factory() as session:
+        _sweep_stale_jobs(session)
+        session.commit()
+        job = (
+            session.query(RunJob)
+            .filter(RunJob.user_id == user_id, RunJob.status == "running")
+            .order_by(RunJob.id.desc())
+            .first()
+        )
+        if job is None:
+            return set()
+        return {
+            row.set_id
+            for row in session.query(RunJobItem)
+            .filter(RunJobItem.job_id == job.id, RunJobItem.status.in_(("queued", "running")))
+            .all()
+        }
+
+
+def mark_item(
+    session_factory,
+    job_id: int,
+    set_id: int,
+    status: str,
+    run_id: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Update one job item: status verbatim, timestamps on running/terminal."""
+    with session_factory() as session:
+        item = (
+            session.query(RunJobItem)
+            .filter(RunJobItem.job_id == job_id, RunJobItem.set_id == set_id)
+            .first()
+        )
+        if item is None:
+            return
+        item.status = status
+        if status == "running" and item.started_at is None:
+            item.started_at = now_iso()
+        if status in ("done", "failed"):
+            if item.started_at is None:
+                item.started_at = now_iso()
+            item.finished_at = now_iso()
+        if run_id is not None:
+            item.run_id = run_id
+        if error is not None:
+            item.error = error
+        session.commit()
