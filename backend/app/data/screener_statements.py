@@ -148,6 +148,14 @@ class ScreenerBlockedError(RuntimeError):
     """Screener.in refused the fetch (403/429). Caller serves cache."""
 
 
+class SymbolNotFoundError(RuntimeError):
+    """Screener.in has no page for the symbol (404 on every variant).
+
+    Terminal — retrying a certain 404 with backoff wastes ~50s per dead
+    symbol per job. Callers may serve a stale cache, then fail the symbol.
+    """
+
+
 def _to_float(text: str | None) -> float | None:
     if text is None:
         return None
@@ -425,8 +433,10 @@ def _download(symbol: str) -> str:
         for attempt in range(4):
             try:
                 resp = httpx.get(url, headers=_UA, timeout=20, follow_redirects=True)
-                if resp.status_code == 404 and url_index == 0:
-                    break  # standalone-only company: fall back to main page
+                if resp.status_code == 404:
+                    if url_index == 0:
+                        break  # standalone-only company: fall back to main page
+                    raise SymbolNotFoundError(f"screener has no page for {symbol}: 404")
                 if resp.status_code == 429:
                     last_error = ScreenerBlockedError(f"screener limited {symbol}: 429")
                     time.sleep(_retry_after(resp))
@@ -442,7 +452,7 @@ def _download(symbol: str) -> str:
                         break
                 time.sleep(POLITE_DELAY_SECONDS)
                 return resp.text
-            except ScreenerBlockedError:
+            except (ScreenerBlockedError, SymbolNotFoundError):
                 raise
             except Exception as e:  # noqa: BLE001 — retry then propagate
                 last_error = e
@@ -481,7 +491,7 @@ def fetch_statements(
                 pass
     try:
         html = client(symbol) if callable(client) else _download(symbol)
-    except ScreenerBlockedError:
+    except (ScreenerBlockedError, SymbolNotFoundError):
         stale = _read_cache(path) if os.path.exists(path) else None
         if stale and stale.get("fields"):
             return dict(stale["fields"])

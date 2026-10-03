@@ -364,3 +364,35 @@ def test_single_sep_annual_for_new_listing():
     out = stmt.parse_statements(html)
     assert out["revenue"] == 1200.0
     assert out["equity"] == 4812.0
+
+
+def test_404_is_terminal_no_retry(tmp_path, monkeypatch):
+    # A delisted/unknown symbol 404s on both page variants. Retrying a certain
+    # 404 with backoff wastes ~50s per dead symbol per job (live DUMMYHEG).
+    import app.data.screener_statements as stmt_mod
+
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(stmt_mod.time, "sleep", lambda s: sleeps.append(s))
+
+    class R404:
+        status_code = 404
+        headers = {}
+        text = "not found"
+
+        def raise_for_status(self):
+            raise AssertionError("404 must short-circuit before raise_for_status")
+
+    monkeypatch.setattr(
+        stmt_mod.httpx, "get", lambda url, **kwargs: (calls.append(url), R404())[1]
+    )
+    try:
+        stmt_mod.fetch_statements("NOSUCH", cache_dir=str(tmp_path), ttl_days=30)
+    except AssertionError:
+        raise
+    except Exception:
+        pass
+    else:
+        raise AssertionError("missing symbol must raise")
+    assert len(calls) == 2  # consolidated + main, then stop
+    assert sleeps == []
