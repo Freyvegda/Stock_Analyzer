@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -174,6 +174,8 @@ describe('ScreeningCriteria', () => {
     renderFundamentals()
     await userEvent.click(await screen.findByRole('button', { name: /run screen/i }))
     expect(await screen.findByTestId('sakura-leaf-loader')).toBeInTheDocument()
+    expect(screen.getByText('Preparing cached results…')).toBeInTheDocument()
+    expect(screen.queryByText(/fetching fundamentals/i)).not.toBeInTheDocument()
     expect(screen.getByTestId('elapsed')).toHaveTextContent('00:00')
     expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
   })
@@ -202,6 +204,41 @@ describe('ScreeningCriteria', () => {
     expect(screen.getByRole('button', { name: /running/i })).toBeDisabled()
     expect(screen.queryByTestId('sakura-leaf-loader')).not.toBeInTheDocument()
     expect(screen.queryByTestId('elapsed')).not.toBeInTheDocument()
+  })
+
+  it('locks an already-open editor when the active screen becomes busy', async () => {
+    let releaseJob: (value: unknown) => void = () => {}
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') return Promise.resolve(emptyRun)
+      if (path === '/screen/jobs/latest') {
+        return new Promise((resolve) => {
+          releaseJob = resolve
+        })
+      }
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderFundamentals()
+    await screen.findByText('PE ≤ 25×')
+    await userEvent.click(screen.getByRole('button', { name: /edit criteria/i }))
+    expect(await screen.findByLabelText('PE value')).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled()
+
+    await act(async () => {
+      releaseJob({ job: runningJob })
+    })
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled(),
+    )
+    expect(screen.getByLabelText('PE value')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bookmark PE' })).toBeDisabled()
+    expect(screen.getByLabelText('PE value').closest('fieldset')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /edit criteria/i })).toBeDisabled()
+    expect(screen.getByTestId('panel-locked')).toHaveTextContent(
+      'Screen is running — editing unlocks when the job finishes.',
+    )
   })
 
   it('jumps to the top 10 page when a run finishes while on the criteria page', async () => {

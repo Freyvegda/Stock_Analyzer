@@ -276,7 +276,7 @@ export default function ScreeningCriteria() {
                 <SakuraLeafLoader size={120} label="Running screen…" />
               </Suspense>
               <Text fontSize="sm" color="fg.muted">
-                Fetching fundamentals for ~500 stocks — takes a few minutes
+                Preparing cached results…
               </Text>
               <Text fontSize="sm" color="fg.muted">
                 <span data-testid="elapsed">
