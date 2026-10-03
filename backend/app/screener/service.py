@@ -107,19 +107,12 @@ def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) 
     }
 
 
-def run_screen(
-    provider: DataProvider,
-    session_factory,
-    user: dict,
-    criteria: list[dict],
-    shortlist_size: int = 10,
-    set_id: int | None = None,
-) -> dict:
-    """Run the staged fundamental screen for one user and persist it.
+def _prepare(provider: DataProvider, session_factory) -> dict:
+    """Stages 1-2: refresh the shared snapshot and build the candidate rows.
 
-    Gate failures cost no network calls; only survivors are refreshed. Same-day
-    reruns merge fundamentals; one ScreenRun per call with the criteria snapshot
-    verbatim for reproducibility.
+    Gate failures cost no network calls; only symbols whose snapshot is not from
+    today (plus symbols with no row) are refreshed. Returns everything the
+    evaluation stage needs, so a batch can evaluate many screens on one snapshot.
     """
     today = date.today().isoformat()
     stocks = provider.list_stocks()
@@ -198,34 +191,73 @@ def run_screen(
             for symbol in symbols
             if symbol in fresh_rows or symbol in stored_rows
         ]
-        survivors, rejected = screen_rows(candidates, criteria)
+        session.commit()
+        return {
+            "today": today,
+            "candidates": candidates,
+            "failed_symbols": failed_symbols,
+            "total": len(stocks),
+            "stale_provider": bool(getattr(provider, "stale", False)),
+        }
+
+
+def _evaluate_and_store(
+    session_factory,
+    user_id: int,
+    prepared: dict,
+    criteria: list[dict],
+    shortlist_size: int,
+    set_id: int | None,
+    triggered_by: str,
+) -> dict:
+    """Stages 3-4: gate the prepared rows, rank, persist one ScreenRun."""
+    with session_factory() as session:
+        survivors, rejected = screen_rows(prepared["candidates"], criteria)
 
         shortlist = rank_shortlist(survivors, shortlist_size)
-        stale = bool(getattr(provider, "stale", False)) or any(
-            row.get("data_date") != today for row in shortlist
+        stale = prepared["stale_provider"] or any(
+            row.get("data_date") != prepared["today"] for row in shortlist
         )
 
         run = ScreenRun(
-            run_date=today,
-            user_id=user["id"],
+            run_date=prepared["today"],
+            user_id=user_id,
             set_id=set_id,
+            triggered_by=triggered_by,
             criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
         session.commit()
         session.refresh(run)
-        run_id = run.id
+        return {
+            "run_id": run.id,
+            "shortlisted": shortlist,
+            "failed_count": len(prepared["failed_symbols"]),
+            "failed_symbols": prepared["failed_symbols"],
+            "failed_details": rejected,
+            "stale": stale,
+            "total": prepared["total"],
+        }
 
-    return {
-        "run_id": run_id,
-        "shortlisted": shortlist,
-        "failed_count": len(failed_symbols),
-        "failed_symbols": failed_symbols,
-        "failed_details": rejected,
-        "stale": stale,
-        "total": len(stocks),
-    }
+
+def run_screen(
+    provider: DataProvider,
+    session_factory,
+    user: dict,
+    criteria: list[dict],
+    shortlist_size: int = 10,
+    set_id: int | None = None,
+) -> dict:
+    """Run the staged fundamental screen for one user and persist it.
+
+    Public wrapper kept for direct callers: one prepare stage plus one manual
+    evaluation. The batch path reuses the same stages for the extra screens.
+    """
+    prepared = _prepare(provider, session_factory)
+    return _evaluate_and_store(
+        session_factory, user["id"], prepared, criteria, shortlist_size, set_id, "manual"
+    )
 
 
 def _projection(row: ScreeningSet) -> dict:
