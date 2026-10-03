@@ -460,3 +460,55 @@ def test_call_with_timeout_raises_on_hang():
 
     with pytest.raises(TimeoutError):
         yfinance_impl._call_with_timeout(lambda: time.sleep(0.2), timeout=0.01)
+
+
+def _base_ticker_class(income=None, balance=None, fast_price=None):
+    class FakeTicker:
+        def __init__(self, ticker: str):
+            self.ticker = ticker
+
+        @property
+        def financials(self):
+            return income
+
+        @property
+        def balance_sheet(self):
+            return balance
+
+        @property
+        def fast_info(self):
+            return {"lastPrice": fast_price} if fast_price is not None else {}
+
+    return FakeTicker
+
+
+def test_statements_base_returns_numbers(monkeypatch):
+    import pandas as pd
+
+    income = pd.DataFrame({"2025": [200.0, 1000.0]}, index=["Net Income", "EBIT"])
+    balance = pd.DataFrame(
+        {"2025": [1000.0, 5000.0, 1000.0, 400.0]},
+        index=["Stockholders Equity", "Total Assets", "Current Liabilities", "Total Debt"],
+    )
+    monkeypatch.setattr(
+        yfinance_impl.yf, "Ticker", _base_ticker_class(income, balance, fast_price=250.0)
+    )
+    base = yfinance_impl.yfinance_statements_base("AAA")
+    assert base["net_income"] == 200.0
+    assert base["equity"] == 1000.0
+    assert base["ebit"] == 1000.0
+    assert base["total_debt"] == 400.0
+    assert base["price"] == 250.0
+
+
+def test_statements_base_empty_never_raises(monkeypatch):
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", _base_ticker_class())
+    base = yfinance_impl.yfinance_statements_base("AAA")
+    assert base["net_income"] is None
+    assert base["price"] is None
+
+
+def test_is_rate_limit_error_flags_429_timeout():
+    assert yfinance_impl.is_rate_limit_error(RuntimeError("screener limited AAA: 429")) is True
+    assert yfinance_impl.is_rate_limit_error(TimeoutError("fetch timed out after 15.0s")) is True
+    assert yfinance_impl.is_rate_limit_error(ValueError("bad csv")) is False

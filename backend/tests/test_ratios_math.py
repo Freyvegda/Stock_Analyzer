@@ -114,3 +114,39 @@ def test_negative_prev_yields_none_growth():
 def test_base_fields_whitelisted():
     assert "price" in BASE_FIELDS
     assert "net_income" in BASE_FIELDS
+
+
+def test_derive_pe_from_pb_roe():
+    from app.data.ratios_math import derive_missing
+    computed = {"pe": None, "pb": 2.0, "roe": 20.0, "roce": 15.0,
+                "debt_to_equity": 0.2, "market_cap": 50000.0}
+    base = {"net_income": 5000.0, "equity": 25000.0}
+    filled = derive_missing(computed, base)
+    assert filled["pe"] == round(2.0 * 100 / 20.0, 4)
+
+
+def test_derive_mcap_from_pe_net_income():
+    from app.data.ratios_math import derive_missing
+    computed = {"pe": 10.0, "pb": 2.0, "roe": 20.0, "roce": 15.0,
+                "debt_to_equity": 0.2, "market_cap": None}
+    base = {"net_income": 15000.0, "equity": 75000.0}
+    filled = derive_missing(computed, base)
+    assert filled["market_cap"] == round(10.0 * 15000.0, 4)
+
+
+def test_derive_pb_from_mcap_equity():
+    from app.data.ratios_math import derive_missing
+    computed = {"pe": 10.0, "pb": None, "roe": 20.0, "roce": 15.0,
+                "debt_to_equity": 0.2, "market_cap": 50000.0}
+    base = {"equity": 25000.0, "net_income": 5000.0}
+    filled = derive_missing(computed, base)
+    assert filled["pb"] == round(50000.0 / 25000.0, 4)
+
+
+def test_no_derive_when_negative_earnings():
+    from app.data.ratios_math import derive_missing
+    computed = {"pe": None, "pb": 2.0, "roe": -5.0, "roce": 15.0,
+                "debt_to_equity": 0.2, "market_cap": 50000.0}
+    base = {"net_income": -1000.0, "equity": 25000.0}
+    filled = derive_missing(computed, base)
+    assert "pe" not in filled

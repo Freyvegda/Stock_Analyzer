@@ -169,3 +169,59 @@ def compute_ratios(base: dict) -> dict:
         "market_cap": _round(market_cap),
         "raw": {k: v for k, v in raw.items() if v is not None},
     }
+
+
+def derive_missing(computed: dict, base: dict) -> dict:
+    """Algebraic calculator fallback for still-missing derived ratios.
+
+    Uses present derived values + base money inputs, no network. Only fills
+    when sources are positive (negative earnings/equity keep None by design —
+    pe with losses is meaningless, never forced). Returns {key: value}.
+    """
+    filled: dict = {}
+    try:
+        comp = dict(computed or {})
+        b = dict(base or {})
+        pe = _num(comp.get("pe"))
+        pb = _num(comp.get("pb"))
+        roe = _num(comp.get("roe"))
+        mcap = _num(comp.get("market_cap"))
+        net_income = _num(b.get("net_income"))
+        equity = _num(b.get("equity"))
+
+        def put(key: str, value) -> None:
+            rounded = _round(value)
+            if rounded is not None and comp.get(key) is None:
+                filled[key] = rounded
+
+        # market_cap from earnings or book: mcap = pe * net_income = pb * equity
+        if comp.get("market_cap") is None:
+            if pe is not None and pe > 0 and net_income is not None and net_income > 0:
+                put("market_cap", pe * net_income)
+            elif pb is not None and pb > 0 and equity is not None and equity > 0:
+                put("market_cap", pb * equity)
+        mcap = filled.get("market_cap", mcap)
+        # pe from book/return or market/earnings: pe = pb*100/roe = mcap/net_income
+        if comp.get("pe") is None:
+            if pb is not None and pb > 0 and roe is not None and roe > 0:
+                put("pe", pb * 100 / roe)
+            elif mcap is not None and mcap > 0 and net_income is not None and net_income > 0:
+                put("pe", mcap / net_income)
+        # pb from market/book or earnings/return: pb = mcap/equity = pe*roe/100
+        if comp.get("pb") is None:
+            if mcap is not None and mcap > 0 and equity is not None and equity > 0:
+                put("pb", mcap / equity)
+            elif pe is not None and pe > 0 and roe is not None and roe > 0:
+                # pe may itself be derived above in this same pass
+                _pe = filled.get("pe", pe)
+                if _pe is not None and _pe > 0:
+                    put("pb", _pe * roe / 100)
+        # roe from book/earnings multiple: roe = pb/pe*100
+        if comp.get("roe") is None:
+            _pb = filled.get("pb", pb)
+            _pe = filled.get("pe", pe)
+            if _pb is not None and _pb > 0 and _pe is not None and _pe > 0:
+                put("roe", _pb / _pe * 100)
+    except Exception:  # noqa: BLE001 — derivation never raises
+        return {}
+    return filled
