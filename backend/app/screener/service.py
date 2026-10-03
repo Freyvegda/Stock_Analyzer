@@ -259,43 +259,6 @@ def _fetch_all(provider: DataProvider, stocks: list[dict]) -> list[tuple[dict, d
         return list(pool.map(fetch_one, stocks))
 
 
-def latest_ok_fundamentals(session, symbols: list[str]) -> dict[str, Fundamental]:
-    """Newest ``data_status='ok'`` row per symbol â€” the stored reference snapshot."""
-    if not symbols:
-        return {}
-    rows = (
-        session.query(Fundamental)
-        .filter(Fundamental.symbol.in_(symbols), Fundamental.data_status == "ok")
-        .order_by(Fundamental.symbol.asc(), Fundamental.date.desc())
-        .all()
-    )
-    latest: dict[str, Fundamental] = {}
-    for row in rows:
-        latest.setdefault(row.symbol, row)
-    return latest
-
-
-def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) -> dict:
-    """Engine row from the stored snapshot; ``raw_json`` back to dict for raw criteria."""
-    try:
-        raw = json.loads(fundamental.raw_json) if fundamental.raw_json else {}
-    except (json.JSONDecodeError, TypeError):
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
-    return {
-        "symbol": symbol,
-        "pe": fundamental.pe,
-        "pb": fundamental.pb,
-        "roe": fundamental.roe,
-        "roce": fundamental.roce,
-        "debt_to_equity": fundamental.debt_to_equity,
-        "market_cap": market_cap,
-        "raw": raw,
-        "data_date": fundamental.date,
-    }
-
-
 def _prepare(provider: DataProvider, session_factory) -> dict:
     """Stages 1-2: refresh the shared snapshot and build the candidate rows.
 
