@@ -75,6 +75,14 @@ export interface FailedDetail {
   failed: string[]
 }
 
+export interface ExtraRun {
+  set_id: number
+  name: string
+  run_id: number | null
+  shortlisted: number | null
+  error: string | null
+}
+
 export interface ScreenRunResult {
   run_id: number
   shortlisted: ShortlistRow[]
@@ -83,6 +91,7 @@ export interface ScreenRunResult {
   failed_details?: FailedDetail[]
   stale?: boolean
   total: number
+  extra_runs?: ExtraRun[]
 }
 
 export interface LatestScreen {
@@ -137,6 +146,13 @@ export interface StockReport {
   groups: MetricGroup[]
 }
 
+export interface StockScreenReport {
+  set_id: number
+  name: string
+  is_active: boolean
+  report: StockReport
+}
+
 export interface RunContext {
   run_id: number
   run_date: string
@@ -166,7 +182,7 @@ export interface StockDetail {
   sector: string | null
   market_cap: number | null
   snapshot: StockSnapshot
-  report: StockReport
+  reports: StockScreenReport[]
   profile: CompanyProfile
   main_ratios: StockFact[]
   has: StockFact[]

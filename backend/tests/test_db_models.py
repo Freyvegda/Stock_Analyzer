@@ -56,6 +56,25 @@ def test_screen_runs_has_set_id(tmp_path):
     assert "config_yaml" not in cols
 
 
+def test_screen_runs_triggered_by_defaults_manual(tmp_path):
+    engine = make_engine(tmp_path)
+    cols = {c["name"]: c for c in inspect(engine).get_columns("screen_runs")}
+    assert "triggered_by" in cols
+    assert cols["triggered_by"]["nullable"] is False
+    TestSession = sessionmaker(bind=engine)
+    with TestSession() as session:
+        row = models.ScreenRun(
+            run_date="2026-10-03",
+            user_id=1,
+            criteria_json="[]",
+            shortlisted_json="[]",
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        assert row.triggered_by == "manual"
+
+
 def test_screening_set_defaults(tmp_path):
     engine = make_engine(tmp_path)
     TestSession = sessionmaker(bind=engine)

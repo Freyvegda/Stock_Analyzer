@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # yfinance .info is network-bound; 8 workers keeps a ~500-stock first run to minutes.
 WORKERS = 8
 
+#: The most-used measure looks at this many of the user's own (manual) runs.
+MANUAL_RUN_WINDOW = 10
+
 
 class SetNotFoundError(Exception):
     """Raised when a screening set does not exist for the caller (404)."""
@@ -104,19 +107,12 @@ def stored_row(symbol: str, fundamental: Fundamental, market_cap: float | None) 
     }
 
 
-def run_screen(
-    provider: DataProvider,
-    session_factory,
-    user: dict,
-    criteria: list[dict],
-    shortlist_size: int = 10,
-    set_id: int | None = None,
-) -> dict:
-    """Run the staged fundamental screen for one user and persist it.
+def _prepare(provider: DataProvider, session_factory) -> dict:
+    """Stages 1-2: refresh the shared snapshot and build the candidate rows.
 
-    Gate failures cost no network calls; only survivors are refreshed. Same-day
-    reruns merge fundamentals; one ScreenRun per call with the criteria snapshot
-    verbatim for reproducibility.
+    Gate failures cost no network calls; only symbols whose snapshot is not from
+    today (plus symbols with no row) are refreshed. Returns everything the
+    evaluation stage needs, so a batch can evaluate many screens on one snapshot.
     """
     today = date.today().isoformat()
     stocks = provider.list_stocks()
@@ -195,34 +191,127 @@ def run_screen(
             for symbol in symbols
             if symbol in fresh_rows or symbol in stored_rows
         ]
-        survivors, rejected = screen_rows(candidates, criteria)
+        session.commit()
+        return {
+            "today": today,
+            "candidates": candidates,
+            "failed_symbols": failed_symbols,
+            "total": len(stocks),
+            "stale_provider": bool(getattr(provider, "stale", False)),
+        }
+
+
+def _evaluate_and_store(
+    session_factory,
+    user_id: int,
+    prepared: dict,
+    criteria: list[dict],
+    shortlist_size: int,
+    set_id: int | None,
+    triggered_by: str,
+) -> dict:
+    """Stages 3-4: gate the prepared rows, rank, persist one ScreenRun."""
+    with session_factory() as session:
+        survivors, rejected = screen_rows(prepared["candidates"], criteria)
 
         shortlist = rank_shortlist(survivors, shortlist_size)
-        stale = bool(getattr(provider, "stale", False)) or any(
-            row.get("data_date") != today for row in shortlist
+        stale = prepared["stale_provider"] or any(
+            row.get("data_date") != prepared["today"] for row in shortlist
         )
 
         run = ScreenRun(
-            run_date=today,
-            user_id=user["id"],
+            run_date=prepared["today"],
+            user_id=user_id,
             set_id=set_id,
+            triggered_by=triggered_by,
             criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
         session.commit()
         session.refresh(run)
-        run_id = run.id
+        return {
+            "run_id": run.id,
+            "shortlisted": shortlist,
+            "failed_count": len(prepared["failed_symbols"]),
+            "failed_symbols": prepared["failed_symbols"],
+            "failed_details": rejected,
+            "stale": stale,
+            "total": prepared["total"],
+        }
 
-    return {
-        "run_id": run_id,
-        "shortlisted": shortlist,
-        "failed_count": len(failed_symbols),
-        "failed_symbols": failed_symbols,
-        "failed_details": rejected,
-        "stale": stale,
-        "total": len(stocks),
-    }
+
+def run_screen(
+    provider: DataProvider,
+    session_factory,
+    user: dict,
+    criteria: list[dict],
+    shortlist_size: int = 10,
+    set_id: int | None = None,
+) -> dict:
+    """Run the staged fundamental screen for one user and persist it.
+
+    Public wrapper kept for direct callers: one prepare stage plus one manual
+    evaluation. The batch path reuses the same stages for the extra screens.
+    """
+    prepared = _prepare(provider, session_factory)
+    return _evaluate_and_store(
+        session_factory, user["id"], prepared, criteria, shortlist_size, set_id, "manual"
+    )
+
+
+def run_screen_batch(provider: DataProvider, session_factory, user: dict) -> dict:
+    """One Run Screen: the active set (manual) plus the 3 most-used others (auto).
+
+    All screens evaluate the same prepared candidates, so the batch costs one
+    network stage. An extra screen failing is caught and reported; the active
+    result always comes back.
+    """
+    active = get_active_set(session_factory, user["id"])
+    prepared = _prepare(provider, session_factory)
+    result = _evaluate_and_store(
+        session_factory,
+        user["id"],
+        prepared,
+        active["criteria"],
+        active["shortlist_size"],
+        active["id"],
+        "manual",
+    )
+    extras: list[dict] = []
+    for row in most_used_sets(session_factory, user["id"], limit=3, exclude_id=active["id"]):
+        try:
+            extra = _evaluate_and_store(
+                session_factory,
+                user["id"],
+                prepared,
+                row["criteria"],
+                row["shortlist_size"],
+                row["id"],
+                "auto",
+            )
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": extra["run_id"],
+                    "shortlisted": len(extra["shortlisted"]),
+                    "error": None,
+                }
+            )
+        except Exception as e:  # noqa: BLE001 — one extra never kills the batch
+            logger.warning("extra screen run failed for set %s: %s", row["id"], e)
+            extras.append(
+                {
+                    "set_id": row["id"],
+                    "name": row["name"],
+                    "run_id": None,
+                    "shortlisted": None,
+                    "error": str(e),
+                }
+            )
+    result["extra_runs"] = extras
+    return result
 
 
 def _projection(row: ScreeningSet) -> dict:
@@ -297,6 +386,44 @@ def _reject_duplicate_name(session, user_id: int, name: str, exclude_id: int | N
     for row in _user_sets(session, user_id):
         if row.id != exclude_id and row.name.strip().lower() == needle:
             raise ConfigError(f"a screen named {name!r} already exists")
+
+
+def most_used_sets(
+    session_factory, user_id: int, limit: int = 3, exclude_id: int | None = None
+) -> list[dict]:
+    """Screens the caller runs most, from their last 10 manual runs.
+
+    Auto runs (the batch's extra screens) never count, so the ranking reflects
+    the user's own choices and cannot reinforce itself. Deleted screens drop out
+    because their runs keep a NULL ``set_id``; ``exclude_id`` drops the active
+    screen. Order: uses desc, most recent run desc, id asc.
+    """
+    with session_factory() as session:
+        runs = (
+            session.query(ScreenRun)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.triggered_by == "manual")
+            .order_by(ScreenRun.id.desc())
+            .limit(MANUAL_RUN_WINDOW)
+            .all()
+        )
+        counts: dict[int, int] = {}
+        latest_run: dict[int, int] = {}
+        for run in runs:  # newest first
+            if run.set_id is None:
+                continue
+            counts[run.set_id] = counts.get(run.set_id, 0) + 1
+            latest_run.setdefault(run.set_id, run.id)
+        if exclude_id is not None:
+            counts.pop(exclude_id, None)
+        if not counts:
+            return []
+        rows = {
+            row.id: row
+            for row in session.query(ScreeningSet).filter(ScreeningSet.id.in_(list(counts)))
+        }
+        picked = [rows[set_id] for set_id in counts if set_id in rows]
+        picked.sort(key=lambda row: (-counts[row.id], -latest_run[row.id], row.id))
+        return [_projection(row) for row in picked[:limit]]
 
 
 def list_sets(session_factory, user_id: int) -> list[dict]:
