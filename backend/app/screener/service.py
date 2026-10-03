@@ -18,6 +18,8 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
 from app.data.provider import DataProvider
 from app.db.models import Fundamental, ScreeningSet, ScreenRun, Stock
 from app.screener.criteria import (
@@ -108,6 +110,7 @@ def run_screen(
     user: dict,
     criteria: list[dict],
     shortlist_size: int = 10,
+    set_id: int | None = None,
 ) -> dict:
     """Run the staged fundamental screen for one user and persist it.
 
@@ -202,6 +205,7 @@ def run_screen(
         run = ScreenRun(
             run_date=today,
             user_id=user["id"],
+            set_id=set_id,
             criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )
@@ -243,8 +247,13 @@ def _user_sets(session, user_id: int) -> list[ScreeningSet]:
 
 
 def _seed_active_set(session, user_id: int) -> ScreeningSet:
-    """Return the caller's active set, seeding ``"Default"`` on first use and
-    repairing users whose sets exist but none is active."""
+    """Return the caller's active set, seeding ``"Default"`` on first use.
+
+    Tolerates a parallel first load (the criteria page fires ``GET /screen/sets``
+    and ``GET /screen/latest`` together): a losing insert is rolled back and the
+    winner's row is adopted. Repairs users whose sets exist but none (or several)
+    is active.
+    """
     rows = _user_sets(session, user_id)
     if not rows:
         row = ScreeningSet(
@@ -257,13 +266,22 @@ def _seed_active_set(session, user_id: int) -> ScreeningSet:
             updated_at=_now(),
         )
         session.add(row)
-        session.flush()
-        return row
+        try:
+            session.flush()
+            return row
+        except IntegrityError:
+            session.rollback()
+            rows = _user_sets(session, user_id)
+            if not rows:
+                raise
     active = next((row for row in rows if row.is_active), None)
     if active is None:
-        rows[0].is_active = True
-        session.flush()
         active = rows[0]
+        active.is_active = True
+    for row in rows:  # repair multiple-active corruption: keep the most recent
+        if row is not active and row.is_active:
+            row.is_active = False
+    session.flush()
     return active
 
 
@@ -390,11 +408,13 @@ def activate_set(session_factory, user_id: int, set_id: int) -> dict:
 
 
 def latest_screen(session_factory, user_id: int) -> dict | None:
-    """Caller's latest stored run joined with stock name/sector/market_cap."""
+    """The active screen's latest stored run joined with stock meta."""
     with session_factory() as session:
+        active = _seed_active_set(session, user_id)
+        session.commit()
         run = (
             session.query(ScreenRun)
-            .filter(ScreenRun.user_id == user_id)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.set_id == active.id)
             .order_by(ScreenRun.id.desc())
             .first()
         )

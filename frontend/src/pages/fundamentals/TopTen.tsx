@@ -107,7 +107,7 @@ export default function TopTen() {
         <div className="relative overflow-hidden rounded-lg border border-border bg-card p-10 text-center">
           <DotPattern className="opacity-40" />
           <Text position="relative" color="fg.muted">
-            No screen run yet.{' '}
+            No screen run yet for this screen.{' '}
             <Link to="/fundamentals/criteria" className="underline underline-offset-4">
               Set criteria and run the screen
             </Link>

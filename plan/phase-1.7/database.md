@@ -48,7 +48,7 @@ listed here for the DB contract):
 | `id` | `Integer` PK autoincrement | |
 | `user_id` | `Integer` NOT NULL, `index=True`, FK → `users.id` | |
 | `name` | `String` NOT NULL | 1–60 chars, trimmed; unique per user (exact-match DB constraint; case-insensitive checked in service) |
-| `criteria_json` | `Text` NOT NULL | JSON array `[{key, enabled, value}]` |
+| `criteria_json` | `Text` NOT NULL | JSON array `[{key, enabled, value, bookmarked?}]` — bookmark addendum 2026-09-29; `bookmarked` optional, default false |
 | `thesis` | `Text` NULL | ≤ 500 chars (validated in API layer) |
 | `shortlist_size` | `Integer` NOT NULL, default 10 | server-owned; engine clamps to ≤ 10 |
 | `is_active` | `Boolean` NOT NULL, default `False` | exactly one active per user, service-enforced |

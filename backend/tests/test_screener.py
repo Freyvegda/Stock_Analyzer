@@ -131,3 +131,12 @@ def test_rank_shortlist_preserves_data_date():
             "data_date": "2026-09-26",
         }
     ]
+
+
+def test_bookmark_flag_does_not_change_screening():
+    bookmarked = [{**criterion, "bookmarked": True} for criterion in CRITERIA]
+    rows = [row("A"), row("B", pe=30)]
+    plain, plain_rejected = evaluate_screen(rows, CRITERIA)
+    marked, marked_rejected = evaluate_screen(rows, bookmarked)
+    assert marked == plain
+    assert marked_rejected == plain_rejected

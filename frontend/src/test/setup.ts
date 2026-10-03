@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
+
+// vitest.config.ts raises the test timeout, but Testing Library's own
+// findBy/waitFor budget is separate and defaults to 1000 ms — too tight once
+// jsdom, motion and the lazy three chunks share a loaded machine.
+configure({ asyncUtilTimeout: 3000 })
 
 afterEach(() => cleanup())
 

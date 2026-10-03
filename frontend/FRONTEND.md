@@ -5,12 +5,12 @@
 ## Purpose
 
 React + TypeScript dashboard for the analysis pipeline. Three top-nav sections (Fundamental Analysis · Documents · Model & Backtest); Fundamental Analysis carries its own side rail:
-1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: per-user criteria badges from `GET /screen/criteria`, Edit Criteria dialog, Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). `/fundamentals/top10`: the shortlist the last run produced (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
+1. **Fundamental Analysis** (`/fundamentals`) — glass floating side rail (Screen Criteria · Top 10 Results · Stocks). `/fundamentals/criteria`: Chrome-style glass tabs for saved screens (`GET /screen/sets`; inline new/rename/close, one active, dirty dot) sitting in ONE card stack with the active screen's enabled-ratio badges and the dialog-free inline criteria editor (rotor category dial, one category at a time, per-criterion bookmark ribbons + 3D ribbon rail, thesis), then the Run Screen card (leaf loader + elapsed; auto-jumps to Top 10 when a run finishes while the user is still on the page). The badge row is the cross-category summary — the dial shows one category at a time. `/fundamentals/top10`: the active screen's latest run (`GET /screen/latest`). `/fundamentals/stocks`: the Nifty 500 browse table. Run state lives in `FundamentalsLayout`, so a run survives rail navigation. `/` redirects to `/fundamentals/criteria`; the retired `/stocks` URL redirects to `/fundamentals/stocks`. Each symbol links to its stock detail page (`/stock/:symbol`).
 2. **Stock detail** (`/stock/:symbol`) — two equal-height halves (company description, clipped with "More" opening the full profile dialog | per-user verdict with score and criteria checks), then the price chart (6M/1Y/2Y/5Y × Daily/15D/Monthly), then main fundamental ratios, "What it has" (market cap first), "What it's done" and all other ratios; Refresh button in the header
 3. **Documents** (`/documents`) — per shortlisted stock: document list (concall/results/presentation/audit) + AI summary cards (sentiment, guidance, red flags, parse status)
 4. **Model & Backtest** (`/backtest`) — train/predict buttons, price chart with buy/sell markers, backtest report (CAGR, Sharpe, max drawdown vs Nifty)
 
-The navbar also carries a **stock search** (`components/NavSearch.tsx`): Ctrl/Cmd+K or the icon opens a glass input, lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`.
+The navbar also carries a **stock search** (`components/NavSearch.tsx`): an always-visible glass bar (no icon trigger; Ctrl/Cmd+K focuses it), lazily fetches `GET /stocks` once, filters client-side and lists the top 8 matches with the caller's verdict chip (Pass/Fail/No data) and pass count; Enter or a click opens `/stock/{symbol}`. It sits in the account cluster on the same row as the nav links (`lg:flex-nowrap`, `h-10`, 12rem–24rem wide, `gap-3` from the username); below `lg` the cluster takes its own full-width row.
 
 Dense, tabular, dark-themed. This is a tool, not a marketing site — with one exception: `/` is a
 public landing page (a 3D pagoda) and the only marketing surface. Everything behind auth stays
@@ -71,7 +71,7 @@ frontend/src/
 ├── index.css           # tailwindcss + fonts + @vault-tokens block (test-synced) + motion vars
 ├── api/
 │   ├── client.ts       # api.get/api.post/api.put -> fetch wrapper, BASE="/api", bearer + 401 refresh/replay
-│   └── types.ts        # AuthUser, RatioSpec, Criterion, UserCriteria, screen types
+│   └── types.ts        # AuthUser, RatioSpec, Criterion, ScreeningSet, screen types
 ├── auth/
 │   ├── AuthContext.tsx # user state, re-bootstrap from the refresh cookie, logout, auth:unauthorized
 │   └── tokenStore.ts   # in-memory access token + single-flighted refresh (never localStorage)
@@ -81,14 +81,14 @@ frontend/src/
 │   └── system.ts       # Chakra v3 system (sakura + brand/gain/loss + bg.panel); tokens.ts is the source
 ├── pages/
 │   ├── Login.tsx       # brand panel + Sakura Garden backdrop + auth card (setup | login)
-│   ├── fundamentals/   # FundamentalsLayout (rail + shared run state) · ScreeningCriteria · TopTen
+│   ├── fundamentals/   # FundamentalsLayout (rail + saved-screen/run state) · ScreeningCriteria · TopTen
 │   ├── Stocks.tsx      # /fundamentals/stocks — Nifty 500 search/filter/sort table with per-user verdict chips
 │   ├── StockDetail.tsx # /stock/:symbol — description|verdict halves, chart controls, main/has/done/other sections
 │   ├── Documents.tsx
 │   └── Backtest.tsx
 └── components/
     ├── ui/             # shadcn + Chakra snippets + Num/Delta/ValueFlash/Skeleton
-    ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene + Pagoda - lazy, WebGL-gated
+    ├── three/          # Bonfire + SakuraLeafLoader + SakuraScene + Pagoda + RibbonRail - lazy, WebGL-gated
     │                   #   pagodaScene.ts / pagodaWorld.ts / storeyGeometry.ts / worldGeometry.ts
     │                   #   are pure and unit-tested; Pagoda.tsx / PagodaStorey.tsx /
     │                   #   PagodaEnvironment.tsx render
@@ -97,13 +97,16 @@ frontend/src/
     ├── Backdrop.tsx    # fixed texture layer (scanlines + blossom glow)
     ├── GlassNav.tsx    # sticky liquid-glass capsule navbar (pointer sheen, no tilt, NavSearch)
     ├── FundamentalNav.tsx   # floating glass side rail (Screen Criteria · Top 10 Results · Stocks)
-    ├── NavSearch.tsx   # navbar stock search: Ctrl/Cmd+K glass combobox over GET /stocks, verdict chips
+    ├── NavSearch.tsx   # navbar stock search: always-visible glass bar, Ctrl/Cmd+K focuses, lazy GET /stocks, verdict chips
     ├── LoginGarden.tsx      # memoised login scene layer (SakuraScene + theme toggle)
     ├── LoginBrandPanel.tsx  # memoised login story column, hidden below lg
     ├── StatusRail.tsx  # StatusProvider/useStatusFact + mono pipeline rail
     ├── RequireAuth.tsx
-    ├── CriteriaPanel.tsx    # read-only badges + Edit Criteria
-    ├── CriteriaDialog.tsx   # criteria editor subwindow
+    ├── CriteriaPanel.tsx    # active-screen badges (bookmark ribbons) + Edit Criteria
+    ├── CriteriaEditor.tsx   # dialog-free inline editor: rotor category dial, criterion flashcards, 3D ribbon rail
+    ├── CategoryDial.tsx     # rotary "dialling telephone" category selector (plate, rotor, finger holes, hub)
+    ├── CriterionCard.tsx    # one criterion as a glass flashcard (ribbon, switch, value chip, remove)
+    ├── ScreenTabs.tsx       # Chrome-style glass tab strip for saved screens (draft tab, rename-in-place, dirty dot)
     ├── StockReportCard.tsx  # per-user verdict, criterion checks, notes
     ├── StocksTable.tsx  # universe table: sortable columns, verdict chips, links
     └── StockChart.tsx  # lightweight-charts wrapper ({candles, markers?})
@@ -113,9 +116,9 @@ frontend/src/
 
 - Dev server proxies `/api/*` -> `http://localhost:8000/*` (vite.config.ts `server.proxy`). ALWAYS call via `api.get('/screen/latest')` etc. — never hardcode `localhost:8000`.
 - Auth endpoints: `GET /auth/state`, `POST /auth/setup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`. Login and setup 401s are handled inline and are exempt from the global `auth:unauthorized` event.
-- Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/criteria`, `PUT /screen/criteria` (body `{criteria, thesis}`; `shortlist_size` is server-owned). The old YAML-config endpoints are retired — do not reintroduce them.
+- Criteria endpoints: `GET /screen/ratios` (catalog: key/label/unit/category/direction), `GET /screen/sets` (list; each item `{id, name, criteria, thesis, shortlist_size, is_active, updated_at}`), `POST /screen/sets` (`{name, criteria?, thesis?}`; becomes active), `PUT /screen/sets/{id}` (`{name?, criteria?, thesis?}`), `DELETE /screen/sets/{id}` (400 on the last screen), `POST /screen/sets/{id}/activate`. Criteria items are `{key, enabled, value, bookmarked?}`; `shortlist_size` is server-owned. The single-criteria `GET/PUT /screen/criteria` endpoints and the old YAML-config endpoints are retired — do not reintroduce them.
 - Stock endpoints: `GET /stock/{symbol}` (shared snapshot + per-user report + profile + digest sections `main_ratios`/`has`/`done`/`other_groups`), `POST /stock/{symbol}/refresh` (force re-fetch; stored data + `warning` on failure), `GET /stock/{symbol}/ohlc?range=6m|1y|2y|5y&interval=1d|15d|1mo` (candles, memory-cached server-side, never stored).
-- Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side; the navbar `NavSearch` lazily reuses the same endpoint on first open (one fetch per shell mount) and filters client-side too.
+- Universe endpoint: `GET /stocks` — one payload (~500 rows) with ratios, `data_date`, `passes`/`enabled` and the caller's `verdict` (`pass|fail|no_data`); the Stocks page fetches once and filters/sorts client-side; the navbar `NavSearch` lazily reuses the same endpoint on first focus/open (one fetch per shell mount) and filters client-side too.
 - Backend endpoints (see BACKEND.md): `/auth/*`, `/screen/*`, `/docs/*`, `/model/*`, `/backtest/*`, `/health`.
 - All pipeline stages triggered by button clicks (manual pipeline — no polling/scheduler in MVP); any 401 from them clears auth state and bounces to `/login`.
 - Handle `{"status":"not_implemented","phase":N}` placeholders gracefully until phases land.
@@ -147,6 +150,7 @@ frontend/src/
 | 1.6 | Stock detail page: shortlist symbol links to `/stock/:symbol` — per-user report card, catalog metric groups, `StockChart` with range/interval switchers; refresh fallback keeps stored data (Candle Ridge hero superseded in 1.6c) |
 | 1.6b | `/stocks` browse page (search + sector/verdict filters, sortable, verdict chips) with nav link; stock detail gains description, "What it has", "Main fundamental ratios", "What it's done", "All other ratios" |
 | 1.6c | Nav stock search (`NavSearch`, Ctrl/Cmd+K glass panel, verdict chips, keyboard-complete) + detail layout revision: description \| verdict halves (equal height, clipped description with More dialog) → chart → main ratios → has (market cap first) → done → other; Candle Ridge hero retired |
+| 1.7 | Saved screens + inline criteria editor + navbar search: `/screen/sets` CRUD/activate (one active drives run, Top 10, verdicts), dialog-free editor with category sub-accordions and criterion bookmark ribbons (3D ribbon rail), always-visible glass search bar |
 | v2 | Phosphor Vault theme: tokens + sync/contrast tests, status rail, Market Ring 3D loader, motion kit (Num/Delta/ValueFlash/Skeleton), Fundamentals/login/dialog re-skin |
 | v3 | Sakura Vault theme site-wide (sakura tokens incl. `panel`, retinted backdrop/flash/pulse, legacy-amber guard) + liquid-glass capsule navbar (`GlassNav`) |
 | v3.1 | Sakura Leaf 3D loader replaces the Market Ring: wind-flown low-poly leaf streaming a brand-only candle tape of its own path (`leafTrace.ts` pure helpers), call sites, tests and `DESIGN.md` loop whitelist updated |

@@ -69,56 +69,72 @@ export function GlassNav() {
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
       >
-        <nav aria-label="Primary" className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {/* The brand mark goes back to the landing page. */}
-          <Link
-            to="/"
-            aria-label="Stock Analyzer home"
-            className="flex items-center gap-2 rounded-lg pl-1 pr-2 text-sm font-semibold tracking-[0.08em]"
-          >
-            <TrendingUp size={18} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
-            STOCK ANALYZER
-          </Link>
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className="glass-nav-link relative rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+        <nav
+          aria-label="Primary"
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 lg:flex-nowrap"
+        >
+          <div className="flex min-w-0 shrink-0 items-center gap-x-2">
+            {/* The brand mark goes back to the landing page. */}
+            <Link
+              to="/"
+              aria-label="Stock Analyzer home"
+              className="flex items-center gap-2 rounded-lg pl-1 pr-2 text-sm font-semibold tracking-[0.08em]"
             >
-              {({ isActive }) => (
-                <>
-                  {isActive ? (
-                    reduced ? (
-                      <span
-                        aria-hidden="true"
-                        data-testid="glass-nav-pill"
-                        data-motion="static"
-                        className="glass-nav-pill"
-                      />
-                    ) : (
-                      <motion.span
-                        aria-hidden="true"
-                        data-testid="glass-nav-pill"
-                        data-motion="animated"
-                        layoutId="nav-active-pill"
-                        transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                        className="glass-nav-pill"
-                      />
-                    )
-                  ) : null}
-                  <span className={isActive ? 'relative font-semibold text-foreground' : 'relative'}>
-                    {item.label}
-                  </span>
-                </>
-              )}
-            </NavLink>
-          ))}
-          <div className="ml-auto flex items-center gap-2">
-            <NavSearch />
-            <Text fontSize="sm" color="fg.muted" className="hidden sm:block">
+              <TrendingUp size={18} strokeWidth={1.75} className="text-primary" aria-hidden="true" />
+              STOCK ANALYZER
+            </Link>
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className="glass-nav-link relative rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+              >
+                {({ isActive }) => (
+                  <>
+                    {isActive ? (
+                      reduced ? (
+                        <span
+                          aria-hidden="true"
+                          data-testid="glass-nav-pill"
+                          data-motion="static"
+                          className="glass-nav-pill"
+                        />
+                      ) : (
+                        <motion.span
+                          aria-hidden="true"
+                          data-testid="glass-nav-pill"
+                          data-motion="animated"
+                          layoutId="nav-active-pill"
+                          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                          className="glass-nav-pill"
+                        />
+                      )
+                    ) : null}
+                    <span className={isActive ? 'relative font-semibold text-foreground' : 'relative'}>
+                      {item.label}
+                    </span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+
+          {/* One row with the links and the account cluster: the search takes the
+              spare width (capped) and keeps `gap-x-3` of air from the username. */}
+          <div className="ml-auto flex w-full min-w-0 items-center gap-3 lg:w-auto lg:flex-none">
+            <div className="min-w-[12rem] flex-1 lg:max-w-[24rem]">
+              <NavSearch />
+            </div>
+            <Text fontSize="sm" color="fg.muted" className="hidden shrink-0 sm:block">
               {user?.username}
             </Text>
-            <IconButton aria-label="Log out" variant="ghost" size="sm" onClick={() => void logout()}>
+            <IconButton
+              aria-label="Log out"
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void logout()}
+            >
               <LogOut size={16} strokeWidth={1.75} aria-hidden="true" />
             </IconButton>
             <ThemeToggle />
@@ -128,5 +144,4 @@ export function GlassNav() {
     </header>
   )
 }
-
 export default GlassNav

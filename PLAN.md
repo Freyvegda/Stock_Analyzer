@@ -28,7 +28,7 @@ Long holding horizon (fundamental-driven). Signals only — no auto-trading. Bud
 | Filings/PDFs | NSE/BSE announcement endpoints | Free, official |
 | Doc AI | Gemini Flash free tier; keyword-based fallback | 0 INR at 10 stocks/quarter volume |
 | Price model | XGBoost primary, LSTM optional experiment, behind `Model` interface | Custom transformer = overfit on ~1250 rows; dropped |
-| Screener config | DB-backed per-user criteria (`user_criteria` + `screener/catalog.py`); `screening.yaml` retired in Phase 1.5 | changeable ratios per user, no file edits or restarts |
+| Screener config | DB-backed per-user screens (`screening_sets` + `screener/catalog.py`; one active drives runs/verdicts); `user_criteria` retired in Phase 1.7, `screening.yaml` in Phase 1.5 | changeable ratios per user, no file edits or restarts |
 | Pipeline trigger | Manual UI buttons now; scheduler later | MVP scope |
 | Testing | pytest + vitest (unit/integration) + walk-forward backtest (strategy) | Backtest = real validation |
 
@@ -92,8 +92,8 @@ D:\CODES\Projects\stock-analyzer\
 - `stocks(symbol PK, name, sector, market_cap)`
 - `fundamentals(symbol, date, pe, pb, roe, roce, debt_to_equity, raw_json, PK(symbol,date))`
 - `users(id PK, username unique, password_hash, created_at)` — Phase 1.5
-- `user_criteria(user_id PK/FK, criteria_json, thesis, shortlist_size, updated_at)` — Phase 1.5
-- `screen_runs(id PK, run_date, user_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5
+- `screening_sets(id PK, user_id FK, name, criteria_json, thesis, shortlist_size, is_active, updated_at)` — Phase 1.7 (retires `user_criteria`)
+- `screen_runs(id PK, run_date, user_id FK, set_id FK, criteria_json, shortlisted_json)` — per-user since Phase 1.5, per-screen since Phase 1.7
 - `documents(id PK, symbol, type[concall|results|presentation|audit], period, url, local_path, parse_status)`
 - `doc_analysis(document_id PK, method[gemini|fallback], sentiment, guidance, red_flags_json, summary)`
 - `prices(symbol, date, open, high, low, close, volume, PK(symbol,date))`
@@ -120,12 +120,13 @@ D:\CODES\Projects\stock-analyzer\
 - Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card — the cookie
   session is retired in Phase 1.8
 - Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired
+  (superseded by `screening_sets` in Phase 1.7)
 - Dynamic ratio catalog (`app/screener/catalog.py`) with on/off toggles and thresholds; unknown keys → 422
 - Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
 - Backend: `plan/phase-1.5/{backend,database}.md`; spec `docs/superpowers/specs/2026-09-26-phase-1.5-...md`
 
 ### Phase 1.6 — Stock detail page
-- Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from `user_criteria`), catalog fundamentals grid, daily chart
+- Click a shortlisted symbol -> `/stock/{symbol}`: computed report card (per-user verdict from the active screen since Phase 1.7), catalog fundamentals grid, daily chart
 - Stock data shared across users: stored-first snapshot, lazy first fetch, manual Refresh; report never persisted
 - Candles 6m/1y/2y/5y × 1d/15d/1mo from a process-memory TTL cache; daily bars never written to the DB
 - 3D Candle Ridge hero (lazy, WebGL-gated, reduced-motion static) fed by the stock's own closes — retired in Phase 1.6c
@@ -141,6 +142,12 @@ D:\CODES\Projects\stock-analyzer\
 - Navbar stock search (`components/NavSearch.tsx`): Ctrl/Cmd+K glass combobox, lazy `GET /stocks`, client-side filter, top 8 with per-user verdict chips; keyboard-complete; opens `/stock/{symbol}`
 - Stock detail layout: description | verdict equal-height halves (description clipped, "More" opens the full profile dialog) → price chart → main ratios → "What it has" (market cap first) → "What it's done" → all other ratios
 - Candle Ridge 3D hero retired: component, pure helpers and tests removed; `DESIGN.md` loop whitelist and 3D sections updated
+
+### Phase 1.7 — Saved screens + inline criteria editor + navbar search
+- Multiple named screening criteria per user in `screening_sets`; exactly one active; runs and Top 10 are per active screen (`screen_runs.set_id`)
+- Criteria page: screen picker + dialog-free inline editor (category sub-accordions); criterion bookmarks (ribbon toggle, pinned rows, "Bookmarked only" filter, 3D ribbon rail); Edit Criteria expands it; Run saves the draft first
+- Navbar search: always-visible 3D-glass bar at every width (no icon trigger — owner ruling 2026-09-29), Ctrl/Cmd+K focuses
+- Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
 
 ### Phase 1.8 — Pagoda landing page + JWT authorization
 - Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven walk to a distant pagoda - one torii gate per feature section on a meandering walkway, the river flowing sideways in the distance, and the sign-up stepping back to present the pagoda whole. Each section has real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does

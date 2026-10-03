@@ -1,5 +1,13 @@
-import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from "@chakra-ui/react"
-import type { RatioSpec, UserCriteria } from "@/api/types"
+/**
+ * Active screen's enabled-ratio summary — the cross-category view above the
+ * inline editor (the editor shows one category at a time). The owning page
+ * renders it inside the merged tabs+panel shell, so this component paints no
+ * frame of its own.
+ */
+
+import { Badge, Box, Button, Flex, Text, Wrap, WrapItem } from '@chakra-ui/react'
+import { Bookmark } from 'lucide-react'
+import type { RatioSpec, ScreeningSet } from '@/api/types'
 
 /** '%' and '×' attach directly; other units get a space (e.g. "1000 ₹ cr"). */
 function unitSuffix(unit: string): string {
@@ -14,30 +22,40 @@ function badgeText(spec: RatioSpec | undefined, key: string, value: number): str
 }
 
 export function CriteriaPanel({
-  criteria,
+  set,
   ratios,
   onEdit,
+  onRetry,
   error = null,
 }: {
-  criteria: UserCriteria | null
+  set: ScreeningSet | null
   ratios: RatioSpec[]
   onEdit: () => void
+  onRetry?: () => void
   error?: string | null
 }) {
   const catalog = new Map(ratios.map((ratio) => [ratio.key, ratio]))
-  const enabled = criteria?.criteria.filter((criterion) => criterion.enabled) ?? []
+  const enabled = set?.criteria.filter((criterion) => criterion.enabled) ?? []
+  const bookmarked = enabled.filter((criterion) => criterion.bookmarked).length
 
   return (
-    <Box borderWidth="1px" borderColor="border" rounded="lg" p={4} bg="bg.panel">
+    <Box>
       <Flex justify="space-between" align="center" mb={2} gap={4}>
-        <Text fontWeight="semibold" fontSize="sm">
-          Screening Criteria
-        </Text>
-        <Button size="sm" colorPalette="sakura" onClick={onEdit}>
+        <Box>
+          <Text fontWeight="semibold" fontSize="sm">
+            {set !== null ? set.name : 'Screening Criteria'}
+          </Text>
+          {set !== null ? (
+            <Text fontSize="xs" color="fg.muted" data-testid="panel-summary">
+              {enabled.length} enabled · {bookmarked} bookmarked
+            </Text>
+          ) : null}
+        </Box>
+        <Button size="sm" colorPalette="sakura" onClick={onEdit} disabled={set === null}>
           Edit Criteria
         </Button>
       </Flex>
-      {criteria === null ? (
+      {set === null ? (
         <Text fontSize="sm" color="fg.muted">
           Loading criteria…
         </Text>
@@ -45,20 +63,42 @@ export function CriteriaPanel({
         <Wrap gap={2}>
           {enabled.map((criterion) => (
             <WrapItem key={criterion.key}>
-              <Badge variant="subtle" colorPalette="sakura" className="font-mono tabular-nums">
+              <Badge
+                variant="subtle"
+                colorPalette="sakura"
+                display="inline-flex"
+                alignItems="center"
+                gap="1"
+                className="font-mono tabular-nums"
+              >
+                {criterion.bookmarked ? (
+                  <Bookmark
+                    size={12}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    fill="currentColor"
+                  />
+                ) : null}
                 {badgeText(catalog.get(criterion.key), criterion.key, criterion.value)}
               </Badge>
             </WrapItem>
           ))}
           <WrapItem>
-            <Badge variant="outline">Top {criteria.shortlist_size}</Badge>
+            <Badge variant="outline">Top {set.shortlist_size}</Badge>
           </WrapItem>
         </Wrap>
       )}
       {error ? (
-        <Text mt={2} fontSize="sm" color="fg.error" role="alert">
-          {error}
-        </Text>
+        <Flex align="center" gap={3} mt={2} wrap="wrap">
+          <Text fontSize="sm" color="fg.error" role="alert">
+            {error}
+          </Text>
+          {onRetry !== undefined ? (
+            <Button size="xs" variant="outline" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : null}
+        </Flex>
       ) : null}
     </Box>
   )

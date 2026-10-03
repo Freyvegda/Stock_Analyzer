@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { CriteriaPanel } from '../CriteriaPanel'
 import { Provider } from '../ui/provider'
-import type { RatioSpec, UserCriteria } from '../../api/types'
+import type { RatioSpec, ScreeningSet } from '../../api/types'
 
 const catalog: RatioSpec[] = [
   { key: 'pe', label: 'PE', unit: '×', category: 'Valuation', direction: 'max' },
@@ -12,9 +12,11 @@ const catalog: RatioSpec[] = [
   { key: 'currentRatio', label: 'Current Ratio', unit: '×', category: 'Liquidity', direction: 'min' },
 ]
 
-const criteria: UserCriteria = {
+const screeningSet: ScreeningSet = {
+  id: 1,
+  name: 'Default',
   criteria: [
-    { key: 'pe', enabled: true, value: 25 },
+    { key: 'pe', enabled: true, value: 25, bookmarked: true },
     { key: 'roe', enabled: true, value: 15 },
     { key: 'market_cap', enabled: true, value: 1000 },
     { key: 'currentRatio', enabled: false, value: 1.5 },
@@ -22,43 +24,62 @@ const criteria: UserCriteria = {
   ],
   thesis: null,
   shortlist_size: 10,
+  is_active: true,
+  updated_at: 'now',
 }
 
 const renderPanel = (ui: React.ReactElement) => render(<Provider>{ui}</Provider>)
 
 describe('CriteriaPanel', () => {
-  it('renders enabled criteria with catalog labels, directions and units', () => {
-    renderPanel(<CriteriaPanel criteria={criteria} ratios={catalog} onEdit={() => {}} />)
+  it('shows the active screen name with enabled criteria labels, directions and units', () => {
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
+    expect(screen.getByText('Default')).toBeInTheDocument()
     expect(screen.getByText('PE ≤ 25×')).toBeInTheDocument()
     expect(screen.getByText('ROE ≥ 15%')).toBeInTheDocument()
     expect(screen.getByText('Market Cap ≥ 1000 ₹ cr')).toBeInTheDocument()
     expect(screen.getByText('Top 10')).toBeInTheDocument()
+    expect(screen.getByTestId('panel-summary')).toHaveTextContent('4 enabled · 1 bookmarked')
   })
 
   it('never renders disabled criteria and falls back for unknown keys', () => {
-    renderPanel(<CriteriaPanel criteria={criteria} ratios={catalog} onEdit={() => {}} />)
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
     expect(screen.queryByText(/Current Ratio/)).not.toBeInTheDocument()
     expect(screen.getByText('mystery: 3')).toBeInTheDocument()
   })
 
   it('opens the editor from the Edit Criteria button', async () => {
     const onEdit = vi.fn()
-    renderPanel(<CriteriaPanel criteria={criteria} ratios={catalog} onEdit={onEdit} />)
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={onEdit} />)
     await userEvent.setup().click(screen.getByRole('button', { name: /edit criteria/i }))
     expect(onEdit).toHaveBeenCalledOnce()
   })
 
   it('renders chips in mono numerals', () => {
-    renderPanel(<CriteriaPanel criteria={criteria} ratios={catalog} onEdit={() => {}} />)
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
     expect(screen.getByText('PE ≤ 25×').className).toContain('font-mono')
   })
 
-  it('shows loading and error states instead of stale badges', () => {
+  it('marks bookmarked criteria with a ribbon marker', () => {
+    renderPanel(<CriteriaPanel set={screeningSet} ratios={catalog} onEdit={() => {}} />)
+    expect(screen.getByText('PE ≤ 25×').querySelector('svg')).not.toBeNull()
+    expect(screen.getByText('ROE ≥ 15%').querySelector('svg')).toBeNull()
+  })
+
+  it('shows loading and error states instead of stale badges', async () => {
+    const onRetry = vi.fn()
     renderPanel(
-      <CriteriaPanel criteria={null} ratios={catalog} onEdit={() => {}} error="Could not load criteria" />,
+      <CriteriaPanel
+        set={null}
+        ratios={catalog}
+        onEdit={() => {}}
+        onRetry={onRetry}
+        error="Could not load screens"
+      />,
     )
-    expect(screen.getByRole('alert')).toHaveTextContent('Could not load criteria')
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not load screens')
     expect(screen.getByText(/loading criteria/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reload config/i })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /retry/i }))
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 })

@@ -37,7 +37,7 @@ from sqlalchemy.orm import sessionmaker
 from app.auth import service
 from app.auth.service import UserExistsError
 from app.db.database import Base
-from app.db.models import User, UserCriteria
+from app.db.models import User
 from app.screener.criteria import default_criteria
 
 
@@ -82,20 +82,6 @@ def test_get_user(db):
     user = service.create_user(db, "alice", "password123")
     assert service.get_user(db, user["id"]) == {"id": user["id"], "username": "alice"}
     assert service.get_user(db, 999) is None
-
-
-def test_seed_default_criteria_is_idempotent(db):
-    user = service.create_user(db, "alice", "password123")
-    with db() as session:
-        row = service.seed_default_criteria(session, user["id"])
-        session.commit()
-        criteria_json, shortlist_size = row.criteria_json, row.shortlist_size
-    assert json.loads(criteria_json) == default_criteria()
-    assert shortlist_size == 10
-    with db() as session:
-        service.seed_default_criteria(session, user["id"])
-        session.commit()
-        assert session.query(UserCriteria).count() == 1
 
 
 # --- HTTP: auth routes, session cookie, router gating ---

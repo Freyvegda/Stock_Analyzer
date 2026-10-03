@@ -338,6 +338,40 @@ git add -A backend AGENTS.md PLAN.md
 git commit -m "test: migrate suites to screening sets; docs + graph sync for Phase 1.7"
 ```
 
+### Task B6: Criterion bookmarks (addendum, 2026-09-29)
+
+**Files:**
+- Modify: `backend/app/screener/criteria.py`
+- Modify: `backend/tests/test_criteria.py`, `backend/tests/test_screener.py`
+
+**Interfaces:**
+- `CriterionItem` gains `bookmarked: bool = False` (extra="forbid" stays; old payloads without
+  the key stay valid). `criteria_from_json` / `criteria_to_json` / `validate_criteria_list`
+  round-trip the flag untouched. The engine ignores it (`screen_rows` reads only
+  `key`/`enabled`/`value`).
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+def test_criterion_bookmark_defaults_false_and_round_trips():
+    # CriterionItem(key="pe", enabled=True, value=25).bookmarked is False
+    # criteria_from_json('[{"key":"pe","enabled":true,"value":25,"bookmarked":true}]')[-1]["bookmarked"] is True
+def test_bookmark_flag_does_not_change_screening():
+    # screen_rows with identical criteria ± bookmarked → identical shortlist/rejected
+```
+
+- [ ] **Step 2: Run to verify failure, implement the field, run to verify pass**
+
+Run: `.\.venv\Scripts\python.exe -m pytest tests/test_criteria.py tests/test_screener.py -q`
+
+- [ ] **Step 3: Full suite + commit**
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q
+git add backend/app/screener/criteria.py backend/tests/test_criteria.py backend/tests/test_screener.py
+git commit -m "feat: criterion bookmark flag in criteria payloads"
+```
+
 ## Acceptance
 
 - `.\.venv\Scripts\python.exe -m pytest tests -q` green offline (sets service, sets API,

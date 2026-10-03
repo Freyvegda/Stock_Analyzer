@@ -48,7 +48,7 @@ per user is active; service code enforces the invariant.
 | id | Int PK autoincr | |
 | user_id | Int NOT NULL, indexed, FK → users.id | |
 | name | String NOT NULL | 1–60 chars, trimmed; unique per user (`uq_screening_sets_user_name`; case-insensitive enforced in service) |
-| criteria_json | Text NOT NULL | JSON array `[{key, enabled, value}]`; keys owned by `screener/catalog.py` |
+| criteria_json | Text NOT NULL | JSON array `[{key, enabled, value, bookmarked?}]` (bookmark flag since Phase 1.7 addendum); keys owned by `screener/catalog.py` |
 | thesis | Text? | free-text note per screen, ≤ 500 chars |
 | shortlist_size | Int NOT NULL default 10 | server-set; engine clamps to `min(value, 10)` |
 | is_active | Boolean NOT NULL default false | exactly one active per user (service-enforced) |
@@ -81,7 +81,7 @@ per symbol to every user (shared data); first view of a symbol with no row lazil
 fetches and `merge`s a `(symbol, today)` snapshot, and Refresh does the same on
 demand. A failed fetch writes a `failed` row **only when no `ok` row exists for
 that symbol+day** — a good same-day snapshot is never clobbered. The report/verdict
-on top is computed per request from `user_criteria` and is **never persisted**.
+on top is computed per request from the active `screening_sets` row and is **never persisted**.
 Daily bars are **never stored**: `/stock/{symbol}/ohlc` fetches 5y of daily bars
 through a process-memory TTL cache (900 s) and slices/aggregates on the way out
 (no `prices` writes in Phase 1.6).

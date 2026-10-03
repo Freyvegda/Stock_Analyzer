@@ -9,10 +9,10 @@ import { api, ApiError } from '../../api/client'
 import { toaster } from '../../components/ui/toaster'
 import { Provider } from '../../components/ui/provider'
 import { StatusProvider } from '../../components/StatusRail'
-import type { RatioSpec, UserCriteria } from '../../api/types'
+import type { RatioSpec, ScreeningSet } from '../../api/types'
 
 vi.mock('../../api/client', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
   ApiError: class ApiError extends Error {
     status: number
     detail: string
@@ -27,12 +27,21 @@ vi.mock('../../api/client', () => ({
 
 vi.mock('../../components/ui/toaster', () => ({ toaster: { create: vi.fn() } }))
 
+// The real loader pulls the three.js chunk; these tests only need the run state.
+vi.mock('../../components/three/SakuraLeafLoader', () => ({
+  default: () => <div data-testid="sakura-leaf-loader" />,
+}))
+
 const mockedApi = vi.mocked(api)
 
-const criteria: UserCriteria = {
+const setA: ScreeningSet = {
+  id: 1,
+  name: 'Default',
   criteria: [{ key: 'pe', enabled: true, value: 25 }],
   thesis: null,
   shortlist_size: 10,
+  is_active: true,
+  updated_at: 'now',
 }
 
 const catalog: RatioSpec[] = [
@@ -51,7 +60,7 @@ const row = {
 
 function renderTopTen(latest: unknown) {
   mockedApi.get.mockImplementation((path: string) => {
-    if (path === '/screen/criteria') return Promise.resolve(criteria)
+    if (path === '/screen/sets') return Promise.resolve([setA])
     if (path === '/screen/ratios') return Promise.resolve(catalog)
     if (path === '/screen/latest') return Promise.resolve(latest)
     return Promise.reject(new Error(`unexpected GET ${path}`))
@@ -89,7 +98,7 @@ describe('TopTen', () => {
       release = resolve
     })
     mockedApi.get.mockImplementation((path: string) => {
-      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return gate
       return Promise.reject(new Error(`unexpected GET ${path}`))
@@ -130,7 +139,7 @@ describe('TopTen', () => {
 
   it('treats a 404 (no run yet) as an empty page without errors', async () => {
     mockedApi.get.mockImplementation((path: string) => {
-      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(404, 'No screen run yet'))
       return Promise.reject(new Error(`unexpected GET ${path}`))
@@ -155,7 +164,7 @@ describe('TopTen', () => {
 
   it('shows a load error instead of the no-run state when /screen/latest fails', async () => {
     mockedApi.get.mockImplementation((path: string) => {
-      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') return Promise.reject(new ApiError(500, 'latest exploded'))
       return Promise.reject(new Error(`unexpected GET ${path}`))
@@ -179,7 +188,7 @@ describe('TopTen', () => {
 
   it('shows progress while a run is in flight and no rows are loaded yet', async () => {
     mockedApi.get.mockImplementation((path: string) => {
-      if (path === '/screen/criteria') return Promise.resolve(criteria)
+      if (path === '/screen/sets') return Promise.resolve([setA])
       if (path === '/screen/ratios') return Promise.resolve(catalog)
       if (path === '/screen/latest') {
         return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [] })

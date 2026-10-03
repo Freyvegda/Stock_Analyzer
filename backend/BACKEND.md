@@ -28,7 +28,7 @@ backend/
 │   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
-│   │   ├── screen.py      # /screen/ratios, criteria CRUD, POST /screen/run, GET /screen/latest
+│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run, GET /screen/latest
 │   │   ├── stock.py       # GET /stock/{symbol}, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
 │   │   ├── stocks.py      # GET /stocks — universe list with per-user verdicts
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
@@ -46,9 +46,9 @@ backend/
 │   │   └── nse_impl.py
 │   ├── screener/
 │   │   ├── catalog.py     # RATIO_CATALOG — source of truth for valid criteria keys
-│   │   ├── criteria.py    # pydantic criteria models, defaults, validation (ConfigError)
+│   │   ├── criteria.py    # pydantic screening-set + criteria models, defaults, validation (ConfigError)
 │   │   ├── engine.py      # criteria filtering + ranking -> shortlist (pure)
-│   │   └── service.py     # fetch + persist + evaluate + criteria CRUD orchestration (rule 6)
+│   │   └── service.py     # fetch + persist + evaluate + screening-set CRUD orchestration (rule 6)
 │   ├── stock/             # stock detail + universe (Phase 1.6/1.6b)
 │   │   ├── candles.py     # pure range slicing + 15d/1mo aggregation + in-memory TTL cache
 │   │   ├── digest.py      # pure detail sections: main ratios, balance, performance, other
@@ -84,7 +84,7 @@ backend/
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
 5. **Gemini fallback**: on rate limit/error, queue with exponential backoff, then keyword-based sentiment; always record `method = gemini|fallback` in `doc_analysis`.
 6. **Thin API layer**: routers validate input and call services. Business logic lives in `screener/`, `docs/`, `models/`, `backtest/` — not in `api/`.
-7. **Criteria live in the database, per user** (Phase 1.5 retired `config/screening.yaml`). Valid keys are owned by `screener/catalog.py`; validation/defaults by `screener/criteria.py`; the engine reads only enabled criteria and clamps every run to 10 rows. `shortlist_size` is server-owned and never accepted from clients.
+7. **Screening criteria live in the database, per user, as named screens** (Phase 1.7; Phase 1.5 retired `config/screening.yaml`). `screening_sets` rows own `criteria_json` + a per-screen `thesis`; exactly one is active per user and drives `POST /screen/run`, `GET /screen/latest`, `/stocks` verdicts and the stock report. Valid keys are owned by `screener/catalog.py`; validation/defaults by `screener/criteria.py`; the engine reads only enabled criteria and clamps every run to 10 rows. `shortlist_size` is server-owned and never accepted from clients.
 8. **Auth**: scrypt password hashing (stdlib) + a token pair. The **access token** is a 15-minute
    HS256 JWT (PyJWT — the one external auth dependency, added to avoid hand-rolling algorithm
    pinning and expiry checks; the ₹0 budget is about API keys, not libraries), signed with the
@@ -145,9 +145,10 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 | Phase | Deliverable | Done when |
 |---|---|---|
 | 1 | Screener | POST /screen/run shortlists from live yfinance data; ratio unit tests pass vs hand-computed fixtures |
-| 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria`, dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
+| 1.5 | Auth + per-user DB screener | Login-gated app, criteria in `user_criteria` (superseded by `screening_sets` in 1.7), dynamic catalog, run clamped to 10; auth/criteria/screener tests green |
 | 1.6 | Stock detail page | `/stock/{symbol}` serves shared stored snapshot + per-user report + cached candles (1d/15d/1mo, never persisted); tests green offline |
 | 1.6b | Universe search + richer detail | `GET /stocks` lists the whole stored universe with per-user verdicts; screen run refreshes every stale symbol; detail serves profile + digest sections; tests green offline |
+| 1.7 | Saved screens + navbar search | `screening_sets` CRUD/activate; runs + latest scoped to the active screen; criteria page edits inline (no dialog); navbar glass search always visible; tests green offline |
 | 2 | Doc analysis | PDFs fetched + summarized for a shortlist; fallback path tested with mocked Gemini failure |
 | 3 | Price model | Signals generated for shortlist; model trains on synthetic data in tests |
 | 4 | Backtest | Walk-forward report vs Nifty 500; offline integration test green |
