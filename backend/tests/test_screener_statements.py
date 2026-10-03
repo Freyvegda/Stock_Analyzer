@@ -177,3 +177,190 @@ def test_block_page_keeps_stale_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(stmt, "_download", lambda symbol: "<html><body>blocked</body></html>")
     out = stmt.fetch_statements("AAA", cache_dir=str(tmp_path), ttl_days=30)
     assert out["revenue"] == 5.0
+
+
+def test_fresh_partial_merges_stale_debt(tmp_path):
+    stale = {
+        "as_of": "2020-01-01",
+        "fields": {
+            "revenue": 900.0, "net_income": 100.0, "equity": 700.0,
+            "total_debt": 15000.0, "ebit": 180.0,
+        },
+    }
+    (tmp_path / "AAA.json").write_text(json.dumps(stale), encoding="utf-8")
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>"
+        "<tr><td>Sales +</td><td>1000</td><td>1200</td></tr>"
+        "<tr><td>Net Profit +</td><td>100</td><td>150</td></tr>"
+        "<tr><td>Total Equity</td><td>700</td><td>750</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.fetch_statements("AAA", cache_dir=str(tmp_path), ttl_days=30,
+                                client=lambda symbol: html)
+    assert out["revenue"] == 1200.0
+    assert out["total_debt"] == 15000.0
+
+
+def test_quarterly_many_mar_columns_skipped_annuals_kept():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Jun 2023</th><th>Sep 2023</th><th>Dec 2023</th>"
+        "<th>Mar 2024</th><th>Jun 2024</th><th>Sep 2024</th><th>Dec 2024</th>"
+        "<th>Mar 2025</th></tr>"
+        "<tr><td>Sales +</td><td>30</td><td>31</td><td>32</td><td>33</td>"
+        "<td>34</td><td>35</td><td>36</td><td>37</td></tr>"
+        "<tr><td>Net Profit +</td><td>3</td><td>3</td><td>3</td><td>4</td>"
+        "<td>4</td><td>4</td><td>4</td><td>5</td></tr>"
+        "</table><table>"
+        "<tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>"
+        "<tr><td>Sales +</td><td>1000</td><td>1200</td></tr>"
+        "<tr><td>Net Profit +</td><td>100</td><td>150</td></tr>"
+        "<tr><td>Total Equity</td><td>700</td><td>750</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 1200.0
+    assert out["revenue_prev"] == 1000.0
+    assert out["net_income"] == 150.0
+
+
+def test_sep_yearend_columns_are_annual():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Sep 2023</th><th>Sep 2024</th><th>Sep 2025</th></tr>"
+        "<tr><td>Sales +</td><td>9000</td><td>10000</td><td>11000</td></tr>"
+        "<tr><td>Net Profit +</td><td>900</td><td>1000</td><td>1100</td></tr>"
+        "<tr><td>Total Equity</td><td>5000</td><td>5500</td><td>6000</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 11000.0
+    assert out["revenue_prev"] == 10000.0
+    assert out["net_income"] == 1100.0
+    assert out["equity"] == 6000.0
+
+
+def test_dec_yearend_columns_are_annual():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Dec 2023</th><th>Dec 2024</th><th>Dec 2025</th></tr>"
+        "<tr><td>Sales +</td><td>7000</td><td>7500</td><td>8000</td></tr>"
+        "<tr><td>Net Profit +</td><td>700</td><td>750</td><td>800</td></tr>"
+        "<tr><td>Total Equity</td><td>4000</td><td>4200</td><td>4400</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 8000.0
+    assert out["equity"] == 4400.0
+
+
+def test_consolidated_shell_falls_back_to_main(tmp_path, monkeypatch):
+    import app.data.screener_statements as stmt_mod
+
+    shell = "<html><body><table><tr><th></th></tr></table></body></html>"
+    main = (
+        "<html><body><table>"
+        "<tr><th></th><th>Mar 2024</th><th>Mar 2025</th></tr>"
+        "<tr><td>Sales +</td><td>1000</td><td>1200</td></tr>"
+        "<tr><td>Net Profit +</td><td>100</td><td>150</td></tr>"
+        "<tr><td>Total Equity</td><td>700</td><td>750</td></tr>"
+        "</table></body></html>"
+    )
+
+    class R200:
+        def __init__(self, text):
+            self.status_code = 200
+            self.headers = {}
+            self.text = text
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, **kwargs):
+        if url.endswith("/consolidated/"):
+            return R200(shell)
+        return R200(main)
+
+    monkeypatch.setattr(stmt_mod.httpx, "get", fake_get)
+    monkeypatch.setattr(stmt_mod.time, "sleep", lambda s: None)
+    out = stmt_mod.fetch_statements("AAA", cache_dir=str(tmp_path), ttl_days=30)
+    assert out["revenue"] == 1200.0
+    assert out["equity"] == 750.0
+
+
+def test_yearend_transition_stub_and_ttm_skipped():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Sep 2023</th><th>Sep 2024</th><th>Mar 2026 18m</th><th>TTM</th></tr>"
+        "<tr><td>Sales +</td><td>9000</td><td>10000</td><td>15000</td><td>16000</td></tr>"
+        "<tr><td>Net Profit +</td><td>900</td><td>1000</td><td>1400</td><td>1500</td></tr>"
+        "<tr><td>Total Equity</td><td>5000</td><td>5500</td><td>6000</td><td>6100</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 10000.0
+    assert out["revenue_prev"] == 9000.0
+    assert out["net_income"] == 1000.0
+
+
+def test_dec_annuals_with_jun_stub_kept():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Dec 2023</th><th>Dec 2024</th><th>Dec 2025</th><th>Jun 2026</th></tr>"
+        "<tr><td>Equity Capital</td><td>247</td><td>495</td><td>495</td><td>495</td></tr>"
+        "<tr><td>Reserves</td><td>328</td><td>1406</td><td>1500</td><td>1510</td></tr>"
+        "<tr><td>Borrowing</td><td>10</td><td>63</td><td>70</td><td>71</td></tr>"
+        "</table><table>"
+        "<tr><th></th><th>Dec 2024</th><th>Dec 2025</th></tr>"
+        "<tr><td>Sales +</td><td>5000</td><td>5722</td></tr>"
+        "<tr><td>Net Profit +</td><td>800</td><td>950</td></tr>"
+        "<tr><td>Total Equity</td><td>1800</td><td>1901</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 5722.0
+    assert out["equity"] == 1901.0
+    assert out["total_debt"] == 70.0
+
+
+def test_lone_mar_stub_beside_sep_annuals_uses_sep():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Sep 2023</th><th>Sep 2024</th><th>Mar 2026</th></tr>"
+        "<tr><td>Equity Capital</td><td>71</td><td>71</td><td>71</td></tr>"
+        "<tr><td>Reserves</td><td>12953</td><td>15176</td><td>13454</td></tr>"
+        "<tr><td>Borrowing</td><td>152</td><td>257</td><td>248</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["total_debt"] == 257.0
+
+
+def test_disjoint_dec_to_mar_transition_kept():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Dec 2021</th><th>Mar 2022 15m</th>"
+        "<th>Mar 2023</th><th>Mar 2024</th></tr>"
+        "<tr><td>Sales +</td><td>3771</td><td>4884</td><td>4469</td><td>5237</td></tr>"
+        "<tr><td>Net Profit +</td><td>300</td><td>320</td><td>350</td><td>400</td></tr>"
+        "<tr><td>Total Equity</td><td>1500</td><td>1550</td><td>1600</td><td>1700</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 5237.0
+    assert out["revenue_prev"] == 4469.0
+
+
+def test_single_sep_annual_for_new_listing():
+    html = (
+        "<html><body><table>"
+        "<tr><th></th><th>Sep 2024 8m</th><th>Sep 2025</th><th>TTM</th></tr>"
+        "<tr><td>Sales +</td><td>500</td><td>1200</td><td>1300</td></tr>"
+        "<tr><td>Net Profit +</td><td>50</td><td>150</td><td>160</td></tr>"
+        "<tr><td>Total Equity</td><td>4000</td><td>4812</td><td>4900</td></tr>"
+        "</table></body></html>"
+    )
+    out = stmt.parse_statements(html)
+    assert out["revenue"] == 1200.0
+    assert out["equity"] == 4812.0

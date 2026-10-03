@@ -74,11 +74,27 @@ def _normalize_label(label: str) -> str:
     return (label or "").strip().lower().rstrip("+").strip()
 
 _ANNUAL_RE = re.compile(r"(mar|fy)?\s*20\d\d", re.IGNORECASE)
+_YEAR_RE = re.compile(r"20\d\d")
 _QUARTER_RE = re.compile(r"(jun|sep|dec)\s*20\d\d", re.IGNORECASE)
+
+
+def _month_of(cell: str | None) -> str | None:
+    """jun|sep|dec|mar|fy when the header cell names one, else None."""
+    text = (cell or "").lower()
+    for month in ("mar", "jun", "sep", "dec"):
+        if month in text:
+            return month
+    if re.search(r"\bfy\b", text):
+        return "fy"
+    return None
+
+#: Partial-period markers (never annual); quarter months are handled by the
+#: fiscal-year rule in _annual_indexes, not here.
+_PARTIAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|trailing|\d+\s*m\b", re.IGNORECASE)
+_NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing|\d+\s*m\b", re.IGNORECASE)
 
 #: Holdings labels stay readable on quarterly shareholding tables.
 _HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis"})
-_NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing", re.IGNORECASE)
 
 #: Money fields (Rs cr base) vs per-share/price fields (never unit-scaled).
 _MONEY_FIELDS = frozenset(
@@ -150,7 +166,10 @@ def _to_float(text: str | None) -> float | None:
 def _annual_indexes(header: list[str]) -> list[int]:
     """Data-column indexes holding annual figures (skips TTM/quarterly).
 
-    Falls back to every data column when no header cell names a year.
+    Mar/FY columns win when present. Otherwise the dominant dated month with
+    2+ columns wins (Sep/Dec/Jun fiscal year-ends, tolerating one quarterly
+    stub like a Jun balance-sheet column). Falls back to every data column
+    when no header cell names a year.
     """
     annual = [
         idx
@@ -158,7 +177,38 @@ def _annual_indexes(header: list[str]) -> list[int]:
         if _ANNUAL_RE.search(cell or "") and not _NON_ANNUAL_RE.search(cell or "")
     ]
     if annual:
-        return annual
+        if len(annual) >= 2:
+            return annual
+        # One lone Mar column beside a dominant Sep/Dec/Jun annual set is a
+        # stub (live Siemens balance sheet: Sep annuals + Mar 2026) — fall
+        # through to the dominant-month rule instead of pinning the stub.
+        dated_months: dict[str, int] = {}
+        for cell in header[1:]:
+            if _YEAR_RE.search(cell or "") and not _PARTIAL_RE.search(cell or ""):
+                month = _month_of(cell)
+                if month in ("jun", "sep", "dec"):
+                    dated_months[month] = dated_months.get(month, 0) + 1
+        if not any(count >= 2 for count in dated_months.values()):
+            return annual
+    dated = [
+        (idx, cell)
+        for idx, cell in enumerate(header[1:], start=1)
+        if _YEAR_RE.search(cell or "") and not _PARTIAL_RE.search(cell or "")
+    ]
+    counts: dict[str, int] = {}
+    for _, cell in dated:
+        month = _month_of(cell)
+        if month is not None:
+            counts[month] = counts.get(month, 0) + 1
+    if counts:
+        if len(counts) == 1:
+            # One month only: a fiscal year-end table (even a single annual
+            # for a new listing) — quarterly tables always mix months.
+            only = next(iter(counts))
+            return [idx for idx, cell in dated if _month_of(cell) == only]
+        top = max(counts, key=lambda m: counts[m])
+        if counts[top] >= 2:
+            return [idx for idx, cell in dated if _month_of(cell) == top]
     if any(_NON_ANNUAL_RE.search(cell or "") for cell in header[1:]):
         return [
             idx
@@ -220,6 +270,28 @@ def parse_statements(html: str) -> dict:
         header = [c.get_text(" ", strip=True) for c in table_rows[0].find_all(["td", "th"])]
         quarterly = any(_QUARTER_RE.search(cell or "") for cell in header[1:])
         indexes = _annual_indexes(header) if len(header) > 1 else [1]
+        # Quarterly results tables interleave Jun/Sep/Dec with Mar-quarterly
+        # columns of the SAME years (live AXISBANK). Year-end-transition tables
+        # (Dec 2019-21 then Mar 2023-26, disjoint years) keep their annuals, as
+        # do legacy mixed tables (one Jun + 9m/TTM + Mar annuals), stubbed
+        # balance sheets (Dec annuals + Jun stub) and single-month fiscal
+        # tables. Skip only mixed-month tables whose years overlap across
+        # months (or that yield a single column) — per-column filtering already
+        # drops Jun/Sep/Dec/TTM/9m from Mar-annual tables.
+        dated_cells = [
+            cell for cell in header[1:]
+            if _YEAR_RE.search(cell or "") and not _PARTIAL_RE.search(cell or "")
+        ]
+        monthset = {_month_of(cell) for cell in dated_cells} - {None, "fy"}
+        mixed = len(monthset) > 1
+        years: dict[str, set[str]] = {}
+        for cell in dated_cells:
+            month = _month_of(cell)
+            year = _YEAR_RE.search(cell or "")
+            if month is not None and year:
+                years.setdefault(year.group(0), set()).add(month)
+        overlap = any(len(months) > 1 for months in years.values())
+        quarterly_results = bool(quarterly and mixed and (overlap or len(indexes) <= 1))
         for row in table_rows[1:]:
             cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
             if len(cells) < 2:
@@ -227,7 +299,7 @@ def parse_statements(html: str) -> dict:
             field = _LABEL_MAP.get(_normalize_label(cells[0]))
             if field is None:
                 continue
-            if quarterly and field not in _HOLDING_FIELDS:
+            if quarterly_results and field not in _HOLDING_FIELDS:
                 continue  # quarterly results table: no annual statements here
             values = [_to_float(cells[i]) if i < len(cells) else None for i in indexes]
             values = [v for v in values if v is not None]
@@ -335,12 +407,13 @@ def _retry_after(resp) -> float:
 
 
 def _download(symbol: str) -> str:
-    """Company page HTML, consolidated first (falls back on 404).
+    """Company page HTML, consolidated first (falls back on 404 or shell).
 
     Screener renders standalone figures on the main page; Nifty 500
     screening wants consolidated. Standalone-only companies 404 on the
-    consolidated path and fall back to the main page. 429s back off per
-    Retry-After instead of failing fast; every success pauses politely.
+    consolidated path — or return 200 with empty tables — and fall back to
+    the main page. 429s back off per Retry-After instead of failing fast;
+    every success pauses politely.
     """
     symbol = symbol.strip().upper()
     urls = [
@@ -361,6 +434,12 @@ def _download(symbol: str) -> str:
                 if resp.status_code == 403:
                     raise ScreenerBlockedError(f"screener blocked {symbol}: 403")
                 resp.raise_for_status()
+                if url_index == 0:
+                    try:
+                        if not _has_minimum(parse_statements(resp.text)):
+                            break  # 200 shell page: fall back to main page
+                    except Exception:  # noqa: BLE001 — unparsable means fall back
+                        break
                 time.sleep(POLITE_DELAY_SECONDS)
                 return resp.text
             except ScreenerBlockedError:
@@ -413,6 +492,17 @@ def fetch_statements(
         if stale and stale.get("fields"):
             return dict(stale["fields"])
         raise ScreenerBlockedError(f"screener parse yielded no statements for {symbol}")
+    # Merge stale base into fresh Nones so one partial page never nulls a known
+    # input for the ratio calculator (fresh wins whenever present).
+    try:
+        stale = _read_cache(path) if os.path.exists(path) else None
+        old = stale.get("fields") if stale and isinstance(stale.get("fields"), dict) else {}
+        if old:
+            for key, value in fields.items():
+                if value is None and old.get(key) is not None:
+                    fields[key] = old[key]
+    except Exception:  # noqa: BLE001 — merge is best-effort, never blocks write
+        pass
     os.makedirs(cache_dir, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
