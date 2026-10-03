@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Provider } from '../ui/provider'
 import { chipElapsed, RunProgress } from '../RunProgress'
+import { system } from '@/theme/system'
 import type { RunJob, RunJobItem, RunJobItemStatus } from '../../api/types'
 
 function item(
@@ -52,7 +53,10 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-03T10:00:05.000Z'))
 })
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.useRealTimers()
+})
 
 describe('RunProgress', () => {
   const runningItem = item(1, 'Alpha', 'running', { started_at: '2026-10-03T10:00:00.000Z' })
@@ -94,6 +98,31 @@ describe('RunProgress', () => {
     const bar = screen.getByRole('progressbar')
     expect(bar).toHaveAttribute('aria-valuenow', '3')
     expect(bar).toHaveAttribute('aria-valuemax', '10')
+    expect(bar).toHaveAccessibleName('Screen refresh progress')
+  })
+
+  it('resolves done/failed chip tones to gain/loss tokens that exist in the theme', () => {
+    renderProgress(
+      job({ items: [runningItem, queuedItem, failedItem, item(4, 'Delta', 'done')] }),
+    )
+
+    // gain/loss are flat semantic colors; the chips must resolve through them directly.
+    expect(system.token('colors.gain')).toBe('var(--chakra-colors-gain)')
+    expect(system.token('colors.loss')).toBe('var(--chakra-colors-loss)')
+    expect(system.token('colors.gain.subtle')).toBeUndefined()
+    expect(system.token('colors.loss.subtle')).toBeUndefined()
+
+    // The exact same resolution path the Badge props take at render time.
+    expect(system.css({ color: 'gain', borderColor: 'gain' })).toEqual({
+      color: 'var(--chakra-colors-gain)',
+      borderColor: 'var(--chakra-colors-gain)',
+    })
+    expect(system.css({ color: 'loss', borderColor: 'loss' })).toEqual({
+      color: 'var(--chakra-colors-loss)',
+      borderColor: 'var(--chakra-colors-loss)',
+    })
+    expect(document.head.textContent).toContain('var(--chakra-colors-gain)')
+    expect(document.head.textContent).toContain('var(--chakra-colors-loss)')
   })
 
   it('hides the failed suffix when nothing failed', () => {
@@ -132,6 +161,11 @@ describe('RunProgress', () => {
   it('renders the failed banner with the job error', () => {
     renderProgress(job({ status: 'failed', error: 'job exploded' }))
     expect(screen.getByTestId('job-status')).toHaveTextContent('job exploded')
+  })
+
+  it('falls back to a generic failed message when the job has no error', () => {
+    renderProgress(job({ status: 'failed', error: null }))
+    expect(screen.getByTestId('job-status')).toHaveTextContent('Run failed')
   })
 
   it('renders the interrupted banner with a rerun hint', () => {

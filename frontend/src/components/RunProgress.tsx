@@ -25,15 +25,19 @@ export function chipElapsed(item: RunJobItem, now: number): number | null {
 
 type ChipTone = {
   variant: 'outline' | 'subtle'
-  color?: 'fg.muted'
-  colorPalette?: 'sakura' | 'gain' | 'loss'
+  color?: 'fg.muted' | 'gain' | 'loss'
+  borderColor?: 'gain' | 'loss'
+  colorPalette?: 'sakura'
 }
 
+// `gain`/`loss` are flat semantic colors, not palettes with virtual steps, so the
+// chips use direct `color`/`borderColor` props (colorPalette="gain" would only set
+// --chakra-colors-color-palette and leave Badge subtle's fg/subtle steps unresolved).
 const CHIP_TONES: Record<RunJobItemStatus, ChipTone> = {
   queued: { variant: 'outline', color: 'fg.muted' },
   running: { variant: 'subtle', colorPalette: 'sakura' },
-  done: { variant: 'subtle', colorPalette: 'gain' },
-  failed: { variant: 'subtle', colorPalette: 'loss' },
+  done: { variant: 'outline', color: 'gain', borderColor: 'gain' },
+  failed: { variant: 'outline', color: 'loss', borderColor: 'loss' },
 }
 
 function chipLabel(item: RunJobItem): ReactNode {
@@ -136,6 +140,7 @@ export function RunProgress({ job }: { job: RunJob }) {
         </Flex>
         <Box
           role="progressbar"
+          aria-label="Screen refresh progress"
           aria-valuenow={processed}
           aria-valuemin={0}
           aria-valuemax={job.universe_total}
