@@ -118,6 +118,7 @@ Audit trail of every screen execution, per user, attributed to the screen it ran
 | run_date | String | ISO date |
 | user_id | Int NOT NULL, indexed, FK → users.id | run owner |
 | set_id | Int?, indexed, FK → screening_sets.id | screen executed; NULLed when that screen is deleted (runs are kept) |
+| triggered_by | String NOT NULL default `manual` | `manual` = the user's Run Screen on the active set; `auto` = the batch's extra most-used screens (Phase 1.8). Auto runs never count toward the most-used measure |
 | criteria_json | Text | verbatim criteria used — results reproducible |
 | shortlisted_json | Text | JSON array of {symbol, ratios, rank} |
 
