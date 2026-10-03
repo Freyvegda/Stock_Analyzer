@@ -13,7 +13,7 @@ from app.db import models  # noqa: F401 — register tables
 from app.db.database import Base
 from app.db.models import User
 from app.main import app
-from app.screener import runner
+from app.screener import runner, service
 
 
 def create_session_cookie(user: dict) -> str:
@@ -54,8 +54,10 @@ def test_db(tmp_path, monkeypatch):
     monkeypatch.setattr(stock_api, "init_db", lambda: None)
     monkeypatch.setattr(stocks_api, "init_db", lambda: None)
     # TestClient requests must never spawn the worker thread; worker tests call
-    # runner.execute_job directly.
+    # runner.execute_job directly. A fresh registry per test keeps endpoint/worker
+    # registrations from leaking across tests (job ids restart per temp DB).
     monkeypatch.setattr(runner, "submit_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service, "_ACTIVE_JOB_IDS", set())
     return TestSession
 
 

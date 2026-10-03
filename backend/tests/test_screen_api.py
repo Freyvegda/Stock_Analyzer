@@ -13,7 +13,7 @@ from app.db.models import (
     ScreenRun,
     Stock,
 )
-from app.screener import runner, service
+from app.screener import service
 from app.screener.criteria import default_criteria
 
 GOOD = {"pe": 20, "pb": 3, "roe": 25, "roce": 25, "debt_to_equity": 0.2, "market_cap": 5000}
@@ -105,25 +105,22 @@ def provider(monkeypatch):
     return _use
 
 
-def live_worker(monkeypatch):
-    """Simulate a worker that starts instantly: the submitted job registers itself.
-
-    ``test_db`` stubs ``submit_job`` to a no-op, so without this the read-time
-    interrupted sweep would mark the fresh job ``interrupted`` before it is
-    returned. Returns the job id registered by the last submit (caller must
-    ``service.unregister_active_job`` in teardown).
-    """
-    monkeypatch.setattr(
-        runner,
-        "submit_job",
-        lambda job_id, *args, **kwargs: service.register_active_job(job_id),
-    )
-
-
-def latest_job_id(test_db) -> int | None:
+def finish_run(test_db, user_id: int) -> None:
+    """Simulate the stubbed worker finishing its latest running job: done + unregistered."""
     with test_db() as session:
-        job = session.query(RunJob).order_by(RunJob.id.desc()).first()
-        return job.id if job is not None else None
+        job = (
+            session.query(RunJob)
+            .filter(RunJob.user_id == user_id, RunJob.status == "running")
+            .order_by(RunJob.id.desc())
+            .first()
+        )
+        if job is None:
+            return
+        job.status = "done"
+        job.finished_at = "done"
+        session.commit()
+        job_id = job.id
+    service.unregister_active_job(job_id)
 
 
 def test_run_uses_caller_criteria_and_stores_snapshot(client, sign_in, provider, test_db):
@@ -144,28 +141,22 @@ def test_run_uses_caller_criteria_and_stores_snapshot(client, sign_in, provider,
         ]
 
 
-def test_run_returns_cached_run_and_job(client, sign_in, provider, test_db, monkeypatch):
+def test_run_returns_cached_run_and_job(client, sign_in, provider, test_db):
     sign_in()
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}])
     p = provider(MapProvider(data={}))
-    live_worker(monkeypatch)
 
-    try:
-        response = client.post("/screen/run")
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert [r["symbol"] for r in body["run"]["shortlisted"]] == ["AAA"]
-        assert body["run"]["stale"] is True  # stored rows are not from today
-        assert body["job"]["status"] == "running"
-        active = client.get("/screen/sets").json()[0]
-        item = next(i for i in body["job"]["items"] if i["set_id"] == active["id"])
-        assert item["status"] == "done"
-        assert item["run_id"] == body["run"]["run_id"]
-        assert p.calls == []
-    finally:
-        job_id = latest_job_id(test_db)
-        if job_id is not None:
-            service.unregister_active_job(job_id)
+    response = client.post("/screen/run")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [r["symbol"] for r in body["run"]["shortlisted"]] == ["AAA"]
+    assert body["run"]["stale"] is True  # stored rows are not from today
+    assert body["job"]["status"] == "running"
+    active = client.get("/screen/sets").json()[0]
+    item = next(i for i in body["job"]["items"] if i["set_id"] == active["id"])
+    assert item["status"] == "done"
+    assert item["run_id"] == body["run"]["run_id"]
+    assert p.calls == []
 
 
 def test_second_run_while_running_409(client, sign_in, provider, test_db):
@@ -194,26 +185,35 @@ def test_second_run_while_running_409(client, sign_in, provider, test_db):
     assert body["job_id"] == seeded_id
 
 
-def test_jobs_latest_null_when_never_ran_and_shape_after_run(
-    client, sign_in, provider, test_db, monkeypatch
-):
+def test_second_run_while_refreshing_409(client, sign_in, provider, test_db):
+    """R6: a running job blocks even when every item is already done (single screen)."""
+    sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    provider(MapProvider(data={}))
+
+    first = client.post("/screen/run").json()
+    assert first["job"]["items"][0]["status"] == "done"  # active item served instantly
+
+    second = client.post("/screen/run")
+    assert second.status_code == 409
+    assert second.json() == {
+        "detail": "Run already in progress",
+        "job_id": first["job"]["id"],
+    }
+
+
+def test_jobs_latest_null_when_never_ran_and_shape_after_run(client, sign_in, provider, test_db):
     sign_in()
     assert client.get("/screen/jobs/latest").json() == {"job": None}
 
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
     provider(MapProvider(data={}))
-    live_worker(monkeypatch)
-    try:
-        body = client.post("/screen/run").json()
-        latest = client.get("/screen/jobs/latest").json()["job"]
-        assert latest["id"] == body["job"]["id"]
-        assert latest["status"] == "running"
-        assert {item["status"] for item in latest["items"]} == {"done"}
-        assert latest["items"][0]["run_id"] == body["run"]["run_id"]
-    finally:
-        job_id = latest_job_id(test_db)
-        if job_id is not None:
-            service.unregister_active_job(job_id)
+    body = client.post("/screen/run").json()
+    latest = client.get("/screen/jobs/latest").json()["job"]
+    assert latest["id"] == body["job"]["id"]
+    assert latest["status"] == "running"
+    assert {item["status"] for item in latest["items"]} == {"done"}
+    assert latest["items"][0]["run_id"] == body["run"]["run_id"]
 
 
 def test_latest_is_per_user(client, sign_in, provider, test_db):
@@ -314,7 +314,7 @@ def test_screen_routes_require_auth(client, test_db):
 
 def test_screen_rerun_same_day_makes_no_fundamentals_calls(client, sign_in, provider, test_db):
     """Second run the same day finds a current snapshot for every symbol."""
-    sign_in()
+    user = sign_in()
     seed_stored(
         test_db,
         [
@@ -327,6 +327,7 @@ def test_screen_rerun_same_day_makes_no_fundamentals_calls(client, sign_in, prov
     p = provider(MapProvider(data={}))
 
     client.post("/screen/run")
+    finish_run(test_db, user["id"])  # stubbed worker: simulate completion before rerun
     p.calls.clear()
     body = client.post("/screen/run").json()["run"]
 
@@ -347,10 +348,11 @@ def test_run_stores_active_set_id(client, sign_in, provider, test_db):
 
 
 def test_latest_scoped_to_active_set(client, sign_in, provider, test_db):
-    sign_in()
+    user = sign_in()
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
     provider(FakeProvider())
     first = client.post("/screen/run").json()["run"]
+    finish_run(test_db, user["id"])
 
     client.post("/screen/sets", json={"name": "Momentum"})  # becomes active, no run yet
     assert client.get("/screen/latest").status_code == 404
@@ -380,7 +382,7 @@ def test_delete_screen_keeps_runs_unstamped(client, sign_in, provider, test_db):
 
 
 def test_run_uses_the_updated_active_set(client, sign_in, provider, test_db):
-    sign_in()
+    user = sign_in()
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
     provider(FakeProvider())  # stored AAA pe=20 passes only the wider gate
     created = client.post(
@@ -388,6 +390,7 @@ def test_run_uses_the_updated_active_set(client, sign_in, provider, test_db):
         json={"name": "Tight", "criteria": [{"key": "pe", "enabled": True, "value": 15}]},
     ).json()
     assert client.post("/screen/run").json()["run"]["shortlisted"] == []
+    finish_run(test_db, user["id"])
 
     client.put(
         f"/screen/sets/{created['id']}",

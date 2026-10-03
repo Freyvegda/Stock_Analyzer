@@ -95,9 +95,8 @@ def activate_set(set_id: int, user: dict = Depends(current_user)) -> dict:
 def run_screen(user: dict = Depends(current_user)):
     """Cached-first run: snapshot now, background refresh job after (Phase 1.8)."""
     init_db()
-    busy = service.busy_set_ids(SessionLocal, user["id"])  # sweeps stale runs first
-    if busy:
-        job = service.latest_job(SessionLocal, user["id"])
+    job = service.latest_job(SessionLocal, user["id"])  # sweeps stale runs first
+    if job is not None and job["status"] == "running":
         return JSONResponse(
             status_code=409,
             content={"detail": "Run already in progress", "job_id": job["id"]},
@@ -114,6 +113,9 @@ def run_screen(user: dict = Depends(current_user)):
         stored["id"],
     )
     job = service.create_job(SessionLocal, user["id"], stored["id"])
+    # Register before the first read: without it, this endpoint's own
+    # ``latest_job`` would sweep the fresh job to ``interrupted`` (R6).
+    service.register_active_job(job["id"])
     service.mark_item(SessionLocal, job["id"], stored["id"], "done", run_id=run["run_id"])
     runner.submit_job(job["id"], provider, SessionLocal)
     return {"run": run, "job": service.latest_job(SessionLocal, user["id"])}
