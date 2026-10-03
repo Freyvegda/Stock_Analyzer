@@ -51,7 +51,7 @@ def _call_with_timeout(fn, timeout: float = FETCH_TIMEOUT_SECONDS):
         raise TimeoutError(f"fetch timed out after {timeout}s")
 
 
-def _retry(fn, attempts: int = FETCH_ATTEMPTS):
+def _retry(fn, attempts: int = FETCH_ATTEMPTS, label: str = "fetch"):
     """Call ``fn`` up to ``attempts`` times with exponential backoff + jitter."""
     for attempt in range(attempts):
         try:
@@ -59,7 +59,7 @@ def _retry(fn, attempts: int = FETCH_ATTEMPTS):
         except Exception:
             if attempt == attempts - 1:
                 raise
-            logger.warning("fetch attempt %d/%d failed; retrying", attempt + 1, attempts)
+            logger.warning("%s: attempt %d/%d failed; retrying", label, attempt + 1, attempts)
             time.sleep(RETRY_BASE_DELAY * 2**attempt + random.uniform(0, RETRY_BASE_DELAY))
 
 
@@ -134,7 +134,7 @@ class YFinanceProvider(DataProvider):
 
     def fundamentals(self, symbol: str, cached: dict | None = None) -> dict:
         ticker = yf.Ticker(f"{symbol}.NS")
-        info = _retry(lambda: _call_with_timeout(lambda: ticker.info)) or {}
+        info = _retry(lambda: _call_with_timeout(lambda: ticker.info), label=symbol) or {}
         cached = cached or {}
 
         def ratio(key: str, scale: float = 1.0):
@@ -151,7 +151,9 @@ class YFinanceProvider(DataProvider):
             roce = cached.get("roce")
 
         if roe is None or roce is None:
-            income, balance = _retry(lambda: _call_with_timeout(lambda: _statements(ticker)))
+            income, balance = _retry(
+                lambda: _call_with_timeout(lambda: _statements(ticker)), label=symbol
+            )
             if roe is None:
                 net_income = _latest_value(income, _NET_INCOME)
                 equity = _latest_value(balance, _EQUITY)

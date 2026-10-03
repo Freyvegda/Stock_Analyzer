@@ -245,57 +245,90 @@ def test_fundamentals_negative_equity_gives_no_roe(monkeypatch):
     assert f["roe"] is None  # loss-making + negative equity must not look profitable
 
 
-def test_cached_roe_roce_skip_statements(monkeypatch):
-    class ExplodingStatements(fake_ticker_class({})):
+def tracking_statements_ticker(calls, info=None, income=None, balance=None):
+    """Fake ticker whose annual statements record every access into ``calls``."""
+
+    class FakeTicker:
+        def __init__(self, ticker: str):
+            self.ticker = ticker
+
+        @property
+        def info(self):
+            return info if info is not None else {}
+
         @property
         def financials(self):
-            raise AssertionError("statements must not be fetched when cached ratios exist")
+            calls.append("financials")
+            return income
 
         @property
         def balance_sheet(self):
-            raise AssertionError("statements must not be fetched when cached ratios exist")
+            calls.append("balance_sheet")
+            return balance
 
-    monkeypatch.setattr(yfinance_impl.yf, "Ticker", ExplodingStatements)
+    return FakeTicker
+
+
+def test_cached_roe_roce_skip_statements(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls))
 
     f = YFinanceProvider().fundamentals("AAA", cached={"roe": 22.0, "roce": 30.0})
 
+    assert calls == []  # statement access never happened
     assert f["roe"] == 22.0
     assert f["roce"] == 30.0
+
+
+def test_info_values_skip_statements_without_cache(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, info=INFO))
+
+    f = YFinanceProvider().fundamentals("AAA")
+
+    assert calls == []  # both ratios came from .info
+    assert f["roe"] == 41.0
+    assert f["roce"] == 50.2
 
 
 def test_statements_fetched_without_cache(monkeypatch):
     import pandas as pd
 
     calls: list[str] = []
-
-    class TrackingTicker:
-        def __init__(self, ticker: str):
-            self.ticker = ticker
-
-        @property
-        def info(self):
-            return {}
-
-        @property
-        def financials(self):
-            calls.append("financials")
-            return pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
-
-        @property
-        def balance_sheet(self):
-            calls.append("balance_sheet")
-            return pd.DataFrame(
-                {"2025": [5000.0, 1000.0, 1000.0]},
-                index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
-            )
-
-    monkeypatch.setattr(yfinance_impl.yf, "Ticker", TrackingTicker)
+    income = pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
+    balance = pd.DataFrame(
+        {"2025": [5000.0, 1000.0, 1000.0]},
+        index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
+    )
+    monkeypatch.setattr(
+        yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, income=income, balance=balance)
+    )
 
     f = YFinanceProvider().fundamentals("AAA", cached=None)
 
     assert calls == ["financials", "balance_sheet"]
     assert f["roe"] == 20.0  # 200 / 1000 * 100
     assert f["roce"] == 25.0  # 1000 / (5000 - 1000) * 100
+
+
+def test_cached_none_values_still_fetch_statements(monkeypatch):
+    import pandas as pd
+
+    calls: list[str] = []
+    income = pd.DataFrame({"2025": [1000.0, 200.0]}, index=["EBIT", "Net Income"])
+    balance = pd.DataFrame(
+        {"2025": [5000.0, 1000.0, 1000.0]},
+        index=["Total Assets", "Current Liabilities", "Stockholders Equity"],
+    )
+    monkeypatch.setattr(
+        yfinance_impl.yf, "Ticker", tracking_statements_ticker(calls, income=income, balance=balance)
+    )
+
+    f = YFinanceProvider().fundamentals("AAA", cached={"roe": None, "roce": None})
+
+    assert calls == ["financials", "balance_sheet"]  # cached Nones are not reusable
+    assert f["roe"] == 20.0
+    assert f["roce"] == 25.0
 
 
 def fake_history_ticker(frame, calls=None):
@@ -407,7 +440,7 @@ def test_retry_recovers_after_two_failures(monkeypatch):
     assert calls["n"] == 3
 
 
-def test_retry_reraises_after_attempts(monkeypatch):
+def test_retry_reraises_after_attempts(monkeypatch, caplog):
     monkeypatch.setattr(yfinance_impl.time, "sleep", lambda *_: None)
     calls = {"n": 0}
 
@@ -416,9 +449,10 @@ def test_retry_reraises_after_attempts(monkeypatch):
         raise RuntimeError("still down")
 
     with pytest.raises(RuntimeError, match="still down"):
-        yfinance_impl._retry(always_fail)
+        yfinance_impl._retry(always_fail, label="AAA")
 
     assert calls["n"] == yfinance_impl.FETCH_ATTEMPTS
+    assert "AAA" in caplog.text  # retry warnings carry the symbol for attribution
 
 
 def test_call_with_timeout_raises_on_hang():
