@@ -156,6 +156,7 @@ D:\CODES\Projects\stock-analyzer\
 - Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256 and *is* the revocation mechanism. Client single-flights refreshes (rotation would otherwise invalidate them in parallel); 3h sliding idle logout with a server-side backstop
 - `SessionMiddleware` and the `sa_session` cookie are gone; `logout`/`refresh` no longer depend on `current_user` so a logout after token expiry still revokes
 - `DESIGN.md` loop whitelist amended to admit the pagoda; "not a marketing site" amended to note the one exception
+- Fundamentals provider chain (Plan B, same branch): yFinance off the hot path (`ENABLE_YFINANCE=1` opts back in); Stooq CSV for 5y OHLC + quote price, screener.in P&L/BS/CF scrape + pure `ratios_math` for ~22-24/30 catalog ratios (forecast/ownership keys stay `no_data`); per-symbol file cache (`data/prices/`, `data/statements/`) keeps SQLite lean with zero schema change; plan `docs/superpowers/plans/2026-10-04-phase-1-8-fundamentals-plan-b.md`
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

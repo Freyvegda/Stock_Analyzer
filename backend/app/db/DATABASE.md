@@ -10,6 +10,12 @@ Rationale: zero setup, zero cost, single-file backup. 500 stocks x 5yr daily pri
 
 **Hard rule: schema stays Postgres-compatible.** No SQLite-only column types, no SQLite-specific SQL. If scale ever demands it, swap = change connection string only. Mongo/NoSQL NOT used — documents live on the filesystem (`data/docs/{symbol}/`), their metadata + AI results in relational tables.
 
+**Fundamentals provider chain (Phase 1.8, no schema change):** OHLC lives in
+`data/prices/{SYMBOL}.csv` per symbol and statements in
+`data/statements/{SYMBOL}.json` (30d TTL) — both outside SQLite. The
+`fundamentals`/`company_profiles` write paths are unchanged; only the provider
+behind them swapped (composite: Stooq + screener + math).
+
 ## Tables (12)
 
 Defined in `backend/app/db/models.py`. SQLAlchemy 2.x typed mappings (`Mapped[...]`).

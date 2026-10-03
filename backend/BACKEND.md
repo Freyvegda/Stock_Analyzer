@@ -16,7 +16,7 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 
 - Python 3.10, FastAPI, uvicorn
 - SQLAlchemy 2.x + SQLite (`data/stockanalyzer.db`) — schema must stay Postgres-compatible (no SQLite-only types)
-- yfinance (prices + some fundamentals, `.NS` tickers), screener.in (fundamentals/doc links), NSE/BSE announcement endpoints (PDFs)
+- yfinance (legacy fallback, off by default), Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements), NSE/BSE announcement endpoints (PDFs)
 - pdfplumber (PDF text), google-generativeai (Gemini Flash), xgboost + scikit-learn, pandas, pyyaml, httpx
 - pytest (tests must run OFFLINE — mock all network)
 
@@ -41,7 +41,12 @@ backend/
 │   │   └── deps.py
 │   ├── data/
 │   │   ├── provider.py    # DataProvider ABC — THE extension point
-│   │   ├── yfinance_impl.py
+│   │   ├── yfinance_impl.py   # legacy fallback (ENABLE_YFINANCE=1 opts in)
+│   │   ├── stooq_impl.py      # 5y daily OHLC + quote price (primary)
+│   │   ├── screener_statements.py  # P&L/BS/CF scrape + data/statements cache
+│   │   ├── ratios_math.py     # pure statements+price -> catalog ratios
+│   │   ├── price_cache.py     # data/prices/{SYM}.csv file cache (DB stays lean)
+│   │   ├── composite_impl.py  # default chain (build_default_provider)
 │   │   ├── screener_impl.py
 │   │   └── nse_impl.py
 │   ├── screener/
@@ -78,7 +83,7 @@ backend/
 
 ## Architectural Rules (do not break)
 
-1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/nse directly. Methods: `list_stocks()`, `fundamentals(symbol)`, `ohlc(symbol, years=5)`, `filings(symbol)`.
+1. **DataProvider interface** (`app/data/provider.py`) is the boundary for ALL external data. Consumers never import yfinance/screener/stooq directly. Methods: `list_stocks()`, `fundamentals(symbol)`, `ohlc(symbol, years=5)`, `filings(symbol)`. Default is `composite_impl.build_default_provider()` (Stooq + screener + math, yFinance off unless `ENABLE_YFINANCE=1`). Prices persist as `data/prices/{SYM}.csv` + statements as `data/statements/{SYM}.json` — OHLC never bloats SQLite.
 2. **Model interface** (`app/models/base.py`) — `train(symbol, rows)`, `predict(symbol, rows) -> signal`. XGBoost is primary; LSTM is an optional experiment behind the same interface. NO custom transformer (overfits ~1250 daily rows).
 3. **Pipeline stages are independent endpoints**, triggered manually from UI buttons. Each stage idempotent: same-day rerun overwrites, never duplicates (composite PKs).
 4. **Per-stock failure isolation**: one bad stock sets `data_status=failed` and the run continues. Never let 1 failure kill a 500-stock job.
@@ -106,7 +111,7 @@ backend/
 Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
   -> engine.py staged gates on the snapshot -> shortlist (~10 symbols)
-  -> fundamentals(symbol) for EVERY symbol whose snapshot is not from today -> fundamentals table
+  -> fundamentals(symbol) for EVERY symbol whose snapshot is not from today (composite: screener statements + Stooq quote + ratios_math) -> fundamentals table
      (data_status ok|failed) + company_profiles upsert; same-day reruns cost zero calls
   -> fresh values re-checked; a failed fetch keeps the stored row -> screen_runs.shortlisted_json (~10 symbols)
   -> POST /screen/run batch (Phase 1.8): one prepare stage, then the active screen (triggered_by=manual)
@@ -116,7 +121,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + reports for the
      active screen and the 3 most-used screens
      + profile + digest sections (main_ratios | has | done | other_groups), computed per caller
-  -> /stock/{symbol}/ohlc: 5y daily bars via provider -> memory TTL cache (900 s) -> slice + aggregate
+  -> /stock/{symbol}/ohlc: 5y daily bars via provider -> file cache data/prices/{SYM}.csv -> memory TTL cache (900 s) -> slice + aggregate
      (1d/15d/1mo). Daily bars are NEVER written to the DB.
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
