@@ -17,7 +17,7 @@ describe('PriceAccordion', () => {
     render(<Provider><PriceAccordion candles={candles()} /></Provider>)
 
     expect(screen.getByTestId('price-accordion')).toBeInTheDocument()
-    expect(screen.getAllByText('110').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('110.00').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByTestId('delta')).toBeInTheDocument()
     expect(screen.getByText('2026-09-26')).toBeInTheDocument()
 

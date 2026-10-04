@@ -61,6 +61,18 @@ RATIO_CATALOG: list[RatioSpec] = [
         100.0, "heldPercentInstitutions",
     ),
     RatioSpec("heldPercentInsiders", "Insider Holding", "raw", "min", "%", "Ownership", 100.0, "heldPercentInsiders"),
+    RatioSpec("earningsYield", "Earnings Yield", "raw", "min", "%", "Valuation", 100.0, "earningsYield"),
+    RatioSpec("fcfYield", "FCF Yield", "raw", "min", "%", "Valuation", 100.0, "fcfYield"),
+    RatioSpec(
+        "operatingCashflowMargin", "OCF Margin", "raw", "min", "%", "Profitability",
+        100.0, "operatingCashflowMargin",
+    ),
+    RatioSpec("assetTurnover", "Asset Turnover", "raw", "min", "×", "Efficiency", 1.0, "assetTurnover"),
+    RatioSpec("inventoryDays", "Inventory Days", "raw", "max", "days", "Efficiency", 1.0, "inventoryDays"),
+    RatioSpec("debtorDays", "Debtor Days", "raw", "max", "days", "Efficiency", 1.0, "debtorDays"),
+    RatioSpec("cashRatio", "Cash Ratio", "raw", "min", "×", "Liquidity", 1.0, "cashRatio"),
+    RatioSpec("interestCoverage", "Interest Coverage", "raw", "min", "×", "Leverage", 1.0, "interestCoverage"),
+    RatioSpec("pledgedPct", "Pledged Holding", "raw", "max", "%", "Ownership", 100.0, "pledgedPct"),
 ]
 
 CATALOG_BY_KEY: dict[str, RatioSpec] = {spec.key: spec for spec in RATIO_CATALOG}

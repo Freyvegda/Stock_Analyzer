@@ -334,7 +334,7 @@ describe('FundamentalsLayout', () => {
       })
       expect(jobsCalls).toBe(2)
       expect(latestCalls).toBe(2)
-      expect(screen.getByTestId('job-status')).toHaveTextContent('Refreshed')
+      expect(screen.getByTestId('job-status')).toHaveTextContent('Evaluated')
       expect(screen.getByTestId('probe-busy').textContent).toBe('')
 
       await act(async () => {

@@ -31,6 +31,8 @@ MAIN_FACTS: list[FactSpec] = [
     FactSpec("roce", "ROCE", "%", "derived"),
     FactSpec("debt_to_equity", "Debt/Equity", "×", "derived"),
     FactSpec("dividendYield", "Dividend Yield", "%", "raw", "dividendYield"),
+    FactSpec("earningsYield", "Earnings Yield", "%", "raw", "earningsYield", 100.0),
+    FactSpec("fcfYield", "FCF Yield", "%", "raw", "fcfYield", 100.0),
 ]
 
 #: Balance-sheet facts — "what the company has". Currency values scale to ₹ cr.
@@ -46,6 +48,8 @@ BALANCE_FACTS: list[FactSpec] = [
     FactSpec("bookValue", "Book Value", "₹", "raw", "bookValue"),
     FactSpec("currentRatio", "Current Ratio", "×", "raw", "currentRatio"),
     FactSpec("quickRatio", "Quick Ratio", "×", "raw", "quickRatio"),
+    FactSpec("cashRatio", "Cash Ratio", "×", "raw", "cashRatio"),
+    FactSpec("interestCoverage", "Interest Coverage", "×", "raw", "interestCoverage"),
 ]
 
 #: Performance facts — "what the company has done". Fractions scale to %.
@@ -59,6 +63,13 @@ PERFORMANCE_FACTS: list[FactSpec] = [
     FactSpec("profitMargins", "Net Margin", "%", "raw", "profitMargins", 100.0),
     FactSpec("returnOnAssets", "ROA", "%", "raw", "returnOnAssets", 100.0),
     FactSpec("payoutRatio", "Payout Ratio", "%", "raw", "payoutRatio", 100.0),
+    FactSpec(
+        "operatingCashflowMargin", "OCF Margin", "%", "raw",
+        "operatingCashflowMargin", 100.0,
+    ),
+    FactSpec("assetTurnover", "Asset Turnover", "×", "raw", "assetTurnover"),
+    FactSpec("inventoryDays", "Inventory Days", "days", "raw", "inventoryDays"),
+    FactSpec("debtorDays", "Debtor Days", "days", "raw", "debtorDays"),
 ]
 
 #: Catalog keys already shown above — excluded from "other ratios".

@@ -32,7 +32,7 @@ export function Delta({
         className,
       )}
     >
-      <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+      <Icon size={14} strokeWidth={1.75} aria-hidden="true" className="shrink-0" />
       {`${sign}${Math.abs(value).toFixed(decimals)}${suffix}`}
     </span>
   )

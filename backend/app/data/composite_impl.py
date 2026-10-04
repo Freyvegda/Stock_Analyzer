@@ -34,6 +34,7 @@ from app.data.provider import DataProvider
 from app.data.ratios_math import compute_ratios, derive_missing
 from app.data.screener_statements import fetch_statements
 from app.data.stooq_impl import StooqProvider, stooq_candidates
+from app.data.yahoo_chart_impl import YahooChartProvider
 from app.data.yfinance_impl import (
     YFinanceProvider,
     is_rate_limit_error,
@@ -51,6 +52,24 @@ DEFAULT_STATEMENTS_DIR = os.path.join(_REPO_ROOT, "data", "statements")
 #: Screen-critical derived ratios. Per-field yfinance fill only touches these
 #: when they are None — never overwrites good math values.
 _DERIVED_KEYS: tuple[str, ...] = ("pe", "pb", "roe", "roce", "debt_to_equity", "market_cap")
+
+
+class _CacheMiss(Exception):
+    """Internal: fresh file cache missed, run the upstream chain."""
+
+
+def _covers(rows: list[dict], years: int) -> bool:
+    """True when cached span covers the requested years (60d tolerance)."""
+    if not rows:
+        return False
+    try:
+        from datetime import date as _date
+
+        first = _date.fromisoformat(rows[0]["time"])
+        last = _date.fromisoformat(rows[-1]["time"])
+        return (last - first).days >= int(years) * 365 - 60
+    except (KeyError, ValueError, IndexError):
+        return False
 
 
 def _missing_reasons(statements: dict, price: float | None, computed: dict) -> dict:
@@ -375,43 +394,65 @@ class CompositeProvider(DataProvider):
         }
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        """File cache first; Stooq on miss/stale; yfinance last-resort for price.
+        """File cache first; Stooq, then Yahoo chart JSON, then yfinance.
 
-        Stooq times out on some networks with a cold file cache — without a
-        fallback /ohlc answers 502 and the stock screen shows "No price data".
-        yfinance fills that gap (best-effort, per-stock isolated) even when
-        the hot path is off; successes persist to the file cache.
+        Fast path: fresh file cache returns with zero network so the chart
+        paints instantly and upstreams never see rapid re-clicks. On
+        miss/stale each upstream runs once, isolated; first non-empty wins
+        and merges into the file cache (1y fill + 5y expand never lose
+        bars). All fail -> stale cache when present, else raise.
         """
         symbol = (symbol or "").strip().upper()
+        self.last_ohlc_source: str | None = None
         stale = price_cache.read_cached(symbol, self.price_dir)
         try:
-            rows = price_cache.get_or_fetch(
+            fresh = price_cache.get_or_fetch(
                 symbol,
-                lambda: StooqProvider().ohlc(symbol, years=years),
+                lambda: (_ for _ in ()).throw(_CacheMiss()),
                 self.price_dir,
                 ttl_hours=self.price_ttl_hours,
             )
-            if not rows and stale:
-                return stale
+            if fresh and _covers(fresh, years):
+                self.last_ohlc_source = "cache"
+                return fresh
+            if fresh and not _covers(fresh, years):
+                stale = fresh
+        except _CacheMiss:
+            pass
+        except Exception:  # noqa: BLE001 — fall through to upstreams
+            pass
+        for name, build in (
+            ("stooq", StooqProvider),
+            ("yahoo", YahooChartProvider),
+        ):
+            try:
+                rows = build().ohlc(symbol, years=years)
+            except Exception as e:  # noqa: BLE001 — next source
+                logger.warning("ohlc %s failed for %s: %s", name, symbol, e)
+                continue
             if rows:
-                return rows
-        except Exception:  # noqa: BLE001 — stale/YF fallback below
-            cached = price_cache.read_cached(symbol, self.price_dir)
-            if cached:
-                return cached
+                try:
+                    merged = price_cache.merge_cached(symbol, rows, self.price_dir)
+                except Exception:  # noqa: BLE001 — cache never breaks price
+                    merged = rows
+                self.last_ohlc_source = name
+                return merged
         try:
             rows = YFinanceProvider().ohlc(symbol, years=years)
-        except Exception:  # noqa: BLE001 — no source left, surface upstream
+        except Exception:  # noqa: BLE001 — stale below, else surface
             if stale:
+                self.last_ohlc_source = "cache-stale"
                 return stale
             raise
         if rows:
             try:
-                price_cache.write_cached(symbol, rows, self.price_dir)
-            except Exception:  # noqa: BLE001 — cache write never breaks price
-                pass
-            return rows
+                merged = price_cache.merge_cached(symbol, rows, self.price_dir)
+            except Exception:  # noqa: BLE001 — cache never breaks price
+                merged = rows
+            self.last_ohlc_source = "yfinance"
+            return merged
         if stale:
+            self.last_ohlc_source = "cache-stale"
             return stale
         return rows
 

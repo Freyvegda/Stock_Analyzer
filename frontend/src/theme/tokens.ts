@@ -144,6 +144,10 @@ export interface ChartPalette {
   candleDown: string
   strategy: string
   benchmark: string
+  /** Axis tick text — must stay AA-visible on the card surface in both modes. */
+  axisText: string
+  /** Axis border line — a visible (not 6% grid) edge for both scales. */
+  axisBorder: string
 }
 
 /** Concrete values for chart libraries (lightweight-charts/recharts) — no hardcoded hex in charts. */
@@ -155,6 +159,8 @@ export const chartPalette: { dark: ChartPalette; light: ChartPalette } = {
     candleDown: dark.loss,
     strategy: dark.primary,
     benchmark: dark.chart2,
+    axisText: dark.foreground,
+    axisBorder: dark.mutedForeground,
   },
   light: {
     grid: 'rgba(20, 24, 31, 0.06)',
@@ -163,6 +169,8 @@ export const chartPalette: { dark: ChartPalette; light: ChartPalette } = {
     candleDown: light.loss,
     strategy: light.primary,
     benchmark: light.chart2,
+    axisText: light.foreground,
+    axisBorder: light.mutedForeground,
   },
 }
 

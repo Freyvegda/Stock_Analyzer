@@ -83,6 +83,13 @@ export interface ExtraRun {
   error: string | null
 }
 
+export interface ScreenVerdict {
+  passed: number
+  failed: number
+  no_data: number
+  total: number
+}
+
 export interface ScreenRunResult {
   run_id: number
   shortlisted: ShortlistRow[]
@@ -92,12 +99,14 @@ export interface ScreenRunResult {
   stale?: boolean
   total: number
   extra_runs?: ExtraRun[]
+  verdict?: ScreenVerdict
 }
 
 export interface LatestScreen {
   run_id: number
   run_date: string
   shortlisted: ShortlistRow[]
+  verdict?: ScreenVerdict
 }
 
 export type ChartRange = '6m' | '1y' | '2y' | '5y'
@@ -217,6 +226,8 @@ export interface OhlcResponse {
   interval: ChartInterval
   as_of: string
   candles: Candle[]
+  source?: string
+  stale?: boolean
 }
 
 export interface StockListRow {
@@ -264,6 +275,8 @@ export interface RunJob {
   universe_total: number
   universe_done: number
   universe_failed: number
+  /** Live active-screen criteria verdict; absent on pre-migration payloads. */
+  verdict?: ScreenVerdict
   items: RunJobItem[]
 }
 

@@ -66,6 +66,18 @@ _LABEL_MAP = {
     "promoters": "_promoters",
     "fiis": "_fiis",
     "diis": "_diis",
+    "interest": "interest",
+    "finance cost": "interest",
+    "finance costs": "interest",
+    "interest cost": "interest",
+    "trade receivables": "receivables",
+    "sundry debtors": "receivables",
+    "receivables": "receivables",
+    "trade payables": "payables",
+    "sundry creditors": "payables",
+    "payables": "payables",
+    "pledged": "_pledged",
+    "pledged %": "_pledged",
 }
 
 
@@ -94,7 +106,7 @@ _PARTIAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|trailing|\d+\s*m\b", re.IGNOR
 _NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing|\d+\s*m\b", re.IGNORECASE)
 
 #: Holdings labels stay readable on quarterly shareholding tables.
-_HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis"})
+_HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis", "_pledged"})
 
 #: Money fields (Rs cr base) vs per-share/price fields (never unit-scaled).
 _MONEY_FIELDS = frozenset(
@@ -116,6 +128,9 @@ _MONEY_FIELDS = frozenset(
         "cogs",
         "revenue_prev",
         "earnings_prev",
+        "interest",
+        "receivables",
+        "payables",
     }
 )
 
@@ -140,6 +155,10 @@ STATEMENT_FIELDS: frozenset[str] = frozenset(
         "earnings_prev",
         "cogs",
         "price",
+        "interest",
+        "receivables",
+        "payables",
+        "pledged_pct",
     }
 )
 
@@ -470,6 +489,10 @@ def parse_statements(html: str) -> dict:
         "price": price,
         "promoters_pct": promoters,
         "institutions_pct": institutions,
+        "interest": money("interest"),
+        "receivables": money("receivables"),
+        "payables": money("payables"),
+        "pledged_pct": holding("_pledged"),
     }
 
 

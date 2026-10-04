@@ -115,6 +115,9 @@ def job_row(test_db, job_id):
             "universe_total": row.universe_total,
             "universe_done": row.universe_done,
             "universe_failed": row.universe_failed,
+            "verdict_passed": row.verdict_passed,
+            "verdict_failed": row.verdict_failed,
+            "verdict_no_data": row.verdict_no_data,
         }
 
 
@@ -283,6 +286,7 @@ def test_run_snapshot_screen_makes_no_fundamentals_calls(test_db, sign_in):
         {"symbol": "BBB", "failed": ["pe"]},
         {"symbol": "CCC", "failed": ["pe"]},
     ]
+    assert result["verdict"] == {"passed": 1, "failed": 2, "no_data": 0, "total": 3}
     with test_db() as session:
         runs = session.query(ScreenRun).all()
         assert len(runs) == 1
@@ -312,6 +316,47 @@ def test_run_snapshot_screen_same_day_is_not_stale(test_db, sign_in):
     assert result["shortlisted"][0]["data_date"] == date.today().isoformat()
 
 
+def test_snapshot_verdict_counts_survivors_pre_clamp(test_db, sign_in):
+    """12 passers, shortlist 10: verdict.passed is 12, not the clamped 10."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": f"S{i:02d}", **GOOD} for i in range(12)])
+    active = service.list_sets(test_db, user["id"])[0]
+    symbols = [f"S{i:02d}" for i in range(12)]
+    p = MapProvider(
+        data={},
+        universe=[{"symbol": s, "name": s, "sector": "IT", "market_cap": None} for s in symbols],
+    )
+
+    result = service.run_snapshot_screen(p, test_db, user, default_criteria(), 10, active["id"])
+
+    assert len(result["shortlisted"]) == 10
+    assert result["verdict"] == {"passed": 12, "failed": 0, "no_data": 0, "total": 12}
+
+
+def test_snapshot_verdict_counts_no_data_symbols(test_db, sign_in):
+    """Symbols with no stored row count as no_data, not failed."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    active = service.list_sets(test_db, user["id"])[0]
+    p = MapProvider(data={})  # universe AAA/BBB/CCC, only AAA stored
+
+    result = service.run_snapshot_screen(p, test_db, user, default_criteria(), 10, active["id"])
+
+    assert result["verdict"] == {"passed": 1, "failed": 0, "no_data": 2, "total": 3}
+
+
+def test_latest_screen_carries_verdict(test_db, sign_in):
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}])
+    active = service.list_sets(test_db, user["id"])[0]
+    p = MapProvider(data={})
+    service.run_snapshot_screen(p, test_db, user, default_criteria(), 10, active["id"])
+
+    latest = service.latest_screen(test_db, user["id"])
+
+    assert latest["verdict"] == {"passed": 1, "failed": 2, "no_data": 0, "total": 3}
+
+
 def test_evaluate_stored_screen_reports_rejected_first_gate(test_db):
     today = date.today().isoformat()
     seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}], date_iso=today)
@@ -321,7 +366,7 @@ def test_evaluate_stored_screen_reports_rejected_first_gate(test_db):
     ]
 
     with test_db() as session:
-        shortlist, rejected, stale = service.evaluate_stored_screen(
+        shortlist, rejected, stale, verdict = service.evaluate_stored_screen(
             session, stocks, default_criteria(), 10, True, today
         )
         session.commit()
@@ -330,6 +375,7 @@ def test_evaluate_stored_screen_reports_rejected_first_gate(test_db):
     assert [r["symbol"] for r in shortlist] == ["AAA"]
     assert rejected == [{"symbol": "BBB", "failed": ["pe"]}]
     assert stale is True  # provider_stale=True, even though rows are same-day
+    assert verdict == {"passed": 1, "failed": 1, "no_data": 0, "total": 2}
 
 
 def test_persist_fetch_batch_overwrites_same_day(test_db):
@@ -417,6 +463,7 @@ def test_execute_job_refreshes_stale_and_refines(test_db, sign_in):
     job = job_row(test_db, job_id)
     assert job["status"] == "done" and job["error"] is None and job["finished_at"] is not None
     assert (job["universe_total"], job["universe_done"], job["universe_failed"]) == (1, 1, 0)
+    assert (job["verdict_passed"], job["verdict_failed"], job["verdict_no_data"]) == (0, 1, 0)
     assert p.calls == ["AAA"]
     assert p.cached_payloads["AAA"]["pe"] == GOOD["pe"]  # stored snapshot passed as cached=
     item = get_item(test_db, job_id, active["id"])
@@ -426,6 +473,21 @@ def test_execute_job_refreshes_stale_and_refines(test_db, sign_in):
     with test_db() as session:
         row = session.get(Fundamental, ("AAA", date.today().isoformat()))
         assert row.data_status == "ok" and row.pe == 30
+
+
+def test_job_verdict_tracks_active_screen_live(test_db, sign_in):
+    """Verdict follows the fresh snapshot: a passing stored row that regresses
+    fresh flips passed -> failed on the job row."""
+    user = sign_in()
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}, {"symbol": "CCC", **BAD}])
+    p = MapProvider(data={"AAA": GOOD, "BBB": GOOD, "CCC": GOOD})
+
+    job_id = run_job(test_db, user, p)
+
+    job = job_row(test_db, job_id)
+    assert (job["verdict_passed"], job["verdict_failed"], job["verdict_no_data"]) == (3, 0, 0)
+    projected = service.latest_job(test_db, user["id"])
+    assert projected["verdict"] == {"passed": 3, "failed": 0, "no_data": 0, "total": 3}
 
 
 def test_execute_job_same_day_rerun_makes_no_calls(test_db, sign_in):
@@ -441,6 +503,8 @@ def test_execute_job_same_day_rerun_makes_no_calls(test_db, sign_in):
 
     assert p.calls == []
     assert job_row(test_db, job_id)["status"] == "done"
+    # Full-universe counters: a same-day rerun covers all 3 stocks, not 0/0.
+    assert (job_row(test_db, job_id)["universe_total"], job_row(test_db, job_id)["universe_done"], job_row(test_db, job_id)["universe_failed"]) == (3, 3, 0)
     latest = service.latest_screen(test_db, user["id"])
     assert [r["symbol"] for r in latest["shortlisted"]] == ["AAA"]
 

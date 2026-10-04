@@ -300,17 +300,30 @@ def get_ohlc(
     """Sliced/aggregated daily candles; nothing is written to the database."""
     with session_factory() as session:
         stock = _load_stock(session, symbol)
+    fetched = False
+
+    def _load() -> list[dict]:
+        nonlocal fetched
+        fetched = True
+        return provider.ohlc(symbol, years=5)
+
     try:
-        rows = cache.get_or_fetch(symbol, lambda: provider.ohlc(symbol, years=5))
+        rows = cache.get_or_fetch(symbol, _load)
     except Exception as e:  # noqa: BLE001 — per-stock isolation
         logger.warning("ohlc fetch failed for %s: %s", symbol, e)
         raise PriceDataUnavailable(f"Price data unavailable: {e}") from e
     if not rows:
         raise PriceDataUnavailable("Price data unavailable: no daily bars")
+    if fetched:
+        source = getattr(provider, "last_ohlc_source", None) or "live"
+    else:
+        source = "memory"
     return {
         "symbol": stock.symbol,
         "range": range_key,
         "interval": interval,
         "as_of": rows[-1]["time"],
         "candles": aggregate_candles(slice_range(rows, range_key), interval),
+        "source": source,
+        "stale": source == "cache-stale",
     }

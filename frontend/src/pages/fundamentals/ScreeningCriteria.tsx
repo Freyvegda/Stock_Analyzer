@@ -29,6 +29,7 @@ export default function ScreeningCriteria() {
     ratios,
     rows,
     summary,
+    verdict,
     lastRunDate,
     job,
     busySetIds,
@@ -266,7 +267,7 @@ export default function ScreeningCriteria() {
 
           {job !== null ? (
             <div className="mt-4">
-              <RunProgress job={job} />
+              <RunProgress job={job} verdict={verdict} />
             </div>
           ) : null}
 

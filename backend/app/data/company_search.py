@@ -44,6 +44,27 @@ def _clean(text: str | None) -> str | None:
     return collapsed or None
 
 
+def is_index_summary(title: str | None, text: str | None) -> bool:
+    """True when a candidate description is about a market index, not a company.
+
+    The Wikipedia fallback searches bare symbols (e.g. "ACME NSE India
+    company"), whose top hit can be the NIFTY 500 index page — its extract
+    then renders as the company's own description. Index pages are
+    unmistakable: the title names the index, or the body carries index
+    statistics no company summary contains ("free float market
+    capitalization" beside turnover/rebalance/base-date). A plain "NIFTY 50
+    constituent" mention in real company text never matches.
+    """
+    if "nifty" in (title or "").lower() or "sensex" in (title or "").lower():
+        return True
+    body = (text or "").lower()
+    if not body:
+        return False
+    return "free float market capitali" in body and (
+        "total turnover" in body or "rebalanc" in body or "base date" in body
+    )
+
+
 def _pick_description(soup: BeautifulSoup) -> str | None:
     best: str | None = None
     for sel in _SNIPPET_SELECTORS:
@@ -116,6 +137,8 @@ def fetch_search_identity(symbol: str, http_get=None) -> dict:
             soup = BeautifulSoup(text, "lxml")
             desc = _pick_description(soup)
             site = _pick_website(soup)
+            if desc and is_index_summary(None, desc):
+                desc = None  # index overview, not this company — try next source
             if desc and not out["longBusinessSummary"]:
                 out["longBusinessSummary"] = desc
             if site and not out["website"]:
@@ -170,6 +193,8 @@ def fetch_wikipedia_summary(symbol: str, company_name: str | None = None, http_g
                 continue
             extract = _clean(summary.get("extract"))
             if extract and len(extract) >= 200:
+                if is_index_summary(summary.get("title"), extract):
+                    continue  # index page, not the company — try next title
                 return extract
         except Exception as e:  # noqa: BLE001 — one title never kills the symbol
             logger.debug("wikipedia direct failed for %s/%s: %s", symbol, title, e)
@@ -265,6 +290,8 @@ def fetch_wikipedia_summary(symbol: str, company_name: str | None = None, http_g
                         continue
                     extract = _clean(summary.get("extract"))
                     if extract and len(extract) >= 200:
+                        if is_index_summary(summary.get("title"), extract):
+                            continue  # index page, not the company
                         return extract
                 except Exception as e:  # noqa: BLE001 — one title never kills search
                     logger.debug("wikipedia summary failed for %s/%s: %s", symbol, title, e)

@@ -92,6 +92,18 @@ def test_list_stocks_too_few_rows_is_rejected(tmp_path, monkeypatch):
         YFinanceProvider().list_stocks()
 
 
+def test_list_stocks_skips_dummy_guard_rows(tmp_path, monkeypatch):
+    """DUMMY* guard rows never enter the NSE corpus, from network or cache."""
+    body = big_csv() + "DUMMYHEG,Dummy HEG Ltd,Capital Goods\n"
+    monkeypatch.setattr(yfinance_impl, "CACHE_PATH", str(tmp_path / "missing.csv"))
+    monkeypatch.setattr(yfinance_impl.httpx, "get", lambda *a, **k: FakeResponse(body))
+
+    stocks = YFinanceProvider().list_stocks()
+
+    assert "DUMMYHEG" not in [s["symbol"] for s in stocks]
+    assert len(stocks) == 120
+
+
 def fake_ticker_class(info, financials=None, balance_sheet=None):
     class FakeTicker:
         def __init__(self, ticker: str):

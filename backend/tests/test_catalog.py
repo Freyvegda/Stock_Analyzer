@@ -74,6 +74,10 @@ def test_catalog_matches_math_engine_output():
         "symbol": "TEST",
         "promoters_pct": 0.5,
         "institutions_pct": 0.2,
+        "interest": 10.0,
+        "receivables": 60.0,
+        "payables": 40.0,
+        "pledged_pct": 0.02,
     }
     out = compute_ratios(base)
     stored = {"pe", "pb", "roe", "roce", "debt_to_equity", "market_cap"} | set(out["raw"])

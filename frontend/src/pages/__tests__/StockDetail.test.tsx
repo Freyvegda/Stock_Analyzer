@@ -186,9 +186,13 @@ describe('StockDetail', () => {
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByRole('option', { name: /quality/i })).toBeInTheDocument()
     expect(screen.getByText('Below your screen')).toBeInTheDocument()
-    expect(screen.getByText('Risk')).toBeInTheDocument()
+    expect(screen.getByTestId('fundamentals-panel')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /valuation/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /profitability/i })).toBeInTheDocument()
     expect(screen.getAllByText('22.1').length).toBeGreaterThanOrEqual(2) // report row + metric tile
+    await user.click(screen.getByRole('tab', { name: /profitability/i }))
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByRole('button', { name: /about roe/i })).toBeInTheDocument()
     expect(screen.getByText('Data as of 2026-09-26')).toBeInTheDocument()
     expect(screen.getByText('#2')).toBeInTheDocument()
     expect(await screen.findByTestId('stock-chart-stub')).toHaveTextContent('366 candles')
@@ -333,24 +337,22 @@ describe('StockDetail', () => {
     expect(halves.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('orders ratios and company facts below the chart', async () => {
+  it('orders the fundamentals explorer below the chart with technical nav', async () => {
     mockLoads()
     renderPage()
     await screen.findAllByText('Passes your screen')
 
     const chart = screen.getByTestId('price-chart')
-    const ratios = screen.getByText('Main fundamental ratios')
-    const has = screen.getByText('What it has')
-    const done = screen.getByText("What it's done")
-    const other = screen.getByText('All other ratios')
+    const panel = screen.getByTestId('fundamentals-panel')
 
-    const follows = (first: HTMLElement, second: HTMLElement) =>
-      expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-
-    follows(chart, ratios)
-    follows(ratios, has)
-    follows(has, done)
-    follows(done, other)
+    expect(chart.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /valuation/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /profitability/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /financial scale/i })).toBeInTheDocument()
+    expect(screen.queryByText('Main fundamental ratios')).not.toBeInTheDocument()
+    expect(screen.queryByText('What it has')).not.toBeInTheDocument()
+    expect(screen.queryByText("What it's done")).not.toBeInTheDocument()
+    expect(screen.queryByText('All other ratios')).not.toBeInTheDocument()
   })
 
   it('renders the company description and industry', async () => {
@@ -422,25 +424,31 @@ describe('StockDetail', () => {
     expect(screen.queryByText('All other ratios')).not.toBeInTheDocument()
   })
 
-  it('renders has, done and other-ratio tiles', async () => {
+  it('renders scale, growth and other tiles behind technical nav', async () => {
+    const user = userEvent.setup()
     mockLoads()
     renderPage()
     await screen.findAllByText('Passes your screen')
 
-    expect(screen.getByText('What it has')).toBeInTheDocument()
+    expect(screen.getByTestId('fundamentals-panel')).toBeInTheDocument()
+    expect(screen.getAllByText('P/E').length).toBeGreaterThanOrEqual(1)
+
+    await user.click(screen.getByRole('tab', { name: /financial scale/i }))
     expect(screen.getByText('Revenue')).toBeInTheDocument()
     expect(screen.getByText('250000.0')).toBeInTheDocument()
-    expect(screen.getByText('Main fundamental ratios')).toBeInTheDocument()
-    expect(screen.getByText("What it's done")).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /growth/i }))
+    expect(screen.getByText('Revenue Growth')).toBeInTheDocument()
   })
 
-  it('renders the other groups by category', async () => {
+  it('renders unmapped metrics under Other with help controls', async () => {
+    const user = userEvent.setup()
     mockLoads()
     renderPage()
     await screen.findAllByText('Passes your screen')
 
-    expect(screen.getByText('All other ratios')).toBeInTheDocument()
-    expect(screen.getByText('Risk')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: /other/i }))
     expect(screen.getByText('Beta')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /about beta/i })).toBeInTheDocument()
   })
 })

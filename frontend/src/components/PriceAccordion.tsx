@@ -2,7 +2,7 @@ import { useId, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Text } from '@chakra-ui/react'
 import type { Candle } from '../api/types'
-import { getLatestPrice } from '../lib/price'
+import { formatPrice, getLatestPrice } from '../lib/price'
 import { Delta } from './ui/Delta'
 import { Num } from './ui/Num'
 import { cn } from '@/lib/utils'
@@ -60,9 +60,9 @@ export function PriceAccordion({
           ) : shownPrice !== null ? (
             <span className="ml-auto flex items-center gap-3">
               <Text fontSize="sm" fontWeight="semibold">
-                <Num>{shownPrice}</Num>
+                <Num>{formatPrice(shownPrice)}</Num>
               </Text>
-              {latest?.change !== null && latest?.change !== undefined ? <Delta value={latest.change} decimals={1} /> : null}
+              {latest?.change !== null && latest?.change !== undefined ? <Delta value={latest.change} decimals={2} /> : null}
               {shownAsOf !== null ? (
                 <Text fontSize="xs" color="fg.muted">
                   <Num>{shownAsOf}</Num>
@@ -83,17 +83,17 @@ export function PriceAccordion({
           {latest !== null ? (
             <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {[
-                { label: 'Open', value: latest.open },
-                { label: 'High', value: latest.high },
-                { label: 'Low', value: latest.low },
-                { label: 'Close', value: latest.price },
-                { label: 'Volume', value: latest.volume },
-                { label: 'Prev close', value: latest.prevClose },
+                { label: 'Open', value: latest.open, money: true },
+                { label: 'High', value: latest.high, money: true },
+                { label: 'Low', value: latest.low, money: true },
+                { label: 'Close', value: latest.price, money: true },
+                { label: 'Volume', value: latest.volume, money: false },
+                { label: 'Prev close', value: latest.prevClose, money: true },
               ].map((row) => (
                 <div key={row.label} className="rounded-md border border-border bg-background/40 p-3">
                   <dt className="text-xs text-muted-foreground">{row.label}</dt>
                   <dd className="mt-1 text-sm">
-                    {row.value === null ? '—' : <Num>{row.value}</Num>}
+                    {row.value === null ? '—' : <Num>{row.money ? formatPrice(row.value) : row.value}</Num>}
                   </dd>
                 </div>
               ))}
@@ -103,7 +103,7 @@ export function PriceAccordion({
               <div className="rounded-md border border-border bg-background/40 p-3">
                 <dt className="text-xs text-muted-foreground">Close</dt>
                 <dd className="mt-1 text-sm">
-                  <Num>{shownPrice}</Num>
+                  <Num>{formatPrice(shownPrice)}</Num>
                 </dd>
               </div>
               {shownAsOf !== null ? (

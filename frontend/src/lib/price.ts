@@ -20,6 +20,11 @@ export interface LatestPrice {
   volume: number
 }
 
+/** Price always renders with exactly two decimals (₹ prices, never raw floats). */
+export function formatPrice(value: number): string {
+  return value.toFixed(2)
+}
+
 /** Last candle wins; change needs two bars, OHLCV comes from the last bar. */
 export function getLatestPrice(candles: Candle[]): LatestPrice | null {
   if (candles.length === 0) return null

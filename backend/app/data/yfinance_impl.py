@@ -73,6 +73,8 @@ def _parse_stocks(text: str) -> list[dict]:
         symbol = (row.get("Symbol") or "").strip()
         if not symbol:
             continue
+        if symbol.upper().startswith("DUMMY"):
+            continue  # test-guard rows never belong to the NSE corpus
         stocks.append(
             {
                 "symbol": symbol,

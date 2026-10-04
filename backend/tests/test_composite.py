@@ -15,6 +15,17 @@ def _no_identity_network(monkeypatch):
     monkeypatch.setattr(comp_mod, "fetch_search_identity", lambda *a, **k: {})
     monkeypatch.setattr(comp_mod, "fetch_yfinance_identity", lambda *a, **k: {})
 
+    class _DeadYahoo:
+        def ohlc(self, symbol, years=5):
+            raise RuntimeError("yahoo offline in unit tests")
+
+    monkeypatch.setattr(comp_mod, "YahooChartProvider", lambda: _DeadYahoo())
+    monkeypatch.setattr(
+        comp_mod.YFinanceProvider, "ohlc", lambda self, symbol, years=5: (_ for _ in ()).throw(
+            RuntimeError("yfinance offline in unit tests")
+        ),
+    )
+
 
 def ohlc_rows():
     return [

@@ -118,7 +118,7 @@ describe('StockDetail price', () => {
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     pollFn()
-    const matches = await screen.findAllByText('120')
+    const matches = await screen.findAllByText('120.00')
     expect(matches.length).toBeGreaterThanOrEqual(2)
     const ohlcCalls = mockedApi.get.mock.calls.filter((c) => String(c[0]).includes('/ohlc')).length
     expect(ohlcCalls).toBeGreaterThanOrEqual(2)

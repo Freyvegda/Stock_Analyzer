@@ -102,12 +102,26 @@ def upsert_profile(session, symbol: str, info: dict, updated_at: str) -> None:
 
 
 def read_profile(session, symbol: str) -> dict:
-    """Profile payload for the detail page; absent row → all-`None` keys."""
+    """Profile payload for the detail page; absent row → all-`None` keys.
+
+    Index-like descriptions (a past fetch that stored the NIFTY 500 overview
+    as the company's own text) read back as `None` — the page shows its
+    "no description" state instead of the wrong summary until a refresh
+    overwrites the row.
+    """
+    from app.data.company_search import is_index_summary
+
     row = session.get(CompanyProfile, symbol)
     if row is None:
         return dict.fromkeys(_PROFILE_KEYS)
+    description = row.description
+    try:
+        if description and is_index_summary(None, description):
+            description = None
+    except Exception:  # noqa: BLE001 — guard never breaks the read
+        pass
     return {
-        "description": row.description,
+        "description": description,
         "industry": row.industry,
         "sector": row.sector,
         "website": row.website,

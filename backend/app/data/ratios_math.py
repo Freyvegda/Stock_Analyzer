@@ -29,6 +29,10 @@ BASE_FIELDS: frozenset[str] = frozenset(
         "symbol",
         "promoters_pct",
         "institutions_pct",
+        "interest",
+        "receivables",
+        "payables",
+        "pledged_pct",
     }
 )
 
@@ -78,6 +82,10 @@ def compute_ratios(base: dict) -> dict:
     revenue_prev = _num(base.get("revenue_prev"))
     earnings_prev = _num(base.get("earnings_prev"))
     cogs = _num(base.get("cogs"))
+    interest = _num(base.get("interest"))
+    receivables = _num(base.get("receivables"))
+    payables = _num(base.get("payables"))
+    pledged = _num(base.get("pledged_pct"))
 
     eps = _div(net_income, shares) if net_income is not None else None
     bvps = _div(equity, shares) if equity is not None else None
@@ -133,6 +141,22 @@ def compute_ratios(base: dict) -> dict:
     _div_yield = _div(dividends, market_cap)
     raw["dividendYield"] = _round(_div_yield * 100) if _div_yield is not None else None
     raw["priceToSalesTrailing12Months"] = _round(_div(market_cap, revenue)) if revenue else None
+    raw["earningsYield"] = _round(_div(eps, price)) if price is not None and eps else None
+    raw["assetTurnover"] = _round(_div(revenue, assets)) if revenue is not None and assets else None
+    raw["cashRatio"] = _round(_div(cash if base.get("cash") is not None else None, curr_liab))
+    raw["operatingCashflowMargin"] = _round(_div(op_cf, revenue)) if revenue else None
+    raw["interestCoverage"] = _round(_div(ebit, interest)) if ebit is not None and interest else None
+    raw["inventoryDays"] = (
+        _round(inventory / cogs * 365)
+        if inventory is not None and cogs is not None and cogs > 0
+        else None
+    )
+    raw["debtorDays"] = (
+        _round(receivables / revenue * 365)
+        if receivables is not None and revenue is not None and revenue > 0
+        else None
+    )
+    raw["pledgedPct"] = _round(pledged)
 
     enterprise_value = None
     if market_cap is not None and debt is not None:
@@ -146,6 +170,7 @@ def compute_ratios(base: dict) -> dict:
     raw["freeCashflow"] = _round(None if free_cashflow is None else free_cashflow * 1e7)
     raw["operatingCashflow"] = _round(None if op_cf is None else op_cf * 1e7)
     raw["priceToFreeCashflow"] = _round(_div(market_cap, free_cashflow)) if free_cashflow else None
+    raw["fcfYield"] = _round(_div(free_cashflow, market_cap)) if free_cashflow else None
 
     # yfinance money semantics: rupees here, digest facts ×1e-7 to cr.
     raw["totalRevenue"] = _round(None if revenue is None else revenue * 1e7)

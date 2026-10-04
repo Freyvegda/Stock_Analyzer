@@ -304,3 +304,12 @@ git commit -m "docs: Phase 1.8 frontend run flow"
   interruption keeps cached rows and warns.
 - Busy screens show a running dot and cannot be edited, renamed, deleted, or activated.
 - `npm run test` + `npm run build` clean; docs updated; DESIGN loop whitelist untouched.
+
+## Addendum (2026-10-04): criteria matrix + full-universe counters
+
+- `RunProgress` shows the active-screen 500-stock criteria matrix (Passed/Failed from
+  the live job `verdict`, refreshed per fetch flush; Running/Left live) instead of
+  fetch OK/error counts; segmented gain/loss bar with pulsing remainder, no new keyframes.
+- `run_jobs` gained `verdict_passed/failed/no_data`; run payloads and `/screen/latest`
+  carry `verdict {passed, failed, no_data, total}` (pre-clamp survivors).
+- `_parse_stocks` skips `DUMMY*` guard rows; the stray `DUMMYHEG` cache/DB rows were removed.
