@@ -152,6 +152,7 @@ function mockLoads() {
     if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
     if (path === '/stock/TCS') return Promise.resolve(detail)
     if (path === '/screen/sets') return Promise.resolve(screeningSets)
+    if (path === '/stock/TCS/financials') return Promise.resolve({ symbol: 'TCS', quarterly: [], annual: [], as_of: null, stale: false })
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -229,14 +230,16 @@ describe('StockDetail', () => {
     mockLoads()
     renderPage()
     await screen.findAllByText('Passes your screen')
-    const callsBefore = mockedApi.get.mock.calls.length
+    const ohlcCalls = () =>
+      mockedApi.get.mock.calls.filter(([path]) => String(path).includes('/ohlc')).length
+    const callsBefore = ohlcCalls()
 
     await user.click(screen.getByRole('button', { name: '6M' }))
 
     await waitFor(() =>
       expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('183 candles'),
     )
-    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
+    expect(ohlcCalls()).toBe(callsBefore)
   })
 
   it('switching interval aggregates locally without refetching ohlc', async () => {
@@ -244,14 +247,16 @@ describe('StockDetail', () => {
     mockLoads()
     renderPage()
     await screen.findAllByText('Passes your screen')
-    const callsBefore = mockedApi.get.mock.calls.length
+    const ohlcCalls = () =>
+      mockedApi.get.mock.calls.filter(([path]) => String(path).includes('/ohlc')).length
+    const callsBefore = ohlcCalls()
 
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
 
     await waitFor(() =>
       expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('13 candles'),
     )
-    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
+    expect(ohlcCalls()).toBe(callsBefore)
   })
 
   it('lazy-loads another screen report on expand without refetching detail', async () => {
@@ -262,7 +267,8 @@ describe('StockDetail', () => {
         return Promise.resolve({ ...detail, reports: [detail.reports[0]] })
       if (path === '/screen/sets') return Promise.resolve(screeningSets)
       if (path === '/stock/TCS/report?set_id=2') return Promise.resolve(detail.reports[1])
-      return Promise.reject(new Error(`unexpected GET ${path}`))
+      if (path === '/stock/TCS/financials') return Promise.resolve({ symbol: 'TCS', quarterly: [], annual: [], as_of: null, stale: false })
+    return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     renderPage()
     await screen.findAllByText('Passes your screen')

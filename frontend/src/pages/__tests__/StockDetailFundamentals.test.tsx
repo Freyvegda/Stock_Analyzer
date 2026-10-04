@@ -81,6 +81,7 @@ describe('StockDetail fundamentals explorer', () => {
       if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
       if (path === '/stock/TCS') return Promise.resolve(detail)
       if (path === '/screen/sets') return Promise.resolve([])
+      if (path === '/stock/TCS/financials') return Promise.resolve({ symbol: 'TCS', quarterly: [], annual: [], as_of: null, stale: false })
       return Promise.reject(new Error(`unexpected GET ${path}`))
     })
     render(

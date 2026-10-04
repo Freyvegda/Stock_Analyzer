@@ -252,6 +252,28 @@ export interface StockListResponse {
   rows: StockListRow[]
 }
 
+export interface FinancialPeriod {
+  period: string
+  sales: number | null
+  expenses: number | null
+  operating_profit: number | null
+  other_income: number | null
+  interest: number | null
+  depreciation: number | null
+  pbt: number | null
+  tax: number | null
+  pat: number | null
+  eps: number | null
+}
+
+export interface FinancialsResponse {
+  symbol: string
+  quarterly: FinancialPeriod[]
+  annual: FinancialPeriod[]
+  as_of: string | null
+  stale: boolean
+}
+
 export type RunJobStatus = 'running' | 'done' | 'failed' | 'interrupted'
 export type RunJobItemStatus = 'queued' | 'running' | 'done' | 'failed'
 

@@ -77,6 +77,18 @@ def get_report(symbol: str, set_id: int, user: dict = Depends(current_user)) -> 
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+@router.get("/{symbol}/financials")
+def get_financials(symbol: str, user: dict = Depends(current_user)) -> dict:
+    init_db()
+    normalized = _normalize(symbol)
+    try:
+        return service.get_financials(SessionLocal, get_provider(), normalized)
+    except service.StockNotFound:
+        raise _unknown(normalized) from None
+    except service.StockDataUnavailable as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
 @router.get("/{symbol}/ohlc")
 def get_ohlc(
     symbol: str,

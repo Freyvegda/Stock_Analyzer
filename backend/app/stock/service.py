@@ -289,6 +289,28 @@ def get_single_report(
     }
 
 
+def get_financials(session_factory, provider, symbol: str) -> dict:
+    """Cached P&L history for one stock — file cache, zero DB writes.
+
+    Unknown symbols raise ``StockNotFound`` (404); fetch failures raise
+    ``StockDataUnavailable`` (502) while the snapshot detail still paints.
+    """
+    with session_factory() as session:
+        stock = _load_stock(session, symbol)
+    try:
+        history = provider.financials(symbol)
+    except Exception as e:  # noqa: BLE001 — per-stock isolation
+        logger.warning("financials fetch failed for %s: %s", symbol, e)
+        raise StockDataUnavailable(f"Financial history unavailable: {e}") from e
+    return {
+        "symbol": stock.symbol,
+        "quarterly": history.get("quarterly") or [],
+        "annual": history.get("annual") or [],
+        "as_of": history.get("as_of"),
+        "stale": bool(history.get("stale", True)),
+    }
+
+
 def get_ohlc(
     session_factory,
     provider: DataProvider,

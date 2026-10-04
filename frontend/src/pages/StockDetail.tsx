@@ -35,6 +35,7 @@ import { formatPrice, getLatestPrice } from '../lib/price'
 import { toaster } from '../components/ui/toaster'
 import { PriceAccordion } from '../components/PriceAccordion'
 import { FundamentalsPanel } from '../components/FundamentalsPanel'
+import { Financials } from '../components/Financials'
 import { Delta } from '../components/ui/Delta'
 
 const RANGES: { key: ChartRange; label: string }[] = [
@@ -632,6 +633,8 @@ export default function StockDetail() {
         otherGroups={detail.other_groups}
         criteria={selectedReport?.report.criteria ?? null}
       />
+
+      <Financials symbol={detail.symbol} />
     </div>
   )
 }

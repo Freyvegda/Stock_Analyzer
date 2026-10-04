@@ -393,6 +393,43 @@ class CompositeProvider(DataProvider):
             "raw": computed.get("raw", {}),
         }
 
+    def financials(self, symbol: str) -> dict:
+        """Cached P&L history: last 8 quarters + last 5 annuals.
+
+        Served from the statements file cache (fresh within
+        ``statements_ttl_days``); blocks and first-ever misses propagate so
+        the service can answer 502 while ratios still paint from the DB.
+        """
+        from datetime import date as _date
+
+        from app.data.screener_statements import (
+            _cache_path,
+            _read_cache,
+            fetch_statements,
+        )
+
+        symbol = (symbol or "").strip().upper()
+        statements = fetch_statements(
+            symbol, self.statements_dir, ttl_days=self.statements_ttl_days
+        )
+        history = statements.get("history") or {}
+        as_of: str | None = None
+        stale = True
+        try:
+            payload = _read_cache(_cache_path(symbol, self.statements_dir))
+            as_of = (payload or {}).get("as_of")
+            if as_of:
+                age_days = (_date.today() - _date.fromisoformat(as_of)).days
+                stale = age_days > int(self.statements_ttl_days)
+        except Exception:  # noqa: BLE001 — flags never break history
+            pass
+        return {
+            "quarterly": history.get("quarterly") or [],
+            "annual": history.get("annual") or [],
+            "as_of": as_of,
+            "stale": stale,
+        }
+
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
         """File cache first; Stooq, then Yahoo chart JSON, then yfinance.
 
