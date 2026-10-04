@@ -179,7 +179,17 @@ export function Financials({ symbol }: { symbol: string }) {
         </Text>
         <div data-testid="financials-chart" className="mt-2 h-64">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="30%">
+            <ComposedChart data={chartData} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="30%">
+              <defs>
+                <linearGradient id="fin-op-glass" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={palette.strategy} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={palette.strategy} stopOpacity={0.25} />
+                </linearGradient>
+                <linearGradient id="fin-pat-glass" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={palette.strategy} stopOpacity={0.5} />
+                  <stop offset="100%" stopColor={palette.strategy} stopOpacity={0.12} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={palette.grid} />
               <XAxis
                 dataKey="period"
@@ -189,10 +199,20 @@ export function Financials({ symbol }: { symbol: string }) {
                 interval={0}
               />
               <YAxis
+                yAxisId="left"
                 tick={{ fontSize: 11, fill: palette.axisText }}
                 tickLine={false}
                 axisLine={false}
                 width={52}
+                tickFormatter={compactTick}
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tick={{ fontSize: 11, fill: palette.axisText }}
+                tickLine={false}
+                axisLine={false}
+                width={44}
                 tickFormatter={compactTick}
               />
               <Tooltip
@@ -205,30 +225,37 @@ export function Financials({ symbol }: { symbol: string }) {
                 }}
                 cursor={{ stroke: palette.axisBorder, strokeDasharray: '3 3' }}
               />
-              <ReferenceLine y={0} stroke={palette.axisBorder} />
+              <ReferenceLine yAxisId="left" y={0} stroke={palette.axisBorder} />
               <Bar
+                yAxisId="left"
                 dataKey="OperatingProfit"
                 name="Operating Profit"
-                fill={palette.benchmark}
-                fillOpacity={0.75}
-                radius={[4, 4, 0, 0]}
+                fill="url(#fin-op-glass)"
+                stroke={palette.strategy}
+                strokeOpacity={0.6}
+                strokeWidth={1}
+                radius={[5, 5, 0, 0]}
                 maxBarSize={26}
                 isAnimationActive={!reduced}
                 animationDuration={700}
                 animationEasing="ease-out"
               />
               <Bar
+                yAxisId="left"
                 dataKey="PAT"
                 name="PAT"
-                fill={palette.strategy}
-                fillOpacity={0.55}
-                radius={[4, 4, 0, 0]}
+                fill="url(#fin-pat-glass)"
+                stroke={palette.strategy}
+                strokeOpacity={0.35}
+                strokeWidth={1}
+                radius={[5, 5, 0, 0]}
                 maxBarSize={26}
                 isAnimationActive={!reduced}
                 animationDuration={700}
                 animationEasing="ease-out"
               />
               <Line
+                yAxisId="right"
                 type="monotone"
                 dataKey="Revenue"
                 stroke={palette.strategy}
@@ -256,7 +283,7 @@ export function Financials({ symbol }: { symbol: string }) {
             <span
               aria-hidden="true"
               className="inline-block h-2.5 w-2.5 rounded-[3px]"
-              style={{ background: palette.benchmark }}
+              style={{ background: `linear-gradient(180deg, ${palette.strategy} 0%, ${palette.strategy}59 100%)` }}
             />
             <Text fontSize="xs" color="fg.muted">Operating Profit</Text>
           </Flex>
@@ -264,7 +291,7 @@ export function Financials({ symbol }: { symbol: string }) {
             <span
               aria-hidden="true"
               className="inline-block h-2.5 w-2.5 rounded-[3px]"
-              style={{ background: palette.strategy, opacity: 0.55 }}
+              style={{ background: `linear-gradient(180deg, ${palette.strategy}80 0%, ${palette.strategy}1f 100%)` }}
             />
             <Text fontSize="xs" color="fg.muted">PAT</Text>
           </Flex>
