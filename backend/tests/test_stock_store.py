@@ -72,6 +72,19 @@ def test_read_profile_joins_hq_and_coerces_employees(session_factory):
     }
 
 
+def test_upsert_profile_skips_when_no_identity_keys(session_factory):
+    with session_factory() as session:
+        store.upsert_profile(session, "AAA", INFO, "2026-09-27")
+        session.commit()
+        store.upsert_profile(
+            session, "AAA", {"returnOnAssets": 0.1, "totalRevenue": 1e12}, "2026-10-04"
+        )
+        session.commit()
+        profile = store.read_profile(session, "AAA")
+    assert profile["description"] == "Makes things"
+    assert profile["industry"] == "Oil & Gas"
+
+
 def test_read_profile_absent_returns_nulls(session_factory):
     with session_factory() as session:
         profile = store.read_profile(session, "NOPE")

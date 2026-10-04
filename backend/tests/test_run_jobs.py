@@ -733,3 +733,11 @@ def test_screen_rerun_same_day_makes_no_fundamentals_calls(test_db, sign_in):
     run_job(test_db, user, p)
 
     assert p.calls == []
+
+
+def test_runner_workers_match_documented_politeness_budget():
+    # BACKEND.md: screener politeness = 429 backoff + 2 workers with the 2s
+    # polite delay (~1 req/s). 16 fetch threads burst ~8 req/s and earn 429
+    # storms with 60s backoffs on 500-stock refreshes.
+    assert runner.WORKERS == 2
+    assert service.WORKERS == 2

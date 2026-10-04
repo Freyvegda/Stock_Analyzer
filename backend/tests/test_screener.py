@@ -192,3 +192,22 @@ def test_latest_ok_ignores_newest_failed_row(session_factory):
 def test_latest_ok_empty_symbols_returns_empty(session_factory):
     with session_factory() as session:
         assert latest_ok_fundamentals(session, []) == {}
+
+
+def test_latest_ok_uses_grouped_max_query():
+    # Regression: a duplicate slow def (load-all + order_by) once shadowed the
+    # grouped MAX(date) subquery. Both return same rows on small fixtures, so
+    # assert the implementation reads newest rows only.
+    import inspect
+
+    import app.screener.service as service
+
+    source = inspect.getsource(service.latest_ok_fundamentals)
+    assert "func.max" in source and "group_by" in source
+    defs = [
+        line
+        for line in inspect.getsource(service).splitlines()
+        if line.startswith("def latest_ok_fundamentals")
+    ]
+    assert len(defs) == 1
+    assert len([l for l in inspect.getsource(service).splitlines() if l.startswith("def stored_row")]) == 1

@@ -8,7 +8,7 @@
  * ratios and company facts.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Badge, Button, CloseButton, Dialog, Flex, Portal, Text } from '@chakra-ui/react'
 import { Maximize2 } from 'lucide-react'
@@ -20,14 +20,19 @@ import type {
   CompanyProfile,
   MetricGroup,
   OhlcResponse,
+  ScreeningSet,
   StockDetail as StockDetailData,
   StockFact,
+  StockScreenReport,
 } from '../api/types'
 import { BlurFade } from '../components/ui/BlurFade'
 import { Num } from '../components/ui/Num'
 import { Skeleton } from '../components/ui/Skeleton'
 import { StockChart } from '../components/StockChart'
-import { StockReportsAccordion } from '../components/StockReportsAccordion'
+import { ScreenPicker } from '../components/ScreenPicker'
+import type { ScreenOption } from '../components/ScreenPicker'
+import { ScreenReportCard } from '../components/ScreenReportCard'
+import { aggregateCandles, sliceRange } from '../lib/candles'
 import { toaster } from '../components/ui/toaster'
 
 const RANGES: { key: ChartRange; label: string }[] = [
@@ -248,6 +253,71 @@ export default function StockDetail() {
   const [range, setRange] = useState<ChartRange>('1y')
   const [interval, setInterval] = useState<ChartInterval>('1d')
   const [refreshing, setRefreshing] = useState(false)
+  const [sets, setSets] = useState<ScreeningSet[] | null>(null)
+  const [extraReports, setExtraReports] = useState<Record<number, StockScreenReport>>({})
+  const [pendingReports, setPendingReports] = useState<number[]>([])
+  const [reportErrors, setReportErrors] = useState<Record<number, string>>({})
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+
+  const displayedCandles = useMemo(
+    () => aggregateCandles(sliceRange(candles, range), interval),
+    [candles, range, interval],
+  )
+
+  const knownReports = useMemo(
+    () =>
+      detail === null
+        ? []
+        : [...detail.reports, ...Object.values(extraReports)].filter(
+            (report, index, all) => all.findIndex((other) => other.set_id === report.set_id) === index,
+          ),
+    [detail, extraReports],
+  )
+
+  const screenOptions = useMemo<ScreenOption[]>(() => {
+    if (detail === null) return []
+    const meta =
+      sets !== null && sets.length > 0
+        ? sets.map((set) => ({ id: set.id, name: set.name, isActive: set.is_active }))
+        : detail.reports.map((report) => ({
+            id: report.set_id,
+            name: report.name,
+            isActive: report.is_active,
+          }))
+    const seen = new Set<number>()
+    return meta
+      .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
+      .map((item) => {
+        const known = knownReports.find((report) => report.set_id === item.id)
+        return {
+          id: item.id,
+          name: item.name,
+          isActive: item.isActive,
+          verdict: known !== undefined ? known.report.verdict : null,
+          pending: pendingReports.includes(item.id),
+          score: known?.report.score ?? null,
+          passed: known?.report.passed,
+          enabled: known?.report.enabled,
+        }
+      })
+  }, [detail, sets, knownReports, pendingReports])
+
+  const activeId =
+    sets?.find((set) => set.is_active)?.id ??
+    detail?.reports.find((report) => report.is_active)?.set_id ??
+    null
+
+  useEffect(() => {
+    if (selectedId === null && activeId !== null) setSelectedId(activeId)
+  }, [selectedId, activeId])
+
+  const selectedReport = knownReports.find((report) => report.set_id === selectedId) ?? null
+  const selectedMeta = screenOptions.find((option) => option.id === selectedId)
+
+  function selectScreen(setId: number) {
+    setSelectedId(setId)
+    void requestReport(setId)
+  }
 
   async function loadDetail() {
     setLoading(true)
@@ -269,11 +339,13 @@ export default function StockDetail() {
   }
 
   async function loadCandles() {
+    // Fetch-once: the full 5y daily series, cached per page view. Range and
+    // interval toggles derive locally (see displayedCandles) — no refetch.
     setCandlesLoading(true)
     setCandlesError(null)
     try {
       const data = await api.get<OhlcResponse>(
-        `/stock/${encodeURIComponent(symbol)}/ohlc?range=${range}&interval=${interval}`,
+        `/stock/${encodeURIComponent(symbol)}/ohlc?range=5y&interval=1d`,
       )
       setCandles(data.candles)
     } catch (e) {
@@ -285,15 +357,54 @@ export default function StockDetail() {
     }
   }
 
-  useEffect(() => {
-    if (symbol !== '') loadDetail()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol])
+  async function loadSets() {
+    try {
+      const data = await api.get<ScreeningSet[]>('/screen/sets')
+      setSets(data)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return // global redirect
+      setSets(null) // fall back to the embedded reports
+    }
+  }
+
+  async function requestReport(setId: number) {
+    if (detail?.reports.some((report) => report.set_id === setId) === true) return
+    if (extraReports[setId] !== undefined || pendingReports.includes(setId)) return
+    setPendingReports((ids) => [...ids, setId])
+    setReportErrors((errors) => {
+      const next = { ...errors }
+      delete next[setId]
+      return next
+    })
+    try {
+      const data = await api.get<StockScreenReport>(
+        `/stock/${encodeURIComponent(symbol)}/report?set_id=${setId}`,
+      )
+      setExtraReports((reports) => ({ ...reports, [setId]: data }))
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return // global redirect
+      setReportErrors((errors) => ({
+        ...errors,
+        [setId]: e instanceof Error ? e.message : 'Failed to check this screen',
+      }))
+    } finally {
+      setPendingReports((ids) => ids.filter((id) => id !== setId))
+    }
+  }
 
   useEffect(() => {
-    if (symbol !== '') loadCandles()
+    if (symbol !== '') {
+      setExtraReports({})
+      setPendingReports([])
+      setReportErrors({})
+      setSets(null)
+      setSelectedId(null)
+      loadDetail()
+      loadCandles()
+      loadSets()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, range, interval])
+  }, [symbol])
 
   async function refresh() {
     setRefreshing(true)
@@ -423,7 +534,25 @@ export default function StockDetail() {
       <div data-testid="detail-halves" className="grid items-stretch gap-4 lg:grid-cols-2">
         <DescriptionCard profile={detail.profile} symbol={detail.symbol} name={detail.name} />
         <BlurFade className="h-full">
-          <StockReportsAccordion reports={detail.reports} />
+          <div className="flex h-full flex-col gap-3">
+            <ScreenPicker
+              options={screenOptions}
+              selectedId={selectedId}
+              onSelect={selectScreen}
+            />
+            <div className="min-h-0 flex-1">
+              <ScreenReportCard
+                name={selectedMeta?.name ?? detail.symbol}
+                isActive={selectedMeta?.isActive ?? false}
+                report={selectedReport?.report ?? null}
+                pending={selectedId !== null && pendingReports.includes(selectedId)}
+                error={selectedId !== null ? reportErrors[selectedId] : undefined}
+                onRetry={() => {
+                  if (selectedId !== null) void requestReport(selectedId)
+                }}
+              />
+            </div>
+          </div>
         </BlurFade>
       </div>
 
@@ -484,7 +613,7 @@ export default function StockDetail() {
             ) : candlesLoading ? (
               <Skeleton className="h-80 w-full" />
             ) : (
-              <StockChart candles={candles} />
+              <StockChart candles={displayedCandles} />
             )}
           </div>
         </section>

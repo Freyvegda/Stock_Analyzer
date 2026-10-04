@@ -19,8 +19,10 @@ from app.screener.criteria import criteria_from_json
 
 logger = logging.getLogger(__name__)
 
-#: yfinance-bound fetches per job; matches the provider's watchdog pool.
-WORKERS = 16
+#: yfinance-bound fetches per job; the yfinance watchdog pool is also 16, but
+#: screener.in scrapes dominate this worker and earn 429s in bursts — 2 workers
+#: with the 2s polite delay stay near ~1 req/s (BACKEND.md politeness budget).
+WORKERS = 2
 
 #: Counter flush cadence — small committed transactions keep readers unblocked.
 FLUSH_EVERY = 25
@@ -297,6 +299,7 @@ def _persist_screen(
             run_date=today,
             user_id=user_id,
             set_id=set_id,
+            triggered_by="auto",
             criteria_json=json.dumps(criteria),
             shortlisted_json=json.dumps(shortlist),
         )

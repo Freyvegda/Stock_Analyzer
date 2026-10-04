@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.auth.deps import current_user
+from app.data.composite_impl import build_default_provider
 from app.data.provider import DataProvider
-from app.data.yfinance_impl import YFinanceProvider
 from app.db.database import SessionLocal, init_db
 from app.screener import runner, service
 from app.screener.catalog import RATIO_CATALOG
@@ -18,7 +18,7 @@ _MID_RUN = "Screen is mid-run"
 
 
 def get_provider() -> DataProvider:
-    return YFinanceProvider()
+    return build_default_provider()
 
 
 def _reject_if_busy(set_id: int, user_id: int) -> None:
@@ -93,7 +93,7 @@ def activate_set(set_id: int, user: dict = Depends(current_user)) -> dict:
 
 @router.post("/run")
 def run_screen(user: dict = Depends(current_user)):
-    """Cached-first run: snapshot now, background refresh job after (Phase 1.8)."""
+    """Cached-first batch run: snapshot now, background refresh job after (Phase 1.8)."""
     init_db()
     job = service.latest_job(SessionLocal, user["id"])  # sweeps stale runs first
     if job is not None and job["status"] == "running":
@@ -104,47 +104,25 @@ def run_screen(user: dict = Depends(current_user)):
             status_code=409,
             content={"detail": "Run already in progress", "job_id": job["id"]},
         )
-    stored = service.get_criteria(SessionLocal, user["id"])
     provider = get_provider()
-    # Snapshot first: a provider burst (502) must not leave a stuck running job.
-    run = service.run_snapshot_screen(
-        provider,
-        SessionLocal,
-        user,
-        stored["criteria"],
-        stored["shortlist_size"],
-        stored["id"],
-    )
-    job = service.create_job(SessionLocal, user["id"], stored["id"])
+    # Snapshot first: zero fundamentals() calls, so a provider burst (502)
+    # must not leave a stuck running job — and the batch costs one snapshot
+    # for the active screen plus the most-used others.
+    batch = service.run_snapshot_batch(provider, SessionLocal, user)
+    run = batch["run"]
+    job = service.create_job(SessionLocal, user["id"], batch["set_id"])
     # Register before the first read: without it, this endpoint's own
     # ``latest_job`` would sweep the fresh job to ``interrupted`` (R6).
     service.register_active_job(job["id"])
     try:
-        service.mark_item(SessionLocal, job["id"], stored["id"], "done", run_id=run["run_id"])
+        service.mark_item(SessionLocal, job["id"], batch["set_id"], "done", run_id=run["run_id"])
         runner.submit_job(job["id"], provider, SessionLocal)
     except Exception:
         # Never leave the job registered when the kick fails: else the sweep
         # skips it forever and the account is wedged until a restart.
         service.unregister_active_job(job["id"])
         raise
-    # Multi-screen extras (Phase 1.8 batch, union merge): evaluate the most-used
-    # other screens on the same stored snapshot — zero network — and persist one
-    # triggered_by=auto run each. The background job refines every screen later.
-    extra_runs = service.snapshot_extra_runs(
-        provider, SessionLocal, user["id"], stored["id"]
-    )
-    latest = service.latest_job(SessionLocal, user["id"])
-    return {
-        "run": run,
-        "job": latest,
-        "shortlisted": run["shortlisted"],
-        "failed_count": run["failed_count"],
-        "failed_symbols": run["failed_symbols"],
-        "failed_details": run["failed_details"],
-        "stale": run["stale"],
-        "total": run["total"],
-        "extra_runs": extra_runs,
-    }
+    return {"run": run, "extra_runs": batch["extra_runs"], "job": service.latest_job(SessionLocal, user["id"])}
 
 
 @router.get("/jobs/latest")

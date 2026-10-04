@@ -267,6 +267,7 @@ export interface RunJob {
 
 export interface RunResponse {
   run: ScreenRunResult
+  extra_runs: ExtraRun[]
   job: RunJob
   shortlisted?: ShortlistRow[]
   failed_count?: number
@@ -274,7 +275,6 @@ export interface RunResponse {
   failed_details?: FailedDetail[]
   stale?: boolean
   total?: number
-  extra_runs: ExtraRun[]
 }
 
 export interface JobsLatestResponse {

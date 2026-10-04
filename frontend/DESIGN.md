@@ -192,6 +192,15 @@ and the theme toggle.
   only). Always visible at every width (own row on narrow screens; no icon trigger), and
   Ctrl/Cmd+K focuses it. The results panel (`.glass-panel`) keeps the perspective entrance
   and pointer sheen described above, and spans the field's width.
+- Screen picker (stock detail verdict half): `.glass-field` button + `.glass-panel`
+  listbox on the nav-search recipe — perspective entrance (`rotateX(8→0)`, fade,
+  200 ms), 16 ms option stagger, full keyboard (arrows/Enter/Escape, outside-click
+  closes). Each option carries the screen name, `Active` badge and verdict chip
+  (Passes/Below/Checking…/Not checked) plus score and pass count once checked;
+  the selected row takes the 12% sakura tint with a check glyph. The detail card
+  below reuses the criterion-row language (glyph + sr-only pass/fail, value vs
+  threshold, notes) with skeleton loading and inline retry states. Static under
+  reduced motion; no loops.
 - Nav layout: brand + links, then the search, then the account cluster — one row (`lg:flex-nowrap`),
   right-aligned as a group. The search takes the row's spare width, capped at 24rem and floor-ed at
   12rem, so it stays the biggest thing in the capsule without pushing the row into a second line;

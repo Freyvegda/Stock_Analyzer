@@ -120,8 +120,9 @@ D:\CODES\Projects\stock-analyzer\
 
 ### Phase 1.5 — Authorization + DB-driven screener
 - Login-gated app: scrypt passwords, signed `sa_session` cookie, first-run setup card — the cookie
-  session is retired in Phase 1.8 (JWT pair)
-- Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired (superseded by `screening_sets` in Phase 1.7)
+  session is retired in Phase 1.8
+- Per-user criteria in `user_criteria` (JSON) + thesis; `config/screening.yaml` retired
+  (superseded by `screening_sets` in Phase 1.7)
 - Dynamic ratio catalog (`app/screener/catalog.py`) with on/off toggles and thresholds; unknown keys → 422
 - Runs are user-scoped (`screen_runs.user_id` + criteria snapshot); fixed top-10 clamp
 - Backend: `plan/phase-1.5/{backend,database}.md`; spec `docs/superpowers/specs/2026-09-26-phase-1.5-...md`
@@ -150,17 +151,14 @@ D:\CODES\Projects\stock-analyzer\
 - Navbar search: always-visible 3D-glass bar at every width (no icon trigger — owner ruling 2026-09-29), Ctrl/Cmd+K focuses
 - Spec `docs/superpowers/specs/2026-09-29-phase-1.7-saved-screens-design.md`; plans `plan/phase-1.7/`
 
-### Phase 1.8 — Pagoda landing + JWT auth + cached-first run (run performance) + multi-screen extras
-- Multi-screen runs: `POST /screen/run` returns the cached-first active snapshot plus the 3 most-used other screens (auto, from the last 10 manual runs) evaluated on the same stored snapshot; `screen_runs.triggered_by` separates manual/auto; the background job later refines every screen on fresh data; stock detail serves a live `reports` array (active + most used) behind the Criteria pass accordion; spec `docs/superpowers/specs/2026-10-03-phase-1.8-multi-screen-runs-design.md`; plans `plan/phase-1.8/`
-- Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven walk to a distant pagoda - one torii gate per feature section on a meandering walkway, the river flowing sideways in the distance, and the sign-up stepping back to present the pagoda whole. Each section has real DOM feature cards. Nav brand mark links back to it; `/` swaps the Bonfire out as `/login` does
-- Tier content lives in one place (`src/content/tower.ts`); geometry, the scroll story, the walkway and the roof mesh are pure and three-free (`three/pagodaScene.ts`), so the tower cannot drift from the page's sections and none of it needs WebGL to test
-- Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256 and *is* the revocation mechanism. Client single-flights refreshes (rotation would otherwise invalidate them in parallel); 3h sliding idle logout with a server-side backstop
-- `SessionMiddleware` and the `sa_session` cookie are gone; `logout`/`refresh` no longer depend on `current_user` so a logout after token expiry still revokes
-- `DESIGN.md` loop whitelist amended to admit the pagoda; "not a marketing site" amended to note the one exception
-- `POST /screen/run` returns the stored-snapshot shortlist in seconds (zero `fundamentals()` calls) and queues one background job; a second run while busy → 409 + `job_id`
-- Job refreshes every stale universe symbol (active-screen gate survivors first, then descending market cap), re-runs every saved screen (active refined last), and tracks progress in `run_jobs`/`run_job_items`; `GET /screen/jobs/latest` polls status + counters; edits/deletes/activation of a busy screen → 409
-- Performance: `latest_ok_fundamentals` grouped `MAX(date)`; bulk batch persist every 25 fetches; yfinance 15 s timeout + 3 jittered attempts; cached ROE/ROCE reuse skips statement fetches; SQLite `WAL` + `busy_timeout=5000`
+### Phase 1.8 — Multi-screen runs + cached-first run + background job
+- Multi-screen runs: `POST /screen/run` returns the stored-snapshot shortlist instantly (zero `fundamentals()` calls) for the active screen (manual) plus the 3 most-used other screens (auto, from the last 10 manual runs); `screen_runs.triggered_by` separates them; stock detail serves a live `reports` array (active + most used) behind the Criteria pass accordion; spec `docs/superpowers/specs/2026-10-03-phase-1.8-multi-screen-runs-design.md`; plans `plan/phase-1.8/`
+- Background job: the same `POST /screen/run` queues one job that refreshes every stale universe symbol (composite provider: screener statements + Stooq quote + ratios_math; survivors first, then descending market cap), re-runs every saved screen (active refined last), and tracks progress in `run_jobs`/`run_job_items`; `GET /screen/jobs/latest` polls status + counters; a second run while busy → 409 + `job_id`; edits/deletes/activation of a busy screen → 409
+- Performance: `latest_ok_fundamentals` grouped `MAX(date)`; bulk batch persist every 25 fetches; screener politeness (429 backoff, 2 workers); SQLite `WAL` + `busy_timeout=5000`
 - Spec `docs/superpowers/specs/2026-10-03-run-performance-design.md`; plans `plan/phase-1.8-run-performance/`
+- Public landing page at `/` (outside `RequireAuth`, beside `/login`): a 3D scroll-driven walk to a distant pagoda - one torii gate per feature section; tier content in `src/content/tower.ts`, pure three-free geometry (`three/pagodaScene.ts`)
+- Auth: 15-min HS256 access token in memory + rotating opaque refresh token in an HttpOnly `SameSite=Strict` cookie; `auth_sessions` holds only the SHA-256; client single-flights refreshes; 3h sliding idle logout with server-side backstop
+- Fundamentals provider chain (Plan B): yFinance off the hot path (`ENABLE_YFINANCE=1` opts back in); Stooq CSV for 5y OHLC + quote price, screener.in P&L/BS/CF scrape + pure `ratios_math`; per-symbol file cache (`data/prices/`, `data/statements/`); plan `docs/superpowers/plans/2026-10-04-phase-1-8-fundamentals-plan-b.md`
 
 ### Phase 2 — Document analysis
 - NSE/BSE filing fetch -> `documents` + PDFs to disk

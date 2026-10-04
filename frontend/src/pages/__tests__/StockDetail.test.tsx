@@ -115,16 +115,41 @@ const detail: StockDetailData = {
 
 const ohlc: OhlcResponse = {
   symbol: 'TCS',
-  range: '1y',
+  range: '5y',
   interval: '1d',
   as_of: '2026-09-26',
-  candles: [{ time: '2026-09-25', open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }],
+  candles: Array.from({ length: 400 }, (_, i) => {
+    const time = new Date(Date.UTC(2025, 7, 1) + i * 86400000).toISOString().slice(0, 10)
+    return { time, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 }
+  }),
 }
+
+const screeningSets = [
+  {
+    id: 1,
+    name: 'Default',
+    criteria: [],
+    thesis: null,
+    shortlist_size: 10,
+    is_active: true,
+    updated_at: 'now',
+  },
+  {
+    id: 2,
+    name: 'Quality',
+    criteria: [],
+    thesis: null,
+    shortlist_size: 10,
+    is_active: false,
+    updated_at: 'now',
+  },
+]
 
 function mockLoads() {
   mockedApi.get.mockImplementation((path: string) => {
     if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
     if (path === '/stock/TCS') return Promise.resolve(detail)
+    if (path === '/screen/sets') return Promise.resolve(screeningSets)
     return Promise.reject(new Error(`unexpected GET ${path}`))
   })
 }
@@ -146,22 +171,25 @@ beforeEach(() => vi.resetAllMocks())
 
 describe('StockDetail', () => {
   it('renders the identity header, report verdict and metric groups', async () => {
+    const user = userEvent.setup()
     mockLoads()
     renderPage()
 
     expect(await screen.findByText('TCS')).toBeInTheDocument()
     expect(screen.getByText('Tata Consultancy Services')).toBeInTheDocument()
     expect(screen.getByText('IT')).toBeInTheDocument()
-    expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getByRole('combobox')).toHaveTextContent('Default')
+    expect(screen.getAllByText('Passes your screen').length).toBeGreaterThanOrEqual(2) // picker button + card
+
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByRole('option', { name: /quality/i })).toBeInTheDocument()
     expect(screen.getByText('Below your screen')).toBeInTheDocument()
-    expect(screen.getByText('Default')).toBeInTheDocument()
-    expect(screen.getByText('Quality')).toBeInTheDocument()
     expect(screen.getByText('Risk')).toBeInTheDocument()
     expect(screen.getAllByText('22.1').length).toBeGreaterThanOrEqual(2) // report row + metric tile
     expect(screen.getAllByText('41.0').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('Data as of 2026-09-26')).toBeInTheDocument()
     expect(screen.getByText('#2')).toBeInTheDocument()
-    expect(await screen.findByTestId('stock-chart-stub')).toHaveTextContent('1 candles')
+    expect(await screen.findByTestId('stock-chart-stub')).toHaveTextContent('366 candles')
   })
 
   it('shows the unknown-symbol state on 404', async () => {
@@ -187,36 +215,60 @@ describe('StockDetail', () => {
     mockLoads()
     await user.click(screen.getByRole('button', { name: /retry/i }))
 
-    expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
+    expect((await screen.findAllByText('Passes your screen')).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('switching range refetches only the ohlc endpoint', async () => {
+  it('switching range derives locally without refetching ohlc', async () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
-    mockedApi.get.mockClear()
+    await screen.findAllByText('Passes your screen')
+    const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: '6M' }))
 
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/ohlc?range=6m&interval=1d'),
+      expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('183 candles'),
     )
-    expect(mockedApi.get.mock.calls.every(([path]) => String(path).startsWith('/stock/TCS/ohlc'))).toBe(true)
+    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
   })
 
-  it('switching interval refetches with the monthly aggregation', async () => {
+  it('switching interval aggregates locally without refetching ohlc', async () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
-    mockedApi.get.mockClear()
+    await screen.findAllByText('Passes your screen')
+    const callsBefore = mockedApi.get.mock.calls.length
 
     await user.click(screen.getByRole('button', { name: 'Monthly' }))
 
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/ohlc?range=1y&interval=1mo'),
+      expect(screen.getByTestId('stock-chart-stub')).toHaveTextContent('13 candles'),
     )
+    expect(mockedApi.get.mock.calls.length).toBe(callsBefore)
+  })
+
+  it('lazy-loads another screen report on expand without refetching detail', async () => {
+    const user = userEvent.setup()
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
+      if (path === '/stock/TCS')
+        return Promise.resolve({ ...detail, reports: [detail.reports[0]] })
+      if (path === '/screen/sets') return Promise.resolve(screeningSets)
+      if (path === '/stock/TCS/report?set_id=2') return Promise.resolve(detail.reports[1])
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderPage()
+    await screen.findAllByText('Passes your screen')
+    expect(screen.getByText('Not checked yet')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: /quality/i }))
+
+    await waitFor(() =>
+      expect(mockedApi.get).toHaveBeenCalledWith('/stock/TCS/report?set_id=2'),
+    )
+    expect(await screen.findByText('P/E 22.1× is above your limit of 15×')).toBeInTheDocument()
   })
 
   it('refreshes the snapshot via POST and merges the response', async () => {
@@ -232,7 +284,7 @@ describe('StockDetail', () => {
       ],
     })
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     await user.click(screen.getByRole('button', { name: /refresh/i }))
 
@@ -249,7 +301,7 @@ describe('StockDetail', () => {
       warning: 'Live refresh failed: fetch failed for TCS',
     })
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     await user.click(screen.getByRole('button', { name: /refresh/i }))
 
@@ -258,7 +310,7 @@ describe('StockDetail', () => {
         expect.objectContaining({ description: 'Live refresh failed: fetch failed for TCS' }),
       ),
     )
-    expect(screen.getByText('Passes your screen')).toBeInTheDocument()
+    expect(screen.getAllByText('Passes your screen').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByTestId('refresh-warning')).toHaveTextContent(
       'Live refresh failed: fetch failed for TCS',
     )
@@ -267,11 +319,12 @@ describe('StockDetail', () => {
   it('renders the description and the verdict side by side above the chart', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     const halves = screen.getByTestId('detail-halves')
     expect(halves).toContainElement(screen.getByTestId('company-description'))
-    expect(halves).toContainElement(screen.getByTestId('stock-reports'))
+    expect(halves).toContainElement(screen.getByTestId('screen-picker'))
+    expect(halves).toContainElement(screen.getByTestId('screen-report-card'))
     expect(halves.className).toContain('lg:grid-cols-2')
 
     const chart = screen.getByTestId('price-chart')
@@ -281,7 +334,7 @@ describe('StockDetail', () => {
   it('orders ratios and company facts below the chart', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     const chart = screen.getByTestId('price-chart')
     const ratios = screen.getByText('Main fundamental ratios')
@@ -315,7 +368,7 @@ describe('StockDetail', () => {
     const user = userEvent.setup()
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByTestId('company-description-body')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -339,6 +392,7 @@ describe('StockDetail', () => {
   it('shows a description fallback when the profile and metrics are missing', async () => {
     mockedApi.get.mockImplementation((path: string) => {
       if (path.startsWith('/stock/TCS/ohlc')) return Promise.resolve(ohlc)
+      if (path === '/screen/sets') return Promise.resolve([])
       return Promise.resolve({
         ...detail,
         profile: {
@@ -357,7 +411,7 @@ describe('StockDetail', () => {
     })
     renderPage()
 
-    expect(await screen.findByText('Passes your screen')).toBeInTheDocument()
+    expect((await screen.findAllByText('Passes your screen')).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByTestId('company-description')).toHaveTextContent('No description stored yet')
     expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
     expect(screen.queryByText('What it has')).not.toBeInTheDocument()
@@ -369,7 +423,7 @@ describe('StockDetail', () => {
   it('renders has, done and other-ratio tiles', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByText('What it has')).toBeInTheDocument()
     expect(screen.getByText('Revenue')).toBeInTheDocument()
@@ -381,7 +435,7 @@ describe('StockDetail', () => {
   it('renders the other groups by category', async () => {
     mockLoads()
     renderPage()
-    await screen.findByText('Passes your screen')
+    await screen.findAllByText('Passes your screen')
 
     expect(screen.getByText('All other ratios')).toBeInTheDocument()
     expect(screen.getByText('Risk')).toBeInTheDocument()

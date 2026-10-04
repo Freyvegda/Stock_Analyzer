@@ -419,7 +419,7 @@ def test_run_uses_the_updated_active_set(client, sign_in, provider, test_db):
 
 def test_run_returns_extra_runs_and_stores_auto_rows(client, sign_in, provider, test_db):
     user = sign_in()
-    seed_stored(test_db, [{"symbol": "AAA", **GOOD}])
+    seed_stored(test_db, [{"symbol": "AAA", **GOOD}, {"symbol": "BBB", **BAD}])
     provider(FakeProvider())
     default = client.get("/screen/sets").json()[0]
     quality = client.post("/screen/sets", json={"name": "Quality"}).json()  # becomes active
@@ -442,6 +442,7 @@ def test_run_returns_extra_runs_and_stores_auto_rows(client, sign_in, provider, 
     assert [extra["name"] for extra in body["extra_runs"]] == ["Quality"]
     extra = body["extra_runs"][0]
     assert extra["run_id"] is not None and extra["shortlisted"] == 1 and extra["error"] is None
+    assert [r["symbol"] for r in body["run"]["shortlisted"]] == ["AAA"]
     with test_db() as session:
         runs = session.query(ScreenRun).order_by(ScreenRun.id).all()
     assert [(run.set_id, run.triggered_by) for run in runs] == [
@@ -449,3 +450,5 @@ def test_run_returns_extra_runs_and_stores_auto_rows(client, sign_in, provider, 
         (default["id"], "manual"),
         (quality["id"], "auto"),
     ]
+
+

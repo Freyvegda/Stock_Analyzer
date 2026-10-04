@@ -88,6 +88,69 @@ def _parse_stocks(text: str) -> list[dict]:
 _NET_INCOME = ["Net Income", "Net Income Common Stockholders"]
 _EQUITY = ["Stockholders Equity", "Total Equity Gross Minority Interest"]
 _EBIT = ["EBIT", "Operating Income"]
+_ASSETS = ["Total Assets"]
+_CURR_LIAB = ["Current Liabilities"]
+_DEBT = ["Total Debt"]
+
+
+def is_rate_limit_error(exc: Exception | None) -> bool:
+    """True when ``exc`` looks like a rate limit / throttle / hung fetch."""
+    if exc is None:
+        return False
+    if isinstance(exc, TimeoutError):
+        return True
+    name = type(exc).__name__.lower()
+    text = f"{name} {exc}".lower()
+    return any(
+        token in text
+        for token in ("429", "rate limit", "ratelimit", "too many", "throttl", "timed out")
+    )
+
+
+def _fast_price(ticker) -> float | None:
+    """Best-effort quote without the rate-limited ``.info`` endpoint."""
+    try:
+        fast = ticker.fast_info
+    except Exception:  # noqa: BLE001 — price is best-effort, never raises
+        return None
+    try:
+        if isinstance(fast, dict):
+            for key in ("lastPrice", "last_price", "regularMarketPrice"):
+                value = fast.get(key)
+                if isinstance(value, (int, float)):
+                    return float(value)
+            return None
+        for attr in ("last_price", "lastPrice", "regular_market_price"):
+            value = getattr(fast, attr, None)
+            if isinstance(value, (int, float)):
+                return float(value)
+    except Exception:  # noqa: BLE001 — malformed fast_info degrades to None
+        return None
+    return None
+
+
+def yfinance_statements_base(symbol: str) -> dict:
+    """Statement numbers without the rate-limited ``.info`` endpoint.
+
+    Used as calculator input when ``fundamentals`` info fetch hits a rate
+    limit: annual financials/balance_sheet + best-effort fast price. Raises the
+    underlying error when statements themselves are throttled; empty frames
+    degrade to Nones (never raises for missing labels).
+    """
+    ticker = yf.Ticker(f"{symbol}.NS")
+    income, balance = _retry(
+        lambda: _call_with_timeout(lambda: _statements(ticker)), label=symbol
+    )
+    return {
+        "symbol": symbol,
+        "price": _fast_price(ticker),
+        "net_income": _latest_value(income, _NET_INCOME),
+        "equity": _latest_value(balance, _EQUITY),
+        "ebit": _latest_value(income, _EBIT),
+        "total_assets": _latest_value(balance, _ASSETS),
+        "current_liabilities": _latest_value(balance, _CURR_LIAB),
+        "total_debt": _latest_value(balance, _DEBT),
+    }
 
 
 def _latest_value(frame, labels: list[str]) -> float | None:
