@@ -677,8 +677,7 @@ def parse_history(html: str) -> dict:
     a_names = sorted(
         annual, key=lambda name: int(name[2:]) if name[2:].isdigit() else -1
     )[-5:]
-    keys = ("sales", "expenses", "operating_profit", "other_income", "interest",
-            "depreciation", "pbt", "tax", "pat", "eps")
+    keys = _HISTORY_KEYS
     return {
         "quarterly": [
             {"period": name, **_history_row({key: quarterly[name].get(key) for key in keys})}
@@ -689,6 +688,58 @@ def parse_history(html: str) -> dict:
             for name in a_names
         ],
     }
+
+
+def _period_key(name: str) -> tuple[int, int]:
+    """Sort key for history periods: ``Q2FY26`` -> ``(2026, 2)``."""
+    try:
+        if name.startswith("Q") and "FY" in name:
+            quarter = int(name[1])
+            year = 2000 + int(name.split("FY")[1])
+            return year, quarter
+        if name.startswith("FY"):
+            return 2000 + int(name[2:]), 0
+    except (ValueError, IndexError):
+        pass
+    return 0, 0
+
+
+_HISTORY_KEYS = ("sales", "expenses", "operating_profit", "other_income", "interest",
+                 "depreciation", "pbt", "tax", "pat", "eps")
+
+
+def _empty_history() -> dict:
+    return {"quarterly": [], "annual": []}
+
+
+def _merge_history(fresh: dict, stale: dict) -> dict:
+    """Union fresh + stale series by period (fresh non-None wins), capped 8Q/5Y."""
+    merged: dict[str, dict[str, list[dict]]] = {"quarterly": [], "annual": []}
+    try:
+        for key, cap in (("quarterly", 8), ("annual", 5)):
+            fresh_rows = fresh.get(key) or []
+            stale_rows = stale.get(key) or []
+            by_period: dict[str, dict] = {}
+            for row in stale_rows:
+                if isinstance(row, dict) and row.get("period"):
+                    by_period[row["period"]] = {k: row.get(k) for k in _HISTORY_KEYS}
+            for row in fresh_rows:
+                if not isinstance(row, dict) or not row.get("period"):
+                    continue
+                slot = by_period.setdefault(row["period"], {})
+                for field in _HISTORY_KEYS:
+                    value = row.get(field)
+                    if value is not None:
+                        slot[field] = value
+                    elif field not in slot:
+                        slot[field] = None
+            ordered = sorted(by_period, key=_period_key)[-cap:]
+            merged[key] = [
+                {"period": name, **_history_row(by_period[name])} for name in ordered
+            ]
+    except Exception:  # noqa: BLE001 — merge is best-effort, never blocks write
+        pass
+    return merged
 
 
 def _cache_path(symbol: str, cache_dir: str) -> str:
@@ -802,7 +853,42 @@ def fetch_statements(
                                 if value is not None and not merged.get(key):
                                     merged[key] = value
                                     changed = True
+                            try:
+                                merged["history"] = _merge_history(
+                                    parse_history(html),
+                                    merged.get("history") if isinstance(merged.get("history"), dict) else {},
+                                )
+                                if merged["history"]["quarterly"] or merged["history"]["annual"]:
+                                    changed = True
+                            except Exception:  # noqa: BLE001 — history never blocks serve
+                                pass
                             if changed:
+                                try:
+                                    os.makedirs(cache_dir, exist_ok=True)
+                                    tmp = path + ".tmp"
+                                    with open(tmp, "w", encoding="utf-8") as f:
+                                        json.dump({"as_of": today, "fields": merged}, f)
+                                    os.replace(tmp, path)
+                                except Exception:  # noqa: BLE001 — cache rewrite best-effort
+                                    pass
+                                return merged
+                        except Exception:  # noqa: BLE001 — backfill never breaks serve
+                            pass
+                    # Lazy history backfill: caches written before history
+                    # support are fresh but carry no series. One best-effort
+                    # re-download fills it. Never raises, never blocks.
+                    hist = cached.get("history")
+                    if not isinstance(hist, dict) or (
+                        not hist.get("quarterly") and not hist.get("annual")
+                    ):
+                        try:
+                            html = client(symbol) if callable(client) else _download(symbol)
+                            merged_hist = _merge_history(
+                                parse_history(html), {"quarterly": [], "annual": []}
+                            )
+                            if merged_hist["quarterly"] or merged_hist["annual"]:
+                                merged = dict(cached)
+                                merged["history"] = merged_hist
                                 try:
                                     os.makedirs(cache_dir, exist_ok=True)
                                     tmp = path + ".tmp"
@@ -850,6 +936,19 @@ def fetch_statements(
                     fields[key] = old[key]
     except Exception:  # noqa: BLE001 — merge is best-effort, never blocks write
         pass
+    try:
+        fresh_hist = parse_history(html)
+    except Exception:  # noqa: BLE001 — history never blocks ratios
+        fresh_hist = _empty_history()
+    try:
+        stale_payload = _read_cache(path) if os.path.exists(path) else None
+        stale_fields = stale_payload.get("fields") if stale_payload else {}
+        stale_hist = stale_fields.get("history") if isinstance(stale_fields, dict) else {}
+        if not isinstance(stale_hist, dict):
+            stale_hist = _empty_history()
+    except Exception:  # noqa: BLE001 — stale read never blocks write
+        stale_hist = _empty_history()
+    fields["history"] = _merge_history(fresh_hist, stale_hist)
     os.makedirs(cache_dir, exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

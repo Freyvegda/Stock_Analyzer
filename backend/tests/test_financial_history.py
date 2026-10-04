@@ -142,6 +142,93 @@ def test_parse_history_missing_cells_are_none():
     assert out["quarterly"][-1]["sales"] == 100.0
 
 
+def _write_cache(cache_dir, fields, as_of):
+    import json as _json
+    import os as _os
+
+    path = _os.path.join(cache_dir, "AAA.json")
+    with open(path, "w", encoding="utf-8") as f:
+        _json.dump({"as_of": as_of, "fields": fields}, f)
+    return path
+
+
+FULL_HTML = (
+    "<html><body>"
+    + _table(
+        Q_COLS,
+        [
+            ("Sales +", Q_SALES[:9]),
+            ("Total Expenses", Q_EXP[:9]),
+            ("Operating Profit", Q_OP[:9]),
+            ("Net Profit +", Q_PAT[:9]),
+        ],
+    )
+    + _table(
+        A_COLS,
+        [
+            ("Revenue +", ["500", "600", "700", "800", "900", "1000"]),
+            ("Net Profit +", ["50", "70", "90", "110", "120", "150"]),
+            ("Total Equity", ["400", "450", "500", "600", "700", "750"]),
+        ],
+    )
+    + "</body></html>"
+)
+
+
+def test_fetch_statements_writes_history(tmp_path):
+    out = stmt.fetch_statements("AAA", cache_dir=str(tmp_path), client=lambda s: FULL_HTML)
+    assert len(out["history"]["quarterly"]) == 8
+    assert len(out["history"]["annual"]) == 5
+    assert out["history"]["annual"][-1]["sales"] == 1000.0
+
+
+def test_fetch_statements_backfills_history_on_fresh_cache(tmp_path):
+    from datetime import date as _date
+
+    _write_cache(
+        str(tmp_path),
+        {"revenue": 1000.0, "equity": 750.0},
+        _date.today().isoformat(),
+    )
+    out = stmt.fetch_statements("AAA", cache_dir=str(tmp_path), client=lambda s: FULL_HTML)
+    assert len(out["history"]["quarterly"]) == 8
+    assert out["revenue"] == 1000.0
+
+
+def test_fetch_statements_merges_stale_history_on_partial_page(tmp_path):
+    from datetime import date as _date
+
+    stale_q = [
+        {"period": name, "sales": 1.0, "expenses": None, "operating_profit": None,
+         "other_income": None, "interest": None, "depreciation": None,
+         "pbt": None, "tax": None, "pat": 0.5, "eps": None}
+        for name in ["Q3FY24", "Q4FY24", "Q1FY25", "Q2FY25",
+                     "Q3FY25", "Q4FY25", "Q1FY26", "Q2FY26"]
+    ]
+    _write_cache(
+        str(tmp_path),
+        {"revenue": 1000.0, "equity": 750.0,
+         "history": {"quarterly": stale_q, "annual": []}},
+        "2020-01-01",
+    )
+    fresh = (
+        "<html><body>"
+        + _table(
+            ["Mar 2025", "Mar 2026"],
+            [
+                ("Sales +", ["1000", "1100"]),
+                ("Net Profit +", ["150", "160"]),
+                ("Total Equity", ["750", "800"]),
+            ],
+        )
+        + "</body></html>"
+    )
+    out = stmt.fetch_statements("AAA", cache_dir=str(tmp_path), client=lambda s: fresh)
+    assert len(out["history"]["quarterly"]) == 8
+    assert out["history"]["quarterly"][-1]["sales"] == 1.0  # stale tail kept
+    assert out["history"]["annual"][-1]["sales"] == 1100.0  # fresh annuals stored
+
+
 def test_parse_history_derives_expenses_pbt_tax():
     out = stmt.parse_history(QUARTERLY_HTML_WITH_TTM)
     last = out["quarterly"][-1]
