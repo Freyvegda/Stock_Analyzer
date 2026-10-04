@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Financials } from '../Financials'
 import { Provider } from '../ui/provider'
 import { api } from '../../api/client'
@@ -62,8 +62,8 @@ describe('Financials', () => {
     expect(screen.queryByText('FY25')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /annual/i }))
-    expect(screen.getByText('FY25')).toBeInTheDocument()
-    expect(screen.queryByText('Q1FY26')).not.toBeInTheDocument()
+    expect(await screen.findByText('FY25')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Q1FY26')).not.toBeInTheDocument())
     expect(mockedApi.get).toHaveBeenCalledWith('/stock/AAA/financials')
   })
 
@@ -103,4 +103,33 @@ describe('Financials', () => {
 
     expect(await screen.findByText(/no history yet/i)).toBeInTheDocument()
   })
+
+  it('renders sales/PAT chart with legend', async () => {
+    mockedApi.get.mockResolvedValue(response())
+    render(<Provider><Financials symbol="AAA" /></Provider>)
+
+    await screen.findByTestId('financials')
+    expect(screen.getByTestId('financials-chart')).toBeInTheDocument()
+    const legend = screen.getByTestId('financials-legend')
+    expect(legend).toHaveTextContent('Sales')
+    expect(legend).toHaveTextContent('PAT')
+  })
+
+  it('marks motion animated by default and static under reduced motion', async () => {
+    mockedApi.get.mockResolvedValue(response())
+    const { unmount } = render(<Provider><Financials symbol="AAA" /></Provider>)
+    expect(await screen.findByTestId('financials')).toHaveAttribute('data-motion', 'animated')
+    unmount()
+
+    vi.spyOn(window, 'matchMedia').mockReturnValue({
+      matches: true, media: '', onchange: null,
+      addListener: vi.fn(), removeListener: vi.fn(),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    })
+    mockedApi.get.mockResolvedValue(response())
+    render(<Provider><Financials symbol="AAA" /></Provider>)
+    expect(await screen.findByTestId('financials')).toHaveAttribute('data-motion', 'static')
+  })
 })
+
+afterEach(() => vi.restoreAllMocks())

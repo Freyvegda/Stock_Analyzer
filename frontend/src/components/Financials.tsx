@@ -1,8 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Button, Flex, Text } from '@chakra-ui/react'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { AnimatePresence, motion } from 'motion/react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import { ApiError, api } from '../api/client'
 import type { FinancialPeriod, FinancialsResponse } from '../api/types'
+import { usePrefersReducedMotion } from '@/lib/usePrefersReducedMotion'
 import { BlurFade } from './ui/BlurFade'
 import { Num } from './ui/Num'
 import { Skeleton } from './ui/Skeleton'
@@ -27,7 +39,13 @@ function cellId(key: string, period: string) {
   return `${key}-${period}`
 }
 
+function compactTick(value: number): string {
+  if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`
+  return `${value}`
+}
+
 export function Financials({ symbol }: { symbol: string }) {
+  const reduced = usePrefersReducedMotion()
   const [data, setData] = useState<FinancialsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -73,10 +91,139 @@ export function Financials({ symbol }: { symbol: string }) {
 
   const periods = mode === 'quarterly' ? data.quarterly : data.annual
   const empty = data.quarterly.length === 0 && data.annual.length === 0
+  const chartData = periods.map((p) => ({ period: p.period, Sales: p.sales, PAT: p.pat }))
+
+  const body = (
+    <>
+      <div className="mt-3 overflow-x-auto rounded-lg border border-border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="px-3 py-2 text-left font-medium text-muted-foreground">Metric</th>
+              {periods.map((p) => (
+                <th key={p.period} className="px-3 py-2 text-right font-medium text-muted-foreground">
+                  <Num>{p.period}</Num>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map((row) => (
+              <tr key={row.key} className="border-t border-border transition-colors hover:bg-muted/50">
+                <td className="px-3 py-1.5 whitespace-nowrap text-muted-foreground">
+                  {row.label} <span className="text-xs">({row.unit})</span>
+                </td>
+                {periods.map((p) => {
+                  const value = p[row.key]
+                  const negative = row.key === 'pat' && value !== null && value < 0
+                  return (
+                    <td
+                      key={p.period}
+                      data-testid={cellId(row.key, p.period)}
+                      className={cn('px-3 py-1.5 text-right tabular-nums', negative && 'text-loss')}
+                    >
+                      {value === null ? '—' : <Num>{value.toFixed(row.decimals)}</Num>}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div data-testid="financials-chart" className="mt-4 h-60">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barCategoryGap="28%">
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--chakra-colors-border)" />
+            <XAxis dataKey="period" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval={0} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+              width={52}
+              tickFormatter={compactTick}
+            />
+            <Tooltip
+              contentStyle={{
+                background: 'var(--chakra-colors-bg-panel)',
+                border: '1px solid var(--chakra-colors-border)',
+                borderRadius: '8px',
+                fontSize: 12,
+              }}
+            />
+            <ReferenceLine y={0} stroke="var(--chakra-colors-border)" />
+            <Bar
+              dataKey="Sales"
+              fill="var(--chakra-colors-brand)"
+              fillOpacity={0.85}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={30}
+              isAnimationActive={!reduced}
+              animationDuration={700}
+              animationEasing="ease-out"
+            />
+            <Bar
+              dataKey="PAT"
+              radius={[4, 4, 0, 0]}
+              maxBarSize={30}
+              isAnimationActive={!reduced}
+              animationDuration={700}
+              animationEasing="ease-out"
+            >
+              {periods.map((p) => (
+                <Cell
+                  key={p.period}
+                  fill={
+                    p.pat !== null && p.pat < 0
+                      ? 'var(--chakra-colors-loss)'
+                      : 'var(--chakra-colors-gain)'
+                  }
+                  fillOpacity={0.9}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <Flex data-testid="financials-legend" mt={2} gap={4} wrap="wrap" align="center">
+        <Flex gap={1.5} align="center">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2.5 w-2.5 rounded-[3px]"
+            style={{ background: 'var(--chakra-colors-brand)' }}
+          />
+          <Text fontSize="xs" color="fg.muted">Sales</Text>
+        </Flex>
+        <Flex gap={1.5} align="center">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2.5 w-2.5 rounded-[3px]"
+            style={{ background: 'var(--chakra-colors-gain)' }}
+          />
+          <Text fontSize="xs" color="fg.muted">PAT · profit</Text>
+        </Flex>
+        <Flex gap={1.5} align="center">
+          <span
+            aria-hidden="true"
+            className="inline-block h-2.5 w-2.5 rounded-[3px]"
+            style={{ background: 'var(--chakra-colors-loss)' }}
+          />
+          <Text fontSize="xs" color="fg.muted">PAT · loss</Text>
+        </Flex>
+      </Flex>
+    </>
+  )
 
   return (
     <BlurFade>
-      <section data-testid="financials" aria-label="Financial history" className="rounded-lg border border-border bg-card p-4">
+      <section
+        data-testid="financials"
+        data-motion={reduced ? 'static' : 'animated'}
+        aria-label="Financial history"
+        className="rounded-lg border border-border bg-card p-4"
+      >
         <Flex align="center" justify="space-between" gap={3} wrap="wrap">
           <Text fontSize="sm" fontWeight="medium">
             Financial history
@@ -107,78 +254,20 @@ export function Financials({ symbol }: { symbol: string }) {
           <Text mt={3} fontSize="sm" color="fg.muted">
             No history yet — hit Refresh to fetch
           </Text>
+        ) : reduced ? (
+          <div key={mode}>{body}</div>
         ) : (
-          <>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="px-2 py-1 text-left font-medium text-muted-foreground">Metric</th>
-                    {periods.map((p) => (
-                      <th key={p.period} className="px-2 py-1 text-right font-medium text-muted-foreground">
-                        <Num>{p.period}</Num>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {ROWS.map((row) => (
-                    <tr key={row.key} className="border-t border-border">
-                      <td className="px-2 py-1 text-muted-foreground">
-                        {row.label} <span className="text-xs">({row.unit})</span>
-                      </td>
-                      {periods.map((p) => {
-                        const value = p[row.key]
-                        const negative = row.key === 'pat' && value !== null && value < 0
-                        return (
-                          <td
-                            key={p.period}
-                            data-testid={cellId(row.key, p.period)}
-                            className={cn('px-2 py-1 text-right tabular-nums', negative && 'text-loss')}
-                          >
-                            {value === null ? '—' : <Num>{value.toFixed(row.decimals)}</Num>}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={periods.map((p) => ({ period: p.period, Sales: p.sales, PAT: p.pat }))}
-                  margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chakra-colors-border)" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11 }} tickLine={false} width={56} />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'var(--chakra-colors-bg-panel)',
-                      border: '1px solid var(--chakra-colors-border)',
-                      fontSize: 12,
-                    }}
-                  />
-                  <Bar dataKey="Sales" fill="var(--chakra-colors-brand)" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="PAT" radius={[3, 3, 0, 0]}>
-                    {periods.map((p) => (
-                      <Cell
-                        key={p.period}
-                        fill={
-                          p.pat !== null && p.pat < 0
-                            ? 'var(--chakra-colors-loss)'
-                            : 'var(--chakra-colors-gain)'
-                        }
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              {body}
+            </motion.div>
+          </AnimatePresence>
         )}
       </section>
     </BlurFade>
