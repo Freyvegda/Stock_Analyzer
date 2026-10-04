@@ -8,7 +8,6 @@ and raise NotImplementedError — the composite owns those paths.
 import csv
 import io
 import math
-import time
 from datetime import date, timedelta
 
 import httpx
@@ -18,8 +17,10 @@ from app.data.provider import DataProvider
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 #: Single-request timeout for the cold Stooq fetch (seconds). The file + memory
-#: caches serve warm symbols, so a slow upstream must fail fast, not hang the chart.
-_OHLC_TIMEOUT = 8
+#: caches serve warm symbols, and yFinance is the fallback, so a slow upstream
+#: must fail fast — the stock screen header now shows the stored screener price
+#: while the chart loads, but a 30s Stooq stall still looks like "no price".
+_OHLC_TIMEOUT = 6
 
 
 def _is_nan(value: float) -> bool:
@@ -100,7 +101,12 @@ class StooqProvider(DataProvider):
         raise NotImplementedError
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        """Daily bars ascending; tries `.IN` then `.NS`; empty when no data."""
+        """Daily bars ascending; tries `.IN` then `.NS`; empty when no data.
+
+        One attempt per suffix: a ConnectTimeout on a blocked network would
+        otherwise stall 4x timeout before the yFinance fallback runs and the
+        chart shows "No price data".
+        """
         end = date.today()
         start = end - timedelta(days=int(years) * 365 + 30)
         last_error: Exception | None = None
@@ -111,20 +117,19 @@ class StooqProvider(DataProvider):
                 f"{candidate.lower()}"
                 f"&d1={start.strftime('%Y%m%d')}&d2={end.strftime('%Y%m%d')}&i=d"
             )
-            for attempt in range(2):
-                try:
-                    resp = httpx.get(url, headers=_UA, timeout=_OHLC_TIMEOUT, follow_redirects=True)
-                    resp.raise_for_status()
-                    rows = parse_stooq_csv(resp.text)
-                    if rows:
-                        return rows
-                    break  # valid-but-empty for this suffix: try next suffix
-                except ValueError as e:
-                    last_error = e
-                    break  # bot wall shape: try next suffix, don't hammer
-                except Exception as e:  # noqa: BLE001 — retry then next suffix
-                    last_error = e
-                    time.sleep(0.5 * (attempt + 1))
+            try:
+                resp = httpx.get(url, headers=_UA, timeout=_OHLC_TIMEOUT, follow_redirects=True)
+                resp.raise_for_status()
+                rows = parse_stooq_csv(resp.text)
+                if rows:
+                    return rows
+                # valid-but-empty for this suffix: try next suffix
+            except ValueError as e:
+                last_error = e
+                continue  # bot wall shape: try next suffix, don't hammer
+            except Exception as e:  # noqa: BLE001 — next suffix / yfinance fallback
+                last_error = e
+                continue
         if last_error is not None and not rows:
             raise last_error
         return []

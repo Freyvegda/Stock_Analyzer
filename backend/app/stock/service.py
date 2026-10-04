@@ -57,7 +57,14 @@ def _latest_ok(session, symbol: str) -> Fundamental | None:
 
 def _store_ok(session, stock: Stock, payload: dict, today: str) -> None:
     """Upsert today's snapshot (composite PK -> same-day rerun overwrites)."""
-    raw = payload.get("raw") or {}
+    raw = dict(payload.get("raw") or {})
+    # Header fallback: keep the fetch price inside raw when the provider
+    # carried it top-level (composite) so trim_raw persists it.
+    try:
+        if raw.get("price") is None and payload.get("price") is not None:
+            raw["price"] = payload["price"]
+    except Exception:  # noqa: BLE001 — price never blocks store
+        pass
     session.merge(
         Fundamental(
             symbol=stock.symbol,
@@ -162,11 +169,21 @@ def _detail_payload(
         key: snapshot[key]
         for key in ("date", "pe", "pb", "roe", "roce", "debt_to_equity", "data_status")
     }
+    try:
+        stored_price = (snapshot.get("raw") or {}).get("price")
+    except Exception:  # noqa: BLE001 — price fallback never breaks detail
+        stored_price = None
+    try:
+        stored_price = float(stored_price) if stored_price is not None else None
+    except (TypeError, ValueError):
+        stored_price = None
     return {
         "symbol": stock.symbol,
         "name": stock.name,
         "sector": stock.sector,
         "market_cap": stock.market_cap,
+        "price": stored_price,
+        "price_as_of": snapshot["date"] if stored_price is not None else None,
         "snapshot": public_snapshot,
         "reports": [
             {

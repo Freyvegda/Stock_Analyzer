@@ -38,6 +38,8 @@ const detail: StockDetailData = {
   name: 'Tata Consultancy Services',
   sector: 'IT',
   market_cap: 1200000,
+  price: 3100.5,
+  price_as_of: '2026-09-26',
   snapshot: {
     date: '2026-09-26',
     pe: 22.1,

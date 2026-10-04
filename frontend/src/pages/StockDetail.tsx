@@ -33,7 +33,10 @@ import { ScreenPicker } from '../components/ScreenPicker'
 import type { ScreenOption } from '../components/ScreenPicker'
 import { ScreenReportCard } from '../components/ScreenReportCard'
 import { aggregateCandles, sliceRange } from '../lib/candles'
+import { getLatestPrice } from '../lib/price'
 import { toaster } from '../components/ui/toaster'
+import { PriceAccordion } from '../components/PriceAccordion'
+import { Delta } from '../components/ui/Delta'
 
 const RANGES: { key: ChartRange; label: string }[] = [
   { key: '6m', label: '6M' },
@@ -264,6 +267,8 @@ export default function StockDetail() {
     [candles, range, interval],
   )
 
+  const latestPrice = useMemo(() => getLatestPrice(candles), [candles])
+
   const knownReports = useMemo(
     () =>
       detail === null
@@ -406,6 +411,29 @@ export default function StockDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol])
 
+  useEffect(() => {
+    // 15-minute price poll: backend memory + HTTP cache TTLs are 900s, so a
+    // refetch here lands on fresh daily bars without hammering upstream.
+    // Silent — updates candles/price in place, never flashes the skeleton.
+    if (symbol === '') return
+    const FIFTEEN_MINUTES = 15 * 60 * 1000
+    const id = window.setInterval(() => {
+      if (document.hidden) return
+      void api
+        .get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?range=5y&interval=1d`)
+        .then((data) => {
+          setCandles(data.candles)
+          setCandlesError(null)
+        })
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 401) return // global redirect
+          setCandlesError(e instanceof Error ? e.message : 'Failed to load the chart')
+        })
+    }, FIFTEEN_MINUTES)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol])
+
   async function refresh() {
     setRefreshing(true)
     try {
@@ -491,6 +519,24 @@ export default function StockDetail() {
             </Text>
             <Flex align="center" gap={3} mt={1} wrap="wrap">
               {detail.sector !== null ? <Badge variant="subtle">{detail.sector}</Badge> : null}
+              {latestPrice !== null ? (
+                <Text data-testid="header-price" fontSize="sm" fontWeight="semibold">
+                  ₹ <Num>{latestPrice.price}</Num>{' '}
+                  {latestPrice.change !== null ? (
+                    <Delta value={latestPrice.change} decimals={1} />
+                  ) : null}{' '}
+                  <Text as="span" fontSize="xs" color="fg.muted">
+                    as of <Num>{latestPrice.asOf}</Num>
+                  </Text>
+                </Text>
+              ) : detail.price !== null ? (
+                <Text data-testid="header-price" fontSize="sm" fontWeight="semibold">
+                  ₹ <Num>{detail.price}</Num>{' '}
+                  <Text as="span" fontSize="xs" color="fg.muted">
+                    as of <Num>{detail.price_as_of ?? detail.data_date}</Num>
+                  </Text>
+                </Text>
+              ) : null}
               {detail.market_cap !== null ? (
                 <Text fontSize="xs" color="fg.muted">
                   Mkt cap <Num>{fmt(detail.market_cap)}</Num> ₹ cr
@@ -617,6 +663,17 @@ export default function StockDetail() {
             )}
           </div>
         </section>
+      </BlurFade>
+
+      <BlurFade>
+        <PriceAccordion
+          candles={candles}
+          loading={candlesLoading}
+          error={candlesError}
+          onRetry={loadCandles}
+          fallbackPrice={detail.price}
+          fallbackAsOf={detail.price_as_of ?? detail.data_date}
+        />
       </BlurFade>
 
       <FactTiles title="Main fundamental ratios" facts={detail.main_ratios} />

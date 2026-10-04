@@ -12,13 +12,15 @@ from app.screener.catalog import RATIO_CATALOG
 from app.stock.digest import BALANCE_FACTS, MAIN_FACTS, PERFORMANCE_FACTS
 
 #: Every `.info` field the app can later read back from `raw_json`.
+#: ``price`` is whitelisted explicitly: the screener page price backs the
+#: detail header when the chart (/ohlc) fails, so the price stays visible.
 RAW_FIELDS: frozenset[str] = frozenset(
     spec.yf_field for spec in RATIO_CATALOG if spec.yf_field
 ) | frozenset(
     fact.yf_field
     for fact in (*MAIN_FACTS, *BALANCE_FACTS, *PERFORMANCE_FACTS)
     if fact.yf_field
-)
+) | frozenset({"price"})
 
 _PROFILE_KEYS = ("description", "industry", "sector", "website", "employees", "hq")
 

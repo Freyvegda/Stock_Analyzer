@@ -181,6 +181,8 @@ export interface StockDetail {
   name: string
   sector: string | null
   market_cap: number | null
+  price: number | null
+  price_as_of: string | null
   snapshot: StockSnapshot
   reports: StockScreenReport[]
   profile: CompanyProfile

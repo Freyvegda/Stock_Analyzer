@@ -25,6 +25,11 @@ import time
 import httpx
 
 from app.data import price_cache
+from app.data.company_search import (
+    fetch_search_identity,
+    fetch_wikipedia_summary,
+    fetch_yfinance_identity,
+)
 from app.data.provider import DataProvider
 from app.data.ratios_math import compute_ratios, derive_missing
 from app.data.screener_statements import fetch_statements
@@ -281,6 +286,82 @@ class CompositeProvider(DataProvider):
                 return YFinanceProvider().fundamentals(symbol, cached=stored_cached)
             except Exception:  # noqa: BLE001 — fall through with math result
                 pass
+        try:
+            raw = computed.get("raw") or {}
+            for key in (
+                "longBusinessSummary", "website", "industry", "sector",
+                "fullTimeEmployees", "city", "state", "country",
+            ):
+                if raw.get(key) is None and statements.get(key) is not None:
+                    raw[key] = statements[key]
+            # Description order: Wikipedia primary -> screener -> Google -> yFinance.
+            # Website/sector order: screener -> Google -> yFinance (no wiki fields).
+            # Lazy only (detail Refresh / screen-run refresh), per-symbol
+            # isolated, never raises.
+            try:
+                screener_short = raw.get("longBusinessSummary")
+                wiki = None
+                try:
+                    wiki = fetch_wikipedia_summary(symbol)
+                except Exception:  # noqa: BLE001 — wiki never blocks ratios
+                    wiki = None
+                if isinstance(wiki, str) and len(wiki) >= 200:
+                    if isinstance(screener_short, str) and screener_short.strip():
+                        short = screener_short.strip()
+                        # Append screener specifics (shareholding etc.) when the
+                        # wiki extract does not already contain them.
+                        if short not in wiki and wiki not in short:
+                            raw["longBusinessSummary"] = wiki + "\n\n" + short
+                        else:
+                            raw["longBusinessSummary"] = wiki
+                    else:
+                        raw["longBusinessSummary"] = wiki
+            except Exception:  # noqa: BLE001 — enrichment never blocks ratios
+                pass
+            missing_identity = [
+                key for key in ("longBusinessSummary", "website", "industry", "sector")
+                if raw.get(key) is None
+            ]
+            if missing_identity:
+                try:
+                    searched = fetch_search_identity(symbol) or {}
+                except Exception:  # noqa: BLE001 — search never blocks ratios
+                    searched = {}
+                try:
+                    for key in missing_identity:
+                        value = searched.get(key)
+                        if value is not None and raw.get(key) is None:
+                            raw[key] = value
+                except Exception:  # noqa: BLE001 — merge never blocks ratios
+                    pass
+                still_missing = [
+                    key for key in ("longBusinessSummary", "website", "industry", "sector",
+                                    "fullTimeEmployees", "city", "state", "country")
+                    if raw.get(key) is None
+                ]
+                if still_missing:
+                    try:
+                        yf_ident = fetch_yfinance_identity(symbol) or {}
+                    except Exception:  # noqa: BLE001 — yfinance never blocks ratios
+                        yf_ident = {}
+                    try:
+                        for key in still_missing:
+                            value = yf_ident.get(key)
+                            if value is not None and raw.get(key) is None:
+                                raw[key] = value
+                    except Exception:  # noqa: BLE001 — merge never blocks ratios
+                        pass
+            computed["raw"] = raw
+            # Header fallback when the chart fails: keep the screener/quote
+            # price inside raw (whitelisted) so the stored snapshot carries it.
+            try:
+                if price is not None and raw.get("price") is None:
+                    raw["price"] = price
+                    computed["raw"] = raw
+            except Exception:  # noqa: BLE001 — price never blocks ratios
+                pass
+        except Exception:  # noqa: BLE001 — identity never blocks ratios
+            pass
         return {
             "symbol": symbol,
             "pe": computed.get("pe"),
@@ -289,11 +370,18 @@ class CompositeProvider(DataProvider):
             "roce": computed.get("roce"),
             "debt_to_equity": computed.get("debt_to_equity"),
             "market_cap": computed.get("market_cap"),
+            "price": price,
             "raw": computed.get("raw", {}),
         }
 
     def ohlc(self, symbol: str, years: int = 5) -> list[dict]:
-        """File cache first; Stooq on miss/stale; stale cache on failure/empty."""
+        """File cache first; Stooq on miss/stale; yfinance last-resort for price.
+
+        Stooq times out on some networks with a cold file cache — without a
+        fallback /ohlc answers 502 and the stock screen shows "No price data".
+        yfinance fills that gap (best-effort, per-stock isolated) even when
+        the hot path is off; successes persist to the file cache.
+        """
         symbol = (symbol or "").strip().upper()
         stale = price_cache.read_cached(symbol, self.price_dir)
         try:
@@ -305,14 +393,27 @@ class CompositeProvider(DataProvider):
             )
             if not rows and stale:
                 return stale
-            return rows
-        except Exception:  # noqa: BLE001 — serve stale cache before failing
+            if rows:
+                return rows
+        except Exception:  # noqa: BLE001 — stale/YF fallback below
             cached = price_cache.read_cached(symbol, self.price_dir)
             if cached:
                 return cached
-            if self.enable_yfinance:
-                return YFinanceProvider().ohlc(symbol, years=years)
+        try:
+            rows = YFinanceProvider().ohlc(symbol, years=years)
+        except Exception:  # noqa: BLE001 — no source left, surface upstream
+            if stale:
+                return stale
             raise
+        if rows:
+            try:
+                price_cache.write_cached(symbol, rows, self.price_dir)
+            except Exception:  # noqa: BLE001 — cache write never breaks price
+                pass
+            return rows
+        if stale:
+            return stale
+        return rows
 
     def filings(self, symbol: str) -> list[dict]:
         raise NotImplementedError("Phase 2")
