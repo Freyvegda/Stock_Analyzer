@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Financials } from '../Financials'
+import { Financials, syncDomains } from '../Financials'
 import { Provider } from '../ui/provider'
 import { api } from '../../api/client'
 import type { FinancialsResponse } from '../../api/types'
@@ -139,6 +139,22 @@ describe('Financials', () => {
     const chart = screen.getByTestId('financials-chart')
     expect(chart).toHaveAttribute('aria-label', expect.stringMatching(/operating profit/i))
     expect(chart).toHaveAttribute('aria-label', expect.stringMatching(/revenue/i))
+  })
+
+  it('syncs dual-axis domains so zero aligns and bars stay proportional to revenue', () => {
+    const periods = [
+      { sales: 1000.0, operating_profit: 50.0, pat: -10.0 },
+      { sales: 1100.0, operating_profit: 60.0, pat: 20.0 },
+    ]
+    const domains = syncDomains(periods)
+    const zeroFraction = ([lo, hi]: [number, number]) => (0 - lo) / (hi - lo)
+    expect(zeroFraction(domains.left)).toBeCloseTo(zeroFraction(domains.right), 5)
+    expect(domains.left[0]).toBeLessThanOrEqual(-10)
+    expect(domains.left[1]).toBeGreaterThanOrEqual(60)
+    expect(domains.right[1]).toBeGreaterThanOrEqual(1100)
+    // proportional: same data ratio reads the same bar/line height
+    const heightRatio = (value: number, [lo, hi]: [number, number]) => (value - lo) / (hi - lo)
+    expect(heightRatio(60, domains.left)).toBeCloseTo(heightRatio(1100, domains.right), 5)
   })
 
   it('marks motion animated by default and static under reduced motion', async () => {

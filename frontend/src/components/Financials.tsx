@@ -66,6 +66,44 @@ function compactTick(value: number): string {
   return `${value}`
 }
 
+export interface AxisDomains {
+  left: [number, number]
+  right: [number, number]
+}
+
+/**
+ * Proportional dual-axis domains: the left (profit bars) and right (revenue
+ * line) axes share the same zero fraction and the same headroom, so equal
+ * data ratios read as equal heights and a bar can never look taller than a
+ * larger revenue value. Pure — unit-tested below.
+ */
+export function syncDomains(
+  rows: { sales: number | null; operating_profit: number | null; pat: number | null }[],
+): AxisDomains {
+  const bars = rows
+    .flatMap((row) => [row.operating_profit, row.pat])
+    .filter((value): value is number => value !== null && Number.isFinite(value))
+  const revenues = rows
+    .map((row) => row.sales)
+    .filter((value): value is number => value !== null && Number.isFinite(value))
+  const PAD = 1.1
+  const barMax = bars.length > 0 ? Math.max(0, ...bars) : 0
+  const barMin = bars.length > 0 ? Math.min(0, ...bars) : 0
+  const revMax = revenues.length > 0 ? Math.max(0, ...revenues) : 0
+  let L0 = barMin * PAD
+  let L1 = barMax * PAD
+  if (!(L1 > L0)) {
+    L1 = L0 + 1
+  }
+  let R1 = revMax * PAD
+  if (!(R1 > 0)) {
+    R1 = 1
+  }
+  const zeroFraction = -L0 / (L1 - L0)
+  const R0 = zeroFraction === 0 ? 0 : (zeroFraction * R1) / (zeroFraction - 1)
+  return { left: [L0, L1], right: [R0, R1] }
+}
+
 function fmt(value: number | null, decimals: number) {
   return value === null ? '—' : value.toFixed(decimals)
 }
@@ -120,6 +158,7 @@ export function Financials({ symbol }: { symbol: string }) {
   const periods = mode === 'quarterly' ? data.quarterly : data.annual
   const empty = data.quarterly.length === 0 && data.annual.length === 0
   const latest = periods.length > 0 ? periods[periods.length - 1] : null
+  const domains = syncDomains(periods)
   const chartData = periods.map((p) => ({
     period: p.period,
     Revenue: p.sales,
@@ -179,12 +218,12 @@ export function Financials({ symbol }: { symbol: string }) {
         </Text>
         <div
           data-testid="financials-chart"
-          className="mt-2 h-64"
+          className="mt-2 h-80"
           role="img"
           aria-label="Trend chart. Left axis in crore rupees: operating profit and PAT bars. Right axis in crore rupees: revenue line."
         >
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="30%">
+            <ComposedChart data={chartData} margin={{ top: 12, right: 8, bottom: 4, left: 8 }} barCategoryGap="30%">
               <defs>
                 <linearGradient id="fin-op-glass" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={palette.strategy} stopOpacity={0.95} />
@@ -205,22 +244,26 @@ export function Financials({ symbol }: { symbol: string }) {
               />
               <YAxis
                 yAxisId="left"
+                domain={domains.left}
+                tickCount={5}
                 tick={{ fontSize: 11, fill: palette.axisText }}
                 tickLine={false}
                 axisLine={false}
-                width={52}
+                width={64}
                 tickFormatter={compactTick}
-                label={{ value: 'Profits (₹ cr)', angle: -90, position: 'insideLeft', fill: palette.axisText, fontSize: 11 }}
+                label={{ value: 'Profits (₹ cr)', angle: -90, position: 'insideLeft', offset: 8, fill: palette.axisText, fontSize: 11 }}
               />
               <YAxis
                 yAxisId="right"
                 orientation="right"
+                domain={domains.right}
+                tickCount={5}
                 tick={{ fontSize: 11, fill: palette.axisText }}
                 tickLine={false}
                 axisLine={false}
-                width={44}
+                width={58}
                 tickFormatter={compactTick}
-                label={{ value: 'Revenue (₹ cr)', angle: 90, position: 'insideRight', fill: palette.axisText, fontSize: 11 }}
+                label={{ value: 'Revenue (₹ cr)', angle: 90, position: 'insideRight', offset: 8, fill: palette.axisText, fontSize: 11 }}
               />
               <Tooltip
                 contentStyle={{
