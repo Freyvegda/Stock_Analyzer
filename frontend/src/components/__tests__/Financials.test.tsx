@@ -58,7 +58,7 @@ describe('Financials', () => {
     render(<Provider><Financials symbol="AAA" /></Provider>)
 
     expect(await screen.findByTestId('financials')).toBeInTheDocument()
-    expect(screen.getByText('Q1FY26')).toBeInTheDocument()
+    expect(screen.getAllByText('Q1FY26').length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText('FY25')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /annual/i }))
@@ -104,15 +104,31 @@ describe('Financials', () => {
     expect(await screen.findByText(/no history yet/i)).toBeInTheDocument()
   })
 
-  it('renders sales/PAT chart with legend', async () => {
+  it('renders revenue line chart with legend and no gain/loss colors', async () => {
     mockedApi.get.mockResolvedValue(response())
     render(<Provider><Financials symbol="AAA" /></Provider>)
 
     await screen.findByTestId('financials')
     expect(screen.getByTestId('financials-chart')).toBeInTheDocument()
     const legend = screen.getByTestId('financials-legend')
-    expect(legend).toHaveTextContent('Sales')
+    expect(legend).toHaveTextContent('Revenue')
+    expect(legend).toHaveTextContent('Operating Profit')
     expect(legend).toHaveTextContent('PAT')
+    expect(legend).not.toHaveTextContent(/profit ·|loss/)
+    const chartHtml = screen.getByTestId('financials-chart').innerHTML
+    expect(chartHtml).not.toMatch(/gain|loss/)
+  })
+
+  it('groups metrics into labeled parts with a latest-period summary', async () => {
+    mockedApi.get.mockResolvedValue(response())
+    render(<Provider><Financials symbol="AAA" /></Provider>)
+
+    await screen.findByTestId('financials')
+    expect(screen.getByText('Revenue & operations')).toBeInTheDocument()
+    expect(screen.getByText('Other items')).toBeInTheDocument()
+    expect(screen.getByText('Bottom line')).toBeInTheDocument()
+    expect(screen.getByText('Per share')).toBeInTheDocument()
+    expect(screen.getByTestId('financials-summary')).toHaveTextContent('Q2FY26')
   })
 
   it('marks motion animated by default and static under reduced motion', async () => {
