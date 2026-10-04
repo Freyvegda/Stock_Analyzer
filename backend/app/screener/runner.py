@@ -63,7 +63,16 @@ def _run_job(job_id: int, provider: DataProvider, session_factory) -> None:
     )
 
     _fetch_and_persist(
-        job_id, provider, session_factory, refresh, stock_by_symbol, stored_payload, today
+        job_id,
+        provider,
+        session_factory,
+        refresh,
+        stock_by_symbol,
+        stored_payload,
+        today,
+        stocks,
+        sets.get(active_set_id),
+        provider_stale,
     )
     _run_screens(job_id, user_id, active_set_id, sets, stocks, provider_stale, session_factory, today)
 
@@ -76,7 +85,10 @@ def _run_job(job_id: int, provider: DataProvider, session_factory) -> None:
 
 
 def _prepare_job(job_id: int, provider: DataProvider, session_factory, today: str):
-    """Step 1: load the job + its user's sets, order the refresh, save ``universe_total``.
+    """Step 1: load the job + its user's sets, order the refresh, save full-universe counters.
+
+    ``universe_total`` is the whole universe (~500); ``universe_done`` starts at
+    the already-fresh count so polling shows true 500-stock progress.
 
     Returns ``None`` when the job row no longer exists. ``provider.list_stocks()``
     runs outside any session — a slow universe fetch must not hold a transaction.
@@ -101,13 +113,14 @@ def _prepare_job(job_id: int, provider: DataProvider, session_factory, today: st
             # Stored-snapshot gate: survivors start the refresh queue so the
             # refined shortlist lands as early as possible.
             active_criteria = criteria_from_json(active_meta["criteria_json"])
-            shortlist, _rejected, _stale = service.evaluate_stored_screen(
+            shortlist, _rejected, _stale, verdict = service.evaluate_stored_screen(
                 session, stocks, active_criteria, active_meta["shortlist_size"], provider_stale, today
             )
             survivors = [row["symbol"] for row in shortlist]
         else:  # triggering set deleted mid-job: identity rows still needed
             _upsert_identity(session, stocks)
             survivors = []
+            verdict = {"passed": 0, "failed": 0, "no_data": 0, "total": 0}
 
         symbols = [stock["symbol"] for stock in stocks]
         latest = service.latest_ok_fundamentals(session, symbols)
@@ -123,7 +136,17 @@ def _prepare_job(job_id: int, provider: DataProvider, session_factory, today: st
             if symbol in latest
         }
         job = session.get(RunJob, job_id)
-        job.universe_total = len(refresh)
+        # Full-universe counters: the progress bar tracks all ~500 stocks, not
+        # just the stale slice. Already-fresh symbols count as done up front so
+        # a same-day rerun opens at 499/500 instead of 0/1.
+        job.universe_total = len(symbols)
+        job.universe_done = len(symbols) - len(refresh)
+        job.universe_failed = 0
+        # Live criteria verdict for the active screen; refreshed per flush below
+        # so polling watches pass/fail move across the 500 while fetching.
+        job.verdict_passed = verdict["passed"]
+        job.verdict_failed = verdict["failed"]
+        job.verdict_no_data = verdict["no_data"]
         session.commit()
 
     stock_by_symbol = {stock["symbol"]: stock for stock in stocks}
@@ -177,6 +200,9 @@ def _fetch_and_persist(
     stock_by_symbol: dict[str, dict],
     stored_payload: dict[str, dict],
     today: str,
+    stocks: list[dict],
+    active_meta: dict | None,
+    provider_stale: bool,
 ) -> None:
     """Step 2: parallel fetch with per-stock isolation; persist every 25 results."""
 
@@ -196,8 +222,36 @@ def _fetch_and_persist(
             if len(batch) >= FLUSH_EVERY:
                 _flush_batch(job_id, session_factory, batch, today)
                 batch = []
+                _refresh_verdict(session_factory, job_id, stocks, active_meta, provider_stale, today)
     if batch:
         _flush_batch(job_id, session_factory, batch, today)
+        _refresh_verdict(session_factory, job_id, stocks, active_meta, provider_stale, today)
+
+
+def _refresh_verdict(session_factory, job_id: int, stocks: list[dict], active_meta: dict | None, provider_stale: bool, today: str) -> None:
+    """Re-evaluate the active screen over the fresh-or-stored snapshot.
+
+    Best-effort progress signal: a verdict failure never breaks the fetch loop.
+    """
+    if active_meta is None:
+        return
+    try:
+        criteria = criteria_from_json(active_meta["criteria_json"])
+    except Exception:
+        return
+    try:
+        with session_factory() as session:
+            _shortlist, _rejected, _stale, verdict = service.evaluate_stored_screen(
+                session, stocks, criteria, active_meta["shortlist_size"], provider_stale, today
+            )
+            job = session.get(RunJob, job_id)
+            if job is not None:
+                job.verdict_passed = verdict["passed"]
+                job.verdict_failed = verdict["failed"]
+                job.verdict_no_data = verdict["no_data"]
+            session.commit()
+    except Exception:  # noqa: BLE001 — verdict is progress-only, never fatal
+        logger.warning("verdict refresh failed for job %s", job_id, exc_info=True)
 
 
 def _flush_batch(job_id: int, session_factory, batch: list, today: str) -> None:
@@ -292,7 +346,7 @@ def _persist_screen(
         raise RuntimeError(f"screening set {set_id} not found")
     criteria = criteria_from_json(meta["criteria_json"])
     with session_factory() as session:
-        shortlist, _rejected, _stale = service.evaluate_stored_screen(
+        shortlist, _rejected, _stale, _verdict = service.evaluate_stored_screen(
             session, stocks, criteria, meta["shortlist_size"], provider_stale, today
         )
         run = ScreenRun(
@@ -304,6 +358,8 @@ def _persist_screen(
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
+        session.flush()
+        service._prune_screen_runs(session, user_id, set_id)
         session.commit()
         session.refresh(run)
         return run.id

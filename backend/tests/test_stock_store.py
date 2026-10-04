@@ -10,7 +10,7 @@ from app.db.models import CompanyProfile
 from app.stock import store
 
 INFO = {
-    "forwardPE": 18.5,
+    "trailingEps": 12.5,
     "totalRevenue": 9.3e12,
     "longBusinessSummary": "Makes things",
     "sector": "Energy",
@@ -35,7 +35,7 @@ def session_factory(tmp_path):
 def test_trim_raw_keeps_whitelist_drops_the_rest():
     trimmed = store.trim_raw(INFO)
 
-    assert trimmed["forwardPE"] == 18.5
+    assert trimmed["trailingEps"] == 12.5
     assert trimmed["totalRevenue"] == 9.3e12
     assert "longBusinessSummary" not in trimmed
     assert "junkField" not in trimmed
@@ -91,3 +91,8 @@ def test_read_profile_absent_returns_nulls(session_factory):
 
     assert set(profile) == {"description", "industry", "sector", "website", "employees", "hq"}
     assert all(value is None for value in profile.values())
+
+
+def test_trim_raw_keeps_price_for_header_fallback():
+    out = store.trim_raw({"price": 2500.0, "returnOnAssets": 0.1, "junk": 1})
+    assert out.get("price") == 2500.0

@@ -599,3 +599,12 @@ git commit -m "docs: Phase 1.8 run-performance docs + graph sync"
 - Per-stock and per-screen failures never fail the job; a global failure marks the job
   `failed` with an error and leaves served data intact.
 - Docs + graph updated in the same change.
+
+## Addendum (2026-10-04): live verdict + full-universe counters
+
+- `run_jobs` gained `verdict_passed/failed/no_data` (live active-screen criteria verdict,
+  refreshed per fetch flush; existing DBs migrate via `ALTER TABLE run_jobs ADD COLUMN ...`).
+- `universe_total` is the full universe with `universe_done` head-started at the
+  already-fresh count; `evaluate_stored_screen` returns `verdict` (pre-clamp survivors).
+- Run payloads and `latest_screen` carry `verdict {passed, failed, no_data, total}`.
+- `_parse_stocks` skips `DUMMY*` guard rows; the stray `DUMMYHEG` cache/DB rows were removed.

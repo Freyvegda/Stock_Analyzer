@@ -104,5 +104,5 @@ def get_ohlc(
         return Response(status_code=304, headers={"ETag": etag})
     return JSONResponse(
         content=body,
-        headers={"Cache-Control": "public, max-age=3600", "ETag": etag},
+        headers={"Cache-Control": "public, max-age=900", "ETag": etag},
     )

@@ -20,6 +20,7 @@ import type {
   RunResponse,
   ScreeningSet,
   ScreeningSetChanges,
+  ScreenVerdict,
   ShortlistRow,
 } from '@/api/types'
 import { FundamentalNav } from '@/components/FundamentalNav'
@@ -39,6 +40,8 @@ export interface FundamentalsOutletContext {
   ratios: RatioSpec[]
   rows: ShortlistRow[]
   summary: RunSummary | null
+  /** Active-screen universe verdict (criteria pass/fail) for the progress matrix. */
+  verdict: ScreenVerdict | null
   lastRunDate: string | null
   latestLoaded: boolean
   latestError: string | null
@@ -70,6 +73,7 @@ export default function FundamentalsLayout() {
   const [ratios, setRatios] = useState<RatioSpec[]>([])
   const [rows, setRows] = useState<ShortlistRow[]>([])
   const [summary, setSummary] = useState<RunSummary | null>(null)
+  const [verdict, setVerdict] = useState<ScreenVerdict | null>(null)
   const [lastRunDate, setLastRunDate] = useState<string | null>(null)
   const [job, setJob] = useState<RunJob | null>(null)
   const [starting, setStarting] = useState(false)
@@ -157,6 +161,7 @@ export default function FundamentalsLayout() {
       const latest = await api.get<LatestScreen>('/screen/latest')
       setRows(latest.shortlisted)
       setLastRunDate(latest.run_date)
+      setVerdict(latest.verdict ?? null)
       setLatestError(null)
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
@@ -165,6 +170,7 @@ export default function FundamentalsLayout() {
         setLastRunDate(null)
         setLatestError(null)
         setSummary(null)
+        setVerdict(null)
         return
       }
       const message = e instanceof Error ? e.message : 'Failed to load the latest run'
@@ -248,6 +254,7 @@ export default function FundamentalsLayout() {
       ),
     )
     setSummary(null)
+    setVerdict(null)
     setExtraRuns(null)
     await loadLatest()
   }
@@ -255,6 +262,7 @@ export default function FundamentalsLayout() {
   async function createSet(name: string) {
     const created = await api.post<ScreeningSet>('/screen/sets', { name })
     setSummary(null)
+    setVerdict(null)
     setExtraRuns(null)
     await loadSets()
     await loadLatest()
@@ -270,6 +278,7 @@ export default function FundamentalsLayout() {
   async function deleteSet(id: number) {
     await api.delete<void>(`/screen/sets/${id}`)
     setSummary(null)
+    setVerdict(null)
     setExtraRuns(null)
     await loadSets()
     await loadLatest()
@@ -285,9 +294,10 @@ export default function FundamentalsLayout() {
         failed: res.run.failed_count,
         total: res.run.total,
       })
+      setExtraRuns(res.extra_runs ?? res.run.extra_runs ?? [])
+      setVerdict(res.run.verdict ?? null)
       setStale(res.run.stale ?? false)
       setJob(res.job)
-      setExtraRuns(res.extra_runs ?? [])
       if (res.run.stale) {
         toaster.create({
           title: 'Showing stored fundamentals',
@@ -298,6 +308,7 @@ export default function FundamentalsLayout() {
       try {
         const latest = await api.get<LatestScreen>('/screen/latest')
         setRows(latest.shortlisted)
+        setVerdict(latest.verdict ?? res.run.verdict ?? null)
         setLatestError(null)
       } catch (e) {
         // Session died mid-run: rethrow so the outer handler stays quiet; the
@@ -332,6 +343,7 @@ export default function FundamentalsLayout() {
     ratios,
     rows,
     summary,
+    verdict,
     lastRunDate,
     latestLoaded,
     latestError,

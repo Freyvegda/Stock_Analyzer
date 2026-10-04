@@ -1,9 +1,9 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Provider } from '../ui/provider'
-import { chipElapsed, RunProgress } from '../RunProgress'
+import { chipElapsed, jobElapsed, resolveVerdict, RunProgress } from '../RunProgress'
 import { system } from '@/theme/system'
-import type { RunJob, RunJobItem, RunJobItemStatus } from '../../api/types'
+import type { RunJob, RunJobItem, RunJobItemStatus, ScreenVerdict } from '../../api/types'
 
 function item(
   set_id: number,
@@ -39,10 +39,10 @@ function job(overrides: Partial<RunJob> = {}): RunJob {
   }
 }
 
-function renderProgress(data: RunJob) {
+function renderProgress(data: RunJob, verdict: ScreenVerdict | null = null) {
   return render(
     <Provider>
-      <RunProgress job={data} />
+      <RunProgress job={data} verdict={verdict} />
     </Provider>,
   )
 }
@@ -98,7 +98,7 @@ describe('RunProgress', () => {
     const bar = screen.getByRole('progressbar')
     expect(bar).toHaveAttribute('aria-valuenow', '3')
     expect(bar).toHaveAttribute('aria-valuemax', '10')
-    expect(bar).toHaveAccessibleName('Screen refresh progress')
+    expect(bar).toHaveAccessibleName('Active screen evaluation progress')
   })
 
   it('resolves done/failed chip tones to gain/loss tokens that exist in the theme', () => {
@@ -125,9 +125,85 @@ describe('RunProgress', () => {
     expect(document.head.textContent).toContain('var(--chakra-colors-loss)')
   })
 
-  it('hides the failed suffix when nothing failed', () => {
+  it('resolves the progress-matrix pair to sakura shades in both modes', () => {
     renderProgress(job({ items: [queuedItem] }))
-    expect(screen.getByTestId('job-universe-counter')).not.toHaveTextContent('failed')
+
+    // Passed = mode-aware solid, failed = 800 light / 700 dark — lighter/darker
+    // holds per mode; text uses the fg/solid virtuals. Verified against live
+    // pixels (preview-progress mock) in both modes before shipping.
+    expect(system.token('colors.sakura.solid')).toBe('var(--chakra-colors-sakura-solid)')
+    expect(system.token('colors.sakura.800')).toBe('#8C2753')
+    expect(system.token('colors.sakura.700')).toBe('#B0336A')
+    expect(system.token('colors.sakura.fg')).toBe('var(--chakra-colors-sakura-fg)')
+    expect(system.token('colors.sakura.solid')).toBe('var(--chakra-colors-sakura-solid)')
+    expect(system.css({ color: 'sakura.fg', background: 'sakura.solid' })).toMatchObject({
+      color: 'var(--chakra-colors-sakura-fg)',
+      background: 'var(--chakra-colors-sakura-solid)',
+    })
+    expect(document.head.textContent).toContain('var(--chakra-colors-sakura-fg)')
+    expect(document.head.textContent).toContain('var(--chakra-colors-sakura-solid)')
+  })
+
+  it('always shows the failed count in the criteria matrix, even at zero', () => {
+    renderProgress(job({ items: [queuedItem] }))
+    expect(screen.getByTestId('job-universe-counter')).toHaveTextContent('0 failed')
+    expect(screen.getByTestId('job-stat-failed')).toHaveTextContent('0')
+  })
+
+  it('shows the criteria matrix from the live job verdict: passed, failed, running, left, total', () => {
+    renderProgress(
+      job({
+        universe_total: 500,
+        universe_done: 490,
+        universe_failed: 3,
+        verdict: { passed: 8, failed: 490, no_data: 2, total: 500 },
+        items: [runningItem, queuedItem],
+      }),
+    )
+
+    expect(screen.getByTestId('job-universe-counter')).toHaveTextContent('8 passed')
+    expect(screen.getByTestId('job-universe-counter')).toHaveTextContent('490 failed')
+    expect(screen.getByTestId('job-stat-passed')).toHaveTextContent('Passed')
+    expect(screen.getByTestId('job-stat-passed')).toHaveTextContent('8')
+    expect(screen.getByTestId('job-stat-failed')).toHaveTextContent('490')
+    expect(screen.getByTestId('job-stat-left')).toHaveTextContent('2')
+    expect(screen.getByTestId('job-stat-total')).toHaveTextContent('500')
+    // 2 fetch workers in flight while the job runs and symbols remain.
+    expect(screen.getByTestId('job-stat-running')).toHaveTextContent('Running')
+    expect(screen.getByTestId('job-stat-running')).toHaveTextContent('2')
+    expect(screen.getByTestId('job-running-indicator')).toHaveTextContent('running')
+    expect(screen.getByTestId('job-bar-done')).toHaveStyle({ width: '1.6%' })
+    expect(screen.getByTestId('job-bar-failed')).toHaveStyle({ width: '98%' })
+    expect(screen.getByTestId('job-bar-remaining')).toBeInTheDocument()
+  })
+
+  it('falls back to the snapshot verdict prop before the worker sets totals', () => {
+    renderProgress(
+      job({ universe_total: 0, universe_done: 0, universe_failed: 0, items: [queuedItem] }),
+      { passed: 8, failed: 490, no_data: 2, total: 500 },
+    )
+
+    expect(screen.getByTestId('job-stat-passed')).toHaveTextContent('8')
+    expect(screen.getByTestId('job-stat-total')).toHaveTextContent('500')
+  })
+
+  it('prefers the live job verdict over the snapshot prop', () => {
+    renderProgress(
+      job({
+        verdict: { passed: 9, failed: 489, no_data: 2, total: 500 },
+        items: [queuedItem],
+      }),
+      { passed: 8, failed: 490, no_data: 2, total: 500 },
+    )
+
+    expect(screen.getByTestId('job-stat-passed')).toHaveTextContent('9')
+  })
+
+  it('shows a starting state instead of 0/0 before the worker sets totals', () => {
+    renderProgress(job({ universe_total: 0, universe_done: 0, universe_failed: 0, items: [queuedItem] }))
+
+    expect(screen.getByTestId('job-universe-counter')).toHaveTextContent('Starting')
+    expect(screen.queryByTestId('job-stat-total')).not.toBeInTheDocument()
   })
 
   it('advances a running chip once per second', async () => {
@@ -151,11 +227,11 @@ describe('RunProgress', () => {
     expect(screen.queryByTestId('job-status')).not.toBeInTheDocument()
   })
 
-  it('renders the done banner with refreshed counts', () => {
+  it('renders the done banner with evaluated counts', () => {
     renderProgress(
       job({ status: 'done', universe_done: 9, universe_failed: 1, items: [item(1, 'Alpha', 'done')] }),
     )
-    expect(screen.getByTestId('job-status')).toHaveTextContent('Refreshed 9/10')
+    expect(screen.getByTestId('job-status')).toHaveTextContent('Evaluated 10/10')
   })
 
   it('renders the failed banner with the job error', () => {
@@ -195,5 +271,40 @@ describe('chipElapsed', () => {
 
   it('returns null for a running item without a start time', () => {
     expect(chipElapsed(item(1, 'Alpha', 'running'), now)).toBeNull()
+  })
+})
+
+describe('resolveVerdict', () => {
+  const live = { passed: 9, failed: 489, no_data: 2, total: 500 }
+  const snapshot = { passed: 8, failed: 490, no_data: 2, total: 500 }
+  const base = job({})
+
+  it('prefers the live job verdict when it carries totals', () => {
+    expect(resolveVerdict(job({ verdict: live }), snapshot)).toEqual(live)
+  })
+
+  it('falls back to the snapshot prop when the job has no verdict yet', () => {
+    expect(resolveVerdict(base, snapshot)).toEqual(snapshot)
+    expect(resolveVerdict(job({ verdict: { passed: 0, failed: 0, no_data: 0, total: 0 } }), snapshot)).toEqual(
+      snapshot,
+    )
+  })
+
+  it('returns null when neither source has a verdict', () => {
+    expect(resolveVerdict(base, null)).toBeNull()
+    expect(resolveVerdict(base, undefined)).toBeNull()
+  })
+})
+
+describe('jobElapsed', () => {
+  it('measures live seconds while running and total duration once finished', () => {
+    const running = job({ started_at: '2026-10-03T10:00:00.000Z' })
+    expect(jobElapsed(running, Date.parse('2026-10-03T10:00:07.000Z'))).toBe(7)
+    const done = job({
+      status: 'done',
+      started_at: '2026-10-03T10:00:00.000Z',
+      finished_at: '2026-10-03T10:01:00.000Z',
+    })
+    expect(jobElapsed(done, Date.parse('2026-10-03T10:05:00.000Z'))).toBe(60)
   })
 })

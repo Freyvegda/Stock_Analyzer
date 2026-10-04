@@ -12,13 +12,15 @@ from app.screener.catalog import RATIO_CATALOG
 from app.stock.digest import BALANCE_FACTS, MAIN_FACTS, PERFORMANCE_FACTS
 
 #: Every `.info` field the app can later read back from `raw_json`.
+#: ``price`` is whitelisted explicitly: the screener page price backs the
+#: detail header when the chart (/ohlc) fails, so the price stays visible.
 RAW_FIELDS: frozenset[str] = frozenset(
     spec.yf_field for spec in RATIO_CATALOG if spec.yf_field
 ) | frozenset(
     fact.yf_field
     for fact in (*MAIN_FACTS, *BALANCE_FACTS, *PERFORMANCE_FACTS)
     if fact.yf_field
-)
+) | frozenset({"price"})
 
 _PROFILE_KEYS = ("description", "industry", "sector", "website", "employees", "hq")
 
@@ -100,12 +102,26 @@ def upsert_profile(session, symbol: str, info: dict, updated_at: str) -> None:
 
 
 def read_profile(session, symbol: str) -> dict:
-    """Profile payload for the detail page; absent row → all-`None` keys."""
+    """Profile payload for the detail page; absent row → all-`None` keys.
+
+    Index-like descriptions (a past fetch that stored the NIFTY 500 overview
+    as the company's own text) read back as `None` — the page shows its
+    "no description" state instead of the wrong summary until a refresh
+    overwrites the row.
+    """
+    from app.data.company_search import is_index_summary
+
     row = session.get(CompanyProfile, symbol)
     if row is None:
         return dict.fromkeys(_PROFILE_KEYS)
+    description = row.description
+    try:
+        if description and is_index_summary(None, description):
+            description = None
+    except Exception:  # noqa: BLE001 — guard never breaks the read
+        pass
     return {
-        "description": row.description,
+        "description": description,
         "industry": row.industry,
         "sector": row.sector,
         "website": row.website,

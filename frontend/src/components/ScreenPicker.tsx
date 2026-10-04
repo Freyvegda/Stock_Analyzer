@@ -65,10 +65,13 @@ export function ScreenPicker({
   options,
   selectedId,
   onSelect,
+  hideVerdict = false,
 }: {
   options: ScreenOption[]
   selectedId: number | null
   onSelect: (id: number) => void
+  /** Hide the verdict chips (Top 10 / universe pickers grade on demand). */
+  hideVerdict?: boolean
 }) {
   const reduced = usePrefersReducedMotion()
   const [open, setOpen] = useState(false)
@@ -171,7 +174,7 @@ export function ScreenPicker({
             Active
           </span>
         ) : null}
-        {selected !== undefined ? (
+        {selected !== undefined && !hideVerdict ? (
           <VerdictChip verdict={selected.verdict} pending={selected.pending} />
         ) : null}
         <ChevronDown
@@ -225,7 +228,9 @@ export function ScreenPicker({
                       Active
                     </span>
                   ) : null}
-                  <VerdictChip verdict={option.verdict} pending={option.pending} />
+                  {!hideVerdict ? (
+                    <VerdictChip verdict={option.verdict} pending={option.pending} />
+                  ) : null}
                 </span>
                 {option.verdict !== null &&
                 option.score !== undefined &&

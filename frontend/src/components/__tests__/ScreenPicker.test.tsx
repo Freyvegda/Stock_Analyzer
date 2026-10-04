@@ -108,4 +108,18 @@ describe('ScreenPicker', () => {
 
     expect(screen.getByRole('option', { name: /value/i })).toHaveTextContent('Checking…')
   })
+
+  it('hides verdict chips when hideVerdict is set', async () => {
+    const user = userEvent.setup()
+    renderPicker({ hideVerdict: true })
+
+    expect(screen.getByRole('combobox')).toHaveTextContent('Default')
+    expect(screen.queryByText('Passes your screen')).not.toBeInTheDocument()
+    expect(screen.queryByText('Not checked yet')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+
+    expect(screen.getByRole('option', { name: /quality/i })).toBeInTheDocument()
+    expect(screen.queryByText('Below your screen')).not.toBeInTheDocument()
+  })
 })

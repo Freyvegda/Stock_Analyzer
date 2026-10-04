@@ -16,7 +16,7 @@ Budget: 0 INR. All data sources free. Signals only — no auto-trading.
 
 - Python 3.10, FastAPI, uvicorn
 - SQLAlchemy 2.x + SQLite (`data/stockanalyzer.db`) — schema must stay Postgres-compatible (no SQLite-only types); engine sets WAL + `busy_timeout` pragmas on connect (Phase 1.8)
-- Composite provider (default): Stooq CSV (5y OHLC + quote price), screener.in (P&L/BS/CF statements + ratios_math) with per-field yfinance fill for null derived ratios plus ratio-calculator fallback (yfinance statement numbers recomputed through math when `.info` is rate-limited, algebraic pe/pb/roe/market_cap derivation), yfinance hot path off by default (`ENABLE_YFINANCE=1` opts the legacy full-row + ohlc tails back in), NSE/BSE announcement endpoints (PDFs)
+- Composite provider (default): Stooq CSV (5y OHLC + quote price), Yahoo chart JSON (secondary OHLC with per-host gap + query1/query2 rotation + 429 backoff + 60s circuit-break), screener.in (P&L/BS/CF statements + ratios_math) with per-field yfinance fill for null derived ratios plus ratio-calculator fallback (yfinance statement numbers recomputed through math when `.info` is rate-limited, algebraic pe/pb/roe/market_cap derivation), yfinance hot path off by default (`ENABLE_YFINANCE=1` opts the legacy full-row + ohlc tails back in), NSE/BSE announcement endpoints (PDFs)
 - pdfplumber (PDF text), google-generativeai (Gemini Flash), xgboost + scikit-learn, pandas, pyyaml, httpx
 - pytest (tests must run OFFLINE — mock all network)
 
@@ -28,9 +28,9 @@ backend/
 │   ├── main.py            # FastAPI app, CORS (localhost:5173), router mounts, /health
 │   ├── api/
 │   │   ├── auth.py        # /auth/state, /auth/setup, /auth/login, /auth/logout, /auth/me
-│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (snapshot batch active + 3 most-used, then background job), GET /screen/jobs/latest, GET /screen/latest
+│   │   ├── screen.py      # /screen/ratios, /screen/sets CRUD + activate, POST /screen/run (snapshot batch active + 3 most-used, then background job), GET /screen/jobs/latest, GET /screen/latest (optional ?set_id= for any saved screen)
 │   │   ├── stock.py       # GET /stock/{symbol}, GET /stock/{symbol}/report?set_id=, POST /stock/{symbol}/refresh, GET /stock/{symbol}/ohlc
-│   │   ├── stocks.py      # GET /stocks — universe list with per-user verdicts
+│   │   ├── stocks.py      # GET /stocks (optional ?set_id=) — universe list with per-screen verdicts
 │   │   ├── docs.py        # POST /docs/fetch, POST /docs/analyze, GET /docs/{symbol}
 │   │   ├── signals.py     # POST /model/train, POST /model/predict, GET /model/signals
 │   │   └── backtest.py    # POST /backtest/run, GET /backtest/{id}
@@ -43,9 +43,10 @@ backend/
 │   │   ├── provider.py    # DataProvider ABC — THE extension point
 │   │   ├── yfinance_impl.py   # legacy fallback (ENABLE_YFINANCE=1 opts in)
 │   │   ├── stooq_impl.py      # 5y daily OHLC + quote price (primary)
+│   │   ├── yahoo_chart_impl.py  # chart-JSON secondary OHLC (polite loop)
 │   │   ├── screener_statements.py  # P&L/BS/CF scrape + data/statements cache
 │   │   ├── ratios_math.py     # pure statements+price -> catalog ratios
-│   │   ├── price_cache.py     # data/prices/{SYM}.csv file cache (DB stays lean)
+│   │   ├── price_cache.py     # data/prices/{SYM}.csv file cache (DB stays lean) + merge_cached (1y + 5y union)
 │   │   ├── composite_impl.py  # default chain (build_default_provider)
 │   │   ├── screener_impl.py
 │   │   └── nse_impl.py
@@ -113,19 +114,19 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
   -> POST /screen/run: engine.py gates the snapshot for the active screen (manual) + up to 3 most-used others (auto) — zero fundamentals calls -> screen_runs rows + run_jobs row (one queued item per saved screen, triggering items done) -> 200 {run, extra_runs, job}
   -> background runner: fundamentals(symbol, cached=stored row) for EVERY symbol whose snapshot is
-     not from today (composite: screener statements merged over stale cache + Stooq quote + ratios_math, per-field yfinance fill for nulls with debug reasons logged, statements-base + algebraic calculator fallback when throttled) -> fundamentals (ok|failed) + company_profiles upsert; gate survivors ordered
+     not from today (composite: screener statements + About/website/sector identity merged over stale cache + Stooq quote + ratios_math, per-field yfinance fill for nulls with debug reasons logged, statements-base + algebraic calculator fallback when throttled) -> fundamentals (ok|failed) + company_profiles upsert (batch skips math-only payloads, never nulls good profiles); gate survivors ordered
      first, counters flushed every 25 fetches; a failed fetch keeps the stored row
   -> every saved screen re-evaluated on the fresh snapshot (active last) -> one screen_runs row each
   -> GET /screen/jobs/latest: status + universe counters + per-screen items; stale running jobs swept
      to interrupted on read; an extra most-used screen failing is caught and reported as `extra_runs[].error`
-  -> GET /stocks: whole stored universe + caller's verdict (pass|fail|no_data), computed on read
+  -> GET /stocks: whole stored universe + caller's verdict (pass|fail|no_data), computed on read — `?set_id=` grades the same shared snapshot against any saved screen (pure read; unknown/foreign sets 404)
   -> /stock/{symbol}: newest ok snapshot row (lazy-fetched + stored on first view) + reports for the
      active screen and the 3 most-used screens
      + profile + digest sections (main_ratios | has | done | other_groups), computed per caller;
      GET /stock/{symbol}/report?set_id= lazily computes any other saved screen's verdict
      from the same stored snapshot (zero network when a snapshot exists)
-  -> /stock/{symbol}/ohlc: 5y daily bars via provider -> file cache data/prices/{SYM}.csv -> memory TTL cache (900 s) -> slice + aggregate
-     (1d/15d/1mo) + Cache-Control public max-age=3600 + ETag/304. Daily bars are NEVER written to the DB.
+  -> /stock/{symbol}/ohlc: 1y daily bars fast-first via provider (Stooq -> Yahoo chart JSON -> yfinance) -> file cache data/prices/{SYM}.csv (merged 1y + 5y union) -> memory TTL cache (900 s) -> silent 5y expand -> slice + aggregate
+     (1d/15d/1mo) + `source`/`stale` flags + Cache-Control public max-age=900 + ETag/304 (15m 1y poll contract). Daily bars are NEVER written to the DB.
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table
@@ -137,7 +138,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
 
 - Network calls: httpx with timeouts + retry w/ backoff (screener politeness: 429 backoff, 2 workers); provider fetch wrapped in try/except -> per-stock fallback to the newest stored ok row; the run sets `stale` and each shortlist row carries `data_date`
 - Batch runs: an extra most-used screen failing is caught and reported as `extra_runs[].error`; the active result and the other extras still persist
-- Run jobs: per-stock fetch failure increments `universe_failed` and continues; a per-screen failure marks only that item `failed` and never stops the job; a global failure marks the job `failed` with `error` and fails its queued/running items (already-served cached data stays intact); a `running` job whose worker died with the process is swept to `interrupted` on the next jobs read (in-process live jobs are registered and skipped)
+- Run jobs: per-stock fetch failure increments `universe_failed` and continues; the live active-screen verdict (`verdict_passed/failed/no_data`) re-evaluates per fetch flush so polling watches criteria pass/fail move across the 500; a per-screen failure marks only that item `failed` and never stops the job; a global failure marks the job `failed` with `error` and fails its queued/running items (already-served cached data stays intact); a `running` job whose worker died with the process is swept to `interrupted` on the next jobs read (in-process live jobs are registered and skipped)
 - Run concurrency: one job per user — a second `POST /screen/run` returns 409 `Run already in progress` + `job_id`; PUT/DELETE/activate on a screen with queued/running items returns 409 `Screen is mid-run`
 - Stock detail: stored-first (zero network when a snapshot exists); refresh failure serves the stored row with `warning` + `refreshed=false`; a failed fetch never overwrites a same-day ok row; candles fall back to the in-memory cache and are never persisted
 - Universe: `GET /stocks` seeds `stocks` from the provider only when the table is empty; upstream seeding failures ride the global httpx → 502 handler; a stock with no stored row lists as `no_data`

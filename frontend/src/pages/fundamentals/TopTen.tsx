@@ -1,11 +1,20 @@
 /**
- * Top 10 Results — the shortlist the last screen run produced, read from the
- * layout's shared run state (no fetch of its own).
+ * Top 10 Results — one saved screen at a time.
+ *
+ * The active screen paints from the layout's shared run state (live: it
+ * follows runs to completion). Any other saved screen is read on demand
+ * from its own latest stored run (`GET /screen/latest?set_id=`) — a pure
+ * read that never writes. The glass `ScreenPicker` is shared with the stock
+ * detail page; the table swap animates through `BlurFade` keyed by screen.
  */
 
+import { useEffect, useState } from 'react'
 import { Badge, Flex, Text } from '@chakra-ui/react'
 import { Link, useOutletContext } from 'react-router-dom'
+import { api, ApiError } from '@/api/client'
+import type { LatestScreen } from '@/api/types'
 import { RunProgress } from '@/components/RunProgress'
+import { ScreenPicker } from '@/components/ScreenPicker'
 import { ShortlistTable } from '@/components/ShortlistTable'
 import { BlurFade } from '@/components/ui/BlurFade'
 import { DotPattern } from '@/components/ui/DotPattern'
@@ -14,28 +23,108 @@ import { Num } from '@/components/ui/Num'
 import type { FundamentalsOutletContext } from './FundamentalsLayout'
 
 export default function TopTen() {
-  const { rows, summary, lastRunDate, latestLoaded, latestError, running, job, stale, extraRuns } =
-    useOutletContext<FundamentalsOutletContext>()
+  const {
+    sets,
+    activeSet,
+    rows,
+    summary,
+    verdict,
+    lastRunDate,
+    latestLoaded,
+    latestError,
+    running,
+    job,
+    stale,
+  } = useOutletContext<FundamentalsOutletContext>()
+
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [picked, setPicked] = useState<LatestScreen | null>(null)
+  const [pickedLoading, setPickedLoading] = useState(false)
+  const [pickedMissing, setPickedMissing] = useState(false)
+  const [pickedError, setPickedError] = useState<string | null>(null)
+
+  const effectiveId = selectedId ?? activeSet?.id ?? null
+  const showingActive = activeSet !== null && effectiveId === activeSet.id
+
+  useEffect(() => {
+    if (selectedId === null && activeSet !== null) setSelectedId(activeSet.id)
+  }, [selectedId, activeSet])
+
+  useEffect(() => {
+    if (showingActive || effectiveId === null) {
+      setPicked(null)
+      setPickedMissing(false)
+      setPickedError(null)
+      setPickedLoading(false)
+      return
+    }
+    let cancelled = false
+    setPickedLoading(true)
+    setPickedMissing(false)
+    setPickedError(null)
+    api
+      .get<LatestScreen>(`/screen/latest?set_id=${effectiveId}`)
+      .then((latest) => {
+        if (cancelled) return
+        setPicked(latest)
+        setPickedLoading(false)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setPickedLoading(false)
+        if (e instanceof ApiError && e.status === 404) {
+          setPicked(null)
+          setPickedMissing(true)
+          return
+        }
+        setPicked(null)
+        setPickedError(e instanceof Error ? e.message : 'Failed to load that screen')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showingActive, effectiveId])
+
+  const displayRows = showingActive ? rows : (picked?.shortlisted ?? [])
+  const displayVerdict = showingActive ? verdict : (picked?.verdict ?? null)
+  const displayRunDate = showingActive ? lastRunDate : (picked?.run_date ?? null)
+  const displaySummary =
+    summary !== null && showingActive
+      ? summary
+      : displayVerdict !== null
+        ? {
+            shortlisted: displayRows.length,
+            failed: displayVerdict.failed,
+            total: displayVerdict.total,
+          }
+        : null
+  const displayLoaded = showingActive ? latestLoaded : !pickedLoading
+  const displayError = showingActive ? latestError : pickedError
 
   const todayIso = (() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   })()
   const storedDataDate =
-    rows
+    displayRows
       .map((r) => r.data_date)
       .filter((d): d is string => Boolean(d))
       .sort()[0] ?? null
 
   const emptyRun =
-    latestError === null && !running && rows.length === 0 && (summary !== null || lastRunDate !== null)
-  const noRunYet =
-    latestError === null &&
+    displayError === null &&
     !running &&
-    latestLoaded &&
-    rows.length === 0 &&
-    summary === null &&
-    lastRunDate === null
+    displayRows.length === 0 &&
+    (displaySummary !== null || displayRunDate !== null) &&
+    !pickedMissing
+  const noRunYet =
+    (displayError === null &&
+      !running &&
+      displayLoaded &&
+      displayRows.length === 0 &&
+      displaySummary === null &&
+      displayRunDate === null) ||
+    pickedMissing
 
   return (
     <div className="space-y-4">
@@ -43,24 +132,24 @@ export default function TopTen() {
         <Text as="h1" fontSize="xl" fontWeight="semibold">
           Top 10 Results
         </Text>
-        {summary !== null ? (
+        {displaySummary !== null ? (
           <Text data-testid="summary" fontSize="sm" color="fg.muted">
             <Num>
-              <NumberTicker value={summary.shortlisted} />
+              <NumberTicker value={displaySummary.shortlisted} />
             </Num>{' '}
             shortlisted ·{' '}
             <Num>
-              <NumberTicker value={summary.failed} />
+              <NumberTicker value={displaySummary.failed} />
             </Num>{' '}
             failed ·{' '}
             <Num>
-              <NumberTicker value={summary.total} />
+              <NumberTicker value={displaySummary.total} />
             </Num>{' '}
             total
           </Text>
-        ) : lastRunDate !== null ? (
+        ) : displayRunDate !== null ? (
           <Text data-testid="summary" fontSize="sm" color="fg.muted">
-            Last run: {lastRunDate}
+            Last run: {displayRunDate}
           </Text>
         ) : null}
         {storedDataDate !== null && storedDataDate !== todayIso ? (
@@ -70,38 +159,39 @@ export default function TopTen() {
         ) : null}
       </Flex>
 
-      {stale ? (
+      {sets.length > 0 ? (
+        <ScreenPicker
+          options={sets.map((set) => ({
+            id: set.id,
+            name: set.name,
+            isActive: set.is_active,
+            verdict: null,
+          }))}
+          selectedId={effectiveId}
+          onSelect={setSelectedId}
+          hideVerdict
+        />
+      ) : null}
+
+      {showingActive && stale ? (
         <Badge data-testid="stale-badge" variant="outline" color="fg.muted">
           cached — refreshing in background
         </Badge>
       ) : null}
 
-      {job !== null ? <RunProgress job={job} /> : null}
+      {showingActive && job !== null ? <RunProgress job={job} verdict={verdict} /> : null}
 
-      {extraRuns !== null && extraRuns.length > 0 ? (
-        <Text data-testid="extra-runs" fontSize="xs" color="fg.muted">
-          Also ran:{' '}
-          {extraRuns.map((extra, index) => (
-            <span key={extra.set_id}>
-              {index > 0 ? ' · ' : ''}
-              {extra.name}
-              {extra.error !== null ? ' (failed)' : ` (${extra.shortlisted ?? 0})`}
-            </span>
-          ))}
-        </Text>
-      ) : null}
-
-      {latestError !== null ? (
+      {displayError !== null ? (
         <Text role="alert" color="fg.error" fontSize="sm">
-          {latestError}
+          {displayError}
         </Text>
       ) : null}
 
-      {rows.length > 0 || !latestLoaded || running ? (
-        <BlurFade>
+      {displayRows.length > 0 || !displayLoaded || (running && showingActive) ? (
+        <BlurFade key={effectiveId ?? 'none'}>
           {/* Same card surface as the stocks table (see Stocks.tsx). */}
           <div className="rounded-lg border border-border bg-card p-4">
-            <ShortlistTable rows={rows} loading={!latestLoaded} />
+            <ShortlistTable rows={displayRows} loading={!displayLoaded} />
           </div>
         </BlurFade>
       ) : null}

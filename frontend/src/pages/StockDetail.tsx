@@ -18,11 +18,9 @@ import type {
   ChartInterval,
   ChartRange,
   CompanyProfile,
-  MetricGroup,
   OhlcResponse,
   ScreeningSet,
   StockDetail as StockDetailData,
-  StockFact,
   StockScreenReport,
 } from '../api/types'
 import { BlurFade } from '../components/ui/BlurFade'
@@ -32,8 +30,12 @@ import { StockChart } from '../components/StockChart'
 import { ScreenPicker } from '../components/ScreenPicker'
 import type { ScreenOption } from '../components/ScreenPicker'
 import { ScreenReportCard } from '../components/ScreenReportCard'
-import { aggregateCandles, sliceRange } from '../lib/candles'
+import { aggregateCandles, mergeCandles, sliceRange } from '../lib/candles'
+import { formatPrice, getLatestPrice } from '../lib/price'
 import { toaster } from '../components/ui/toaster'
+import { PriceAccordion } from '../components/PriceAccordion'
+import { FundamentalsPanel } from '../components/FundamentalsPanel'
+import { Delta } from '../components/ui/Delta'
 
 const RANGES: { key: ChartRange; label: string }[] = [
   { key: '6m', label: '6M' },
@@ -176,70 +178,6 @@ function DescriptionCard({
   )
 }
 
-function FactTiles({ title, facts }: { title: string; facts: StockFact[] }) {
-  if (facts.length === 0) return null
-  return (
-    <BlurFade>
-      <section className="rounded-lg border border-border bg-card p-4">
-        <Text fontSize="sm" fontWeight="medium">
-          {title}
-        </Text>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {facts.map((fact) => (
-            <div key={fact.key} className="rounded-md border border-border bg-background/40 p-3">
-              <Text fontSize="xs" color="fg.muted">
-                {fact.label}
-              </Text>
-              <Text fontSize="sm" mt={1}>
-                <Num>{fmt(fact.value)}</Num>{' '}
-                <span className="text-xs text-muted-foreground">{fact.unit}</span>
-              </Text>
-            </div>
-          ))}
-        </div>
-      </section>
-    </BlurFade>
-  )
-}
-
-function OtherGroups({ groups }: { groups: MetricGroup[] }) {
-  if (groups.length === 0) return null
-  return (
-    <BlurFade>
-      <section className="rounded-lg border border-border bg-card p-4">
-        <Text fontSize="sm" fontWeight="medium">
-          All other ratios
-        </Text>
-        <div className="mt-3 space-y-4">
-          {groups.map((group) => (
-            <div key={group.category}>
-              <Text fontSize="xs" color="fg.muted" className="uppercase tracking-[0.08em]">
-                {group.category}
-              </Text>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                {group.metrics.map((metric) => (
-                  <div
-                    key={metric.key}
-                    className="rounded-md border border-border bg-background/40 p-3"
-                  >
-                    <Text fontSize="xs" color="fg.muted">
-                      {metric.label}
-                    </Text>
-                    <Text fontSize="sm" mt={1}>
-                      <Num>{fmt(metric.value)}</Num>{' '}
-                      <span className="text-xs text-muted-foreground">{metric.unit}</span>
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </BlurFade>
-  )
-}
-
 export default function StockDetail() {
   const params = useParams()
   const symbol = (params.symbol ?? '').toUpperCase()
@@ -263,6 +201,8 @@ export default function StockDetail() {
     () => aggregateCandles(sliceRange(candles, range), interval),
     [candles, range, interval],
   )
+
+  const latestPrice = useMemo(() => getLatestPrice(candles), [candles])
 
   const knownReports = useMemo(
     () =>
@@ -339,21 +279,31 @@ export default function StockDetail() {
   }
 
   async function loadCandles() {
-    // Fetch-once: the full 5y daily series, cached per page view. Range and
-    // interval toggles derive locally (see displayedCandles) — no refetch.
+    // 1y-first: ~250 daily bars paint fast (rate-limit safe), then a silent
+    // 5y expand merges in the background. Range/interval toggles derive
+    // locally (see displayedCandles) — no refetch.
     setCandlesLoading(true)
     setCandlesError(null)
     try {
-      const data = await api.get<OhlcResponse>(
-        `/stock/${encodeURIComponent(symbol)}/ohlc?range=5y&interval=1d`,
+      const first = await api.get<OhlcResponse>(
+        `/stock/${encodeURIComponent(symbol)}/ohlc?range=1y&interval=1d`,
       )
-      setCandles(data.candles)
+      setCandles(first.candles)
+      setCandlesLoading(false)
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return // global redirect
       setCandles([])
       setCandlesError(e instanceof Error ? e.message : 'Failed to load the chart')
-    } finally {
       setCandlesLoading(false)
+      return
+    }
+    try {
+      const full = await api.get<OhlcResponse>(
+        `/stock/${encodeURIComponent(symbol)}/ohlc?range=5y&interval=1d`,
+      )
+      setCandles((prev) => mergeCandles(prev, full.candles))
+    } catch {
+      // 1y already paints; the 5y expand is best-effort and silent.
     }
   }
 
@@ -403,6 +353,29 @@ export default function StockDetail() {
       loadCandles()
       loadSets()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol])
+
+  useEffect(() => {
+    // 15-minute price poll: lightweight 1y refetch merged in place, so the
+    // latest close lands without hammering upstream. Silent — never flashes
+    // the skeleton.
+    if (symbol === '') return
+    const FIFTEEN_MINUTES = 15 * 60 * 1000
+    const id = window.setInterval(() => {
+      if (document.hidden) return
+      void api
+        .get<OhlcResponse>(`/stock/${encodeURIComponent(symbol)}/ohlc?range=1y&interval=1d`)
+        .then((data) => {
+          setCandles((prev) => mergeCandles(prev, data.candles))
+          setCandlesError(null)
+        })
+        .catch((e: unknown) => {
+          if (e instanceof ApiError && e.status === 401) return // global redirect
+          setCandlesError(e instanceof Error ? e.message : 'Failed to load the chart')
+        })
+    }, FIFTEEN_MINUTES)
+    return () => window.clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol])
 
@@ -491,6 +464,28 @@ export default function StockDetail() {
             </Text>
             <Flex align="center" gap={3} mt={1} wrap="wrap">
               {detail.sector !== null ? <Badge variant="subtle">{detail.sector}</Badge> : null}
+              {latestPrice !== null ? (
+                <Flex data-testid="header-price" align="center" gap={2} wrap="wrap">
+                  <Text fontSize="sm" fontWeight="semibold">
+                    ₹ <Num>{formatPrice(latestPrice.price)}</Num>
+                  </Text>
+                  {latestPrice.change !== null ? (
+                    <Delta value={latestPrice.change} decimals={2} />
+                  ) : null}
+                  <Text fontSize="xs" color="fg.muted">
+                    as of <Num>{latestPrice.asOf}</Num>
+                  </Text>
+                </Flex>
+              ) : detail.price !== null ? (
+                <Flex data-testid="header-price" align="center" gap={2} wrap="wrap">
+                  <Text fontSize="sm" fontWeight="semibold">
+                    ₹ <Num>{formatPrice(detail.price)}</Num>
+                  </Text>
+                  <Text fontSize="xs" color="fg.muted">
+                    as of <Num>{detail.price_as_of ?? detail.data_date}</Num>
+                  </Text>
+                </Flex>
+              ) : null}
               {detail.market_cap !== null ? (
                 <Text fontSize="xs" color="fg.muted">
                   Mkt cap <Num>{fmt(detail.market_cap)}</Num> ₹ cr
@@ -619,10 +614,24 @@ export default function StockDetail() {
         </section>
       </BlurFade>
 
-      <FactTiles title="Main fundamental ratios" facts={detail.main_ratios} />
-      <FactTiles title="What it has" facts={detail.has} />
-      <FactTiles title="What it's done" facts={detail.done} />
-      <OtherGroups groups={detail.other_groups} />
+      <BlurFade>
+        <PriceAccordion
+          candles={candles}
+          loading={candlesLoading}
+          error={candlesError}
+          onRetry={loadCandles}
+          fallbackPrice={detail.price}
+          fallbackAsOf={detail.price_as_of ?? detail.data_date}
+        />
+      </BlurFade>
+
+      <FundamentalsPanel
+        mainRatios={detail.main_ratios}
+        has={detail.has}
+        done={detail.done}
+        otherGroups={detail.other_groups}
+        criteria={selectedReport?.report.criteria ?? null}
+      />
     </div>
   )
 }

@@ -112,7 +112,9 @@ describe('Stocks', () => {
 
     expect(screen.getByText('Beta Bank')).toBeInTheDocument()
     expect(screen.queryByText('Alpha Ltd')).not.toBeInTheDocument()
-    expect(mockedApi.get).toHaveBeenCalledTimes(1)
+    // One universe fetch + one screen-list fetch; typing filters locally.
+    expect(mockedApi.get).toHaveBeenCalledTimes(2)
+    expect(mockedApi.get).toHaveBeenCalledWith('/stocks')
   })
 
   it('filters by sector and verdict', async () => {
@@ -162,5 +164,39 @@ describe('Stocks', () => {
 
     await waitFor(() => expect(screen.getByRole('link', { name: 'AAA' })).toBeInTheDocument())
     expect(screen.getByRole('link', { name: 'AAA' })).toHaveAttribute('href', '/stock/AAA')
+  })
+
+  it('re-renders pass/fail verdicts for the picked screen', async () => {
+    const user = userEvent.setup()
+    const wide = response
+    const narrow: StockListResponse = {
+      as_of: '2026-09-26',
+      total: 3,
+      rows: response.rows.map((row) =>
+        row.symbol === 'AAA' ? { ...row, passes: 0, verdict: 'fail' as const } : row,
+      ),
+    }
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') {
+        return Promise.resolve([
+          { id: 1, name: 'Default', is_active: true },
+          { id: 2, name: 'Quality', is_active: false },
+        ])
+      }
+      if (path === '/stocks?set_id=2') return Promise.resolve(narrow)
+      if (path === '/stocks') return Promise.resolve(wide)
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    renderPage()
+
+    expect(await screen.findByTestId('verdict-AAA')).toHaveTextContent('2/2 pass')
+    expect(screen.getByRole('combobox', { name: 'Choose a screen' })).toHaveTextContent('Default')
+
+    await user.click(screen.getByRole('combobox', { name: 'Choose a screen' }))
+    await user.click(screen.getByRole('option', { name: /quality/i }))
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/stocks?set_id=2')
+    expect(await screen.findByText('Showing verdicts for Quality')).toBeInTheDocument()
+    expect(screen.getByTestId('verdict-AAA')).toHaveTextContent('Fail')
   })
 })

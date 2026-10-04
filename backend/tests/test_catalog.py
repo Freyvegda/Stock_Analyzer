@@ -38,9 +38,49 @@ def test_catalog_lookup_complete():
 
 def test_live_verified_scales_pinned():
     # Verified 2026-09-26 against RELIANCE/TCS/HDFCBANK .info (scripts/verify_catalog.py):
-    # dividendYield and fiveYearAvgDividendYield arrive as percent numbers;
-    # fraction-shaped fields (margins, growth, ownership, payout) need x100.
+    # dividendYield arrives as a percent number; fraction-shaped fields
+    # (margins, growth, ownership, payout) need x100. Catalog now lists only
+    # ratios the math engine stores (screener scrape + ratios_math).
     assert CATALOG_BY_KEY["dividendYield"].scale == 1.0
-    assert CATALOG_BY_KEY["fiveYearAvgDividendYield"].scale == 1.0
     assert CATALOG_BY_KEY["profitMargins"].scale == 100.0
     assert CATALOG_BY_KEY["payoutRatio"].scale == 100.0
+
+
+def test_catalog_matches_math_engine_output():
+    # Criteria must offer only stored ratios: every catalog raw key is produced
+    # by ratios_math.compute_ratios (derived keys are the six columns).
+    from app.data.ratios_math import compute_ratios
+
+    base = {
+        "price": 100.0,
+        "shares_outstanding": 10.0,
+        "revenue": 500.0,
+        "net_income": 50.0,
+        "ebit": 80.0,
+        "ebitda": 100.0,
+        "equity": 200.0,
+        "total_assets": 400.0,
+        "current_assets": 150.0,
+        "current_liabilities": 100.0,
+        "inventory": 20.0,
+        "total_debt": 50.0,
+        "cash": 30.0,
+        "operating_cashflow": 60.0,
+        "capex": 10.0,
+        "dividends_paid": 5.0,
+        "revenue_prev": 400.0,
+        "earnings_prev": 40.0,
+        "cogs": 300.0,
+        "symbol": "TEST",
+        "promoters_pct": 0.5,
+        "institutions_pct": 0.2,
+        "interest": 10.0,
+        "receivables": 60.0,
+        "payables": 40.0,
+        "pledged_pct": 0.02,
+    }
+    out = compute_ratios(base)
+    stored = {"pe", "pb", "roe", "roce", "debt_to_equity", "market_cap"} | set(out["raw"])
+    for spec in RATIO_CATALOG:
+        if spec.source == "raw":
+            assert spec.key in stored, spec.key

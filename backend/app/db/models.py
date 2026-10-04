@@ -131,6 +131,9 @@ class RunJob(Base):
     universe_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     universe_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     universe_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    verdict_passed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    verdict_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    verdict_no_data: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

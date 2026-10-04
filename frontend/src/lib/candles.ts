@@ -17,6 +17,15 @@ function toOrdinal(iso: string): number {
   return Math.floor(ms / 86400000)
 }
 
+/** Union 1y + 5y daily series by `time` (incoming wins), sorted ascending. */
+export function mergeCandles(current: Candle[], incoming: Candle[]): Candle[] {
+  if (incoming.length === 0) return current.map((row) => ({ ...row }))
+  const byTime = new Map<string, Candle>()
+  for (const row of current) byTime.set(row.time, { ...row })
+  for (const row of incoming) byTime.set(row.time, { ...row })
+  return [...byTime.values()].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0))
+}
+
 /** Keep bars with `time >= last_bar_time - RANGES[range]` (inclusive). */
 export function sliceRange(rows: Candle[], range: ChartRange): Candle[] {
   if (rows.length === 0) return []

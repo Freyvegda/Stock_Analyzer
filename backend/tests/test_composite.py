@@ -2,8 +2,29 @@
 
 import os
 
+import pytest
+
 import app.data.composite_impl as comp_mod
 from app.data.composite_impl import CompositeProvider, build_default_provider
+
+
+@pytest.fixture(autouse=True)
+def _no_identity_network(monkeypatch):
+    """Offline unit tests: identity fallbacks never hit the network."""
+    monkeypatch.setattr(comp_mod, "fetch_wikipedia_summary", lambda *a, **k: None)
+    monkeypatch.setattr(comp_mod, "fetch_search_identity", lambda *a, **k: {})
+    monkeypatch.setattr(comp_mod, "fetch_yfinance_identity", lambda *a, **k: {})
+
+    class _DeadYahoo:
+        def ohlc(self, symbol, years=5):
+            raise RuntimeError("yahoo offline in unit tests")
+
+    monkeypatch.setattr(comp_mod, "YahooChartProvider", lambda: _DeadYahoo())
+    monkeypatch.setattr(
+        comp_mod.YFinanceProvider, "ohlc", lambda self, symbol, years=5: (_ for _ in ()).throw(
+            RuntimeError("yfinance offline in unit tests")
+        ),
+    )
 
 
 def ohlc_rows():
@@ -125,6 +146,28 @@ def test_yfinance_off_by_default(monkeypatch):
     assert build_default_provider().enable_yfinance is True
 
 
+def test_ohlc_falls_back_to_yfinance_on_stooq_fail_cold_cache(tmp_path, monkeypatch):
+    """Stooq timeout + cold cache must still render price via yfinance.
+
+    Regression: default provider (enable_yfinance=False) raised on Stooq
+    ConnectTimeout with empty data/prices, so /ohlc -> 502 and the stock
+    screen showed "No price data".
+    """
+
+    class DeadStooq:
+        def ohlc(self, symbol, years=5):
+            raise RuntimeError("stooq down: ConnectTimeout")
+
+    class FakeYF:
+        def ohlc(self, symbol, years=5):
+            return ohlc_rows()
+
+    monkeypatch.setattr(comp_mod, "StooqProvider", lambda: DeadStooq())
+    monkeypatch.setattr(comp_mod, "YFinanceProvider", lambda: FakeYF())
+    rows = make_provider(tmp_path).ohlc("AAA")
+    assert rows[-1]["close"] == 11.5
+
+
 def _partial_statements_no_shares():
     s = statements()
     s["shares_outstanding"] = None
@@ -141,7 +184,7 @@ def _yf_partial_fill():
         "roce": None,
         "debt_to_equity": None,
         "market_cap": 750000.0,
-        "raw": {"beta": 1.2, "returnOnAssets": 0.09},
+        "raw": {"trailingEps": 12.5, "returnOnAssets": 0.09},
     }
 
 

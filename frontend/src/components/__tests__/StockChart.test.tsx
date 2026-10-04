@@ -22,6 +22,7 @@ const lw = vi.hoisted(() => {
     createChart: vi.fn((..._args: unknown[]) => chart),
     createSeriesMarkers: vi.fn((..._args: unknown[]) => undefined),
     CandlestickSeries: { sentinel: 'candlestick' },
+    LineSeries: { sentinel: 'line' },
   }
 })
 
@@ -29,6 +30,7 @@ vi.mock('lightweight-charts', () => ({
   createChart: lw.createChart,
   createSeriesMarkers: lw.createSeriesMarkers,
   CandlestickSeries: lw.CandlestickSeries,
+  LineSeries: lw.LineSeries,
 }))
 
 import { chartPalette } from '@/theme/tokens'

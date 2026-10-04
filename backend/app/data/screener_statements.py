@@ -66,6 +66,18 @@ _LABEL_MAP = {
     "promoters": "_promoters",
     "fiis": "_fiis",
     "diis": "_diis",
+    "interest": "interest",
+    "finance cost": "interest",
+    "finance costs": "interest",
+    "interest cost": "interest",
+    "trade receivables": "receivables",
+    "sundry debtors": "receivables",
+    "receivables": "receivables",
+    "trade payables": "payables",
+    "sundry creditors": "payables",
+    "payables": "payables",
+    "pledged": "_pledged",
+    "pledged %": "_pledged",
 }
 
 
@@ -94,7 +106,7 @@ _PARTIAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|trailing|\d+\s*m\b", re.IGNOR
 _NON_ANNUAL_RE = re.compile(r"ttm|q[1-4]|quarter|half|sep|dec|jun|trailing|\d+\s*m\b", re.IGNORECASE)
 
 #: Holdings labels stay readable on quarterly shareholding tables.
-_HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis"})
+_HOLDING_FIELDS = frozenset({"_promoters", "_fiis", "_diis", "_pledged"})
 
 #: Money fields (Rs cr base) vs per-share/price fields (never unit-scaled).
 _MONEY_FIELDS = frozenset(
@@ -116,6 +128,9 @@ _MONEY_FIELDS = frozenset(
         "cogs",
         "revenue_prev",
         "earnings_prev",
+        "interest",
+        "receivables",
+        "payables",
     }
 )
 
@@ -140,6 +155,10 @@ STATEMENT_FIELDS: frozenset[str] = frozenset(
         "earnings_prev",
         "cogs",
         "price",
+        "interest",
+        "receivables",
+        "payables",
+        "pledged_pct",
     }
 )
 
@@ -259,6 +278,83 @@ def _parse_price_mcap(text: str) -> tuple[float | None, float | None]:
         if mcap is not None and unit in ("lac", "lakh"):
             mcap = mcap * 0.01
     return price, mcap
+
+
+def parse_identity(html: str) -> dict:
+    """Best-effort company identity from a screener.in company page.
+
+    Zero extra network — runs on the HTML ``fetch_statements`` already
+    downloaded. Keys match ``store._IDENTITY_KEYS`` inputs (``longBusinessSummary``,
+    ``website``, ``industry``, ``sector``). Missing pieces yield None, never raise.
+    """
+    out: dict[str, str | None] = {
+        "longBusinessSummary": None,
+        "website": None,
+        "industry": None,
+        "sector": None,
+    }
+    try:
+        soup = BeautifulSoup(html or "", "lxml")
+        about = soup.select_one("div.about p") or soup.select_one("div.company-profile p")
+        if about is not None:
+            text = about.get_text(" ", strip=True)
+            if text:
+                out["longBusinessSummary"] = text
+        if out["longBusinessSummary"] is None:
+            # Screener sometimes omits the About block (login wall / new layout).
+            # The meta description ("Company · Mkt Cap ...") is short but better
+            # than nothing for the detail card.
+            try:
+                meta = soup.select_one('meta[name="description"]')
+                content = (meta.get("content") or "").strip() if meta is not None else ""
+                if content:
+                    out["longBusinessSummary"] = content
+            except Exception:  # noqa: BLE001 — meta fallback never breaks parse
+                pass
+        skip_hosts = ("bseindia.com", "nseindia.com", "screener.in", "plausible.", "rybbit.")
+        skip_ext = (".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip")
+        # Website link lives in the card header, outside div.company-info, while
+        # the commentary inside company-info links PDFs (annual reports). Scan
+        # the whole page, skip documents, prefer a root-domain link.
+        candidates: list[str] = []
+        for anchor in soup.select("a[href]"):
+            href = (anchor.get("href") or "").strip()
+            if not href.lower().startswith(("http://", "https://")):
+                continue
+            lowered = href.lower().split("#")[0].split("?")[0]
+            if any(host in lowered for host in skip_hosts):
+                continue
+            if lowered.endswith(skip_ext):
+                continue
+            if "/reports/" in lowered or "/annual" in lowered:
+                continue
+            candidates.append(href)
+        if candidates:
+            # Prefer shortest path (company root over deep links).
+            def _path_len(url: str) -> int:
+                try:
+                    path = url.split("://", 1)[1].split("/", 1)
+                    return len(path[1]) if len(path) > 1 else 0
+                except Exception:  # noqa: BLE001 — scoring never breaks parse
+                    return 999
+
+            out["website"] = sorted(candidates, key=_path_len)[0]
+        for title, key in (
+            ("Sector", "sector"),
+            ("Broad Sector", "sector"),
+            ("Industry", "industry"),
+            ("Broad Industry", "industry"),
+        ):
+            if out[key] is not None:
+                continue
+            tag = soup.select_one(f'a[title="{title}"]')
+            if tag is not None:
+                text = tag.get_text(" ", strip=True)
+                if text:
+                    out[key] = text
+    except Exception:  # noqa: BLE001 — identity never breaks the fetch
+        pass
+    return out
 
 
 def _has_minimum(fields: dict) -> bool:
@@ -393,6 +489,10 @@ def parse_statements(html: str) -> dict:
         "price": price,
         "promoters_pct": promoters,
         "institutions_pct": institutions,
+        "interest": money("interest"),
+        "receivables": money("receivables"),
+        "payables": money("payables"),
+        "pledged_pct": holding("_pledged"),
     }
 
 
@@ -487,7 +587,39 @@ def fetch_statements(
                 as_of = payload.get("as_of", "")
                 age_days = (date.fromisoformat(today) - date.fromisoformat(as_of)).days
                 if age_days <= int(ttl_days):
-                    return dict(payload.get("fields", {}))
+                    cached = dict(payload.get("fields", {}))
+                    # Lazy identity backfill: caches written before the
+                    # identity fix are fresh but carry no About/website/sector.
+                    # One best-effort re-download fills the missing identity
+                    # keys (detail Refresh / screen-run refresh path only —
+                    # no bulk job). Never raises, never blocks the caller.
+                    if not any(
+                        cached.get(key) for key in (
+                            "longBusinessSummary", "website", "industry", "sector"
+                        )
+                    ):
+                        try:
+                            html = client(symbol) if callable(client) else _download(symbol)
+                            ident = parse_identity(html)
+                            merged = dict(cached)
+                            changed = False
+                            for key, value in ident.items():
+                                if value is not None and not merged.get(key):
+                                    merged[key] = value
+                                    changed = True
+                            if changed:
+                                try:
+                                    os.makedirs(cache_dir, exist_ok=True)
+                                    tmp = path + ".tmp"
+                                    with open(tmp, "w", encoding="utf-8") as f:
+                                        json.dump({"as_of": today, "fields": merged}, f)
+                                    os.replace(tmp, path)
+                                except Exception:  # noqa: BLE001 — cache rewrite best-effort
+                                    pass
+                                return merged
+                        except Exception:  # noqa: BLE001 — backfill never breaks serve
+                            pass
+                    return cached
             except (TypeError, ValueError):
                 pass
     try:
@@ -498,6 +630,12 @@ def fetch_statements(
             return dict(stale["fields"])
         raise
     fields = parse_statements(html)
+    try:
+        for key, value in parse_identity(html).items():
+            if value is not None:
+                fields[key] = value
+    except Exception:  # noqa: BLE001 — identity never blocks statements
+        pass
     if not _has_minimum(fields):
         stale = _read_cache(path) if os.path.exists(path) else None
         if stale and stale.get("fields"):
@@ -511,6 +649,9 @@ def fetch_statements(
         if old:
             for key, value in fields.items():
                 if value is None and old.get(key) is not None:
+                    fields[key] = old[key]
+            for key in ("longBusinessSummary", "website", "industry", "sector"):
+                if fields.get(key) is None and old.get(key) is not None:
                     fields[key] = old[key]
     except Exception:  # noqa: BLE001 — merge is best-effort, never blocks write
         pass

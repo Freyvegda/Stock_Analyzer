@@ -17,7 +17,7 @@ ROW = {
         "totalRevenue": 9.3e12,
         "revenueGrowth": 0.112,
         "currentRatio": 1.8,
-        "beta": 1.1,
+        "trailingEps": 12.5,
         "longBusinessSummary": "Makes things",
     },
 }
@@ -62,11 +62,11 @@ def test_done_scales_fractions_to_percent():
 
 
 def test_nan_and_missing_are_skipped():
-    row = {"pe": float("nan"), "market_cap": 1.0, "raw": {"beta": float("inf"), "currentRatio": 1.5}}
+    row = {"pe": float("nan"), "market_cap": 1.0, "raw": {"trailingEps": float("inf"), "currentRatio": 1.5}}
     sections = digest.build_sections(row)
 
     assert metric(sections["main_ratios"], "pe") is None
-    assert "beta" not in other_keys(sections)  # inf dropped
+    assert "trailingEps" not in other_keys(sections)  # inf dropped
     assert metric(sections["has"], "currentRatio")["value"] == 1.5
 
 
@@ -77,8 +77,8 @@ def test_other_groups_exclude_used_keys():
     assert "pe" not in keys
     assert "market_cap" not in keys
     assert "dividendYield" not in keys
-    assert keys == {"beta"}
-    assert [group["category"] for group in sections["other_groups"]] == ["Risk"]
+    assert keys == {"trailingEps"}
+    assert [group["category"] for group in sections["other_groups"]] == ["Per Share"]
 
 
 def test_missing_raw_still_builds():

@@ -44,12 +44,20 @@ function graphicPairs(tokens: ThemeTokens): Array<[string, string, string]> {
   ]
 }
 
-describe.each(MODES)('$name mode contrast', ({ tokens }) => {
+describe.each(MODES)('$name mode contrast', ({ tokens, charts }) => {
   it.each(textPairs(tokens))('text pair %s meets AA (>= 4.5:1)', (_label, fg, bg) => {
     expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(TEXT_MIN)
   })
 
   it.each(graphicPairs(tokens))('graphic %s meets 3:1', (_label, fg, bg) => {
     expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(GRAPHIC_MIN)
+  })
+
+  it('chart axis text meets AA on card (>= 4.5:1)', () => {
+    expect(contrastRatio(charts.axisText, tokens.card)).toBeGreaterThanOrEqual(TEXT_MIN)
+  })
+
+  it('chart axis border meets 3:1 on card', () => {
+    expect(contrastRatio(charts.axisBorder, tokens.card)).toBeGreaterThanOrEqual(GRAPHIC_MIN)
   })
 })

@@ -76,3 +76,21 @@ def get_or_fetch(
     if rows:
         write_cached(symbol, rows, cache_dir)
     return rows
+
+
+def merge_cached(symbol: str, new_rows: list[dict], cache_dir: str) -> list[dict]:
+    """Union cached + fresh rows by ``time`` (fresh wins), sorted, persisted.
+
+    Backs the 1y-first + 5y silent expand: a 1y fetch fills the file, the
+    later 5y fetch merges instead of overwriting, so no bar is ever lost.
+    """
+    cached = read_cached(symbol, cache_dir) or []
+    if not new_rows:
+        return cached
+    merged: dict[str, dict] = {row.get("time", ""): dict(row) for row in cached}
+    for row in new_rows:
+        merged[row.get("time", "")] = dict(row)
+    merged.pop("", None)
+    rows = sorted(merged.values(), key=lambda r: r["time"])
+    write_cached(symbol, rows, cache_dir)
+    return rows
