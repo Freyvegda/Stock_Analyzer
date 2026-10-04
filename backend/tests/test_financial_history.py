@@ -229,6 +229,71 @@ def test_fetch_statements_merges_stale_history_on_partial_page(tmp_path):
     assert out["history"]["annual"][-1]["sales"] == 1100.0  # fresh annuals stored
 
 
+def test_composite_financials_serves_cached_history(tmp_path):
+    from datetime import date as _date
+
+    from app.data.composite_impl import CompositeProvider
+    from app.data import screener_statements as _stmt
+
+    _stmt.fetch_statements("AAA", cache_dir=str(tmp_path), client=lambda s: FULL_HTML)
+    out = CompositeProvider(statements_dir=str(tmp_path)).financials("AAA")
+    assert len(out["quarterly"]) == 8
+    assert len(out["annual"]) == 5
+    assert out["as_of"] == _date.today().isoformat()
+    assert out["stale"] is False
+
+
+def test_composite_financials_stale_flag(tmp_path, monkeypatch):
+    import app.data.composite_impl as _composite
+    from app.data.composite_impl import CompositeProvider
+
+    _write_cache(
+        str(tmp_path),
+        {"revenue": 1.0, "equity": 1.0, "history": {"quarterly": [], "annual": []}},
+        "2020-01-01",
+    )
+    monkeypatch.setattr(
+        _composite,
+        "fetch_statements",
+        lambda *args, **kwargs: {"history": {"quarterly": [], "annual": []}},
+    )
+    out = CompositeProvider(statements_dir=str(tmp_path)).financials("AAA")
+    assert out["stale"] is True
+
+
+def test_get_financials_unknown_symbol_raises(test_db):
+    from app.stock import service as _svc
+
+    class _P:
+        def financials(self, symbol):
+            raise AssertionError("must not fetch unknown symbol")
+
+    import pytest as _pytest
+
+    with _pytest.raises(_svc.StockNotFound):
+        _svc.get_financials(test_db, _P(), "NOPE")
+
+
+def test_get_financials_returns_provider_payload(test_db):
+    from app.db.models import Stock as _Stock
+    from app.stock import service as _svc
+
+    with test_db() as session:
+        session.merge(_Stock(symbol="AAA", name="Alpha Ltd", sector="IT", market_cap=1.0))
+        session.commit()
+
+    payload = {"quarterly": [{"period": "Q2FY26"}], "annual": [], "as_of": "2026-10-04", "stale": False}
+
+    class _P:
+        def financials(self, symbol):
+            assert symbol == "AAA"
+            return dict(payload)
+
+    out = _svc.get_financials(test_db, _P(), "AAA")
+    assert out["symbol"] == "AAA"
+    assert out["quarterly"] == [{"period": "Q2FY26"}]
+
+
 def test_parse_history_derives_expenses_pbt_tax():
     out = stmt.parse_history(QUARTERLY_HTML_WITH_TTM)
     last = out["quarterly"][-1]
