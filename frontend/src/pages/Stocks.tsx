@@ -1,15 +1,18 @@
 /**
  * Stocks — browse/search the whole stored Nifty 500 universe.
  *
- * One `GET /stocks` fetch; search, sector and verdict filters run client-side
- * over ~500 rows. Each row links to the stock detail page and carries the
- * caller's own screen verdict (computed server-side, shared data).
+ * One `GET /stocks` fetch per picked screen; search, sector and verdict
+ * filters run client-side over ~500 rows. Each row links to the stock
+ * detail page and carries that screen's verdict (computed server-side from
+ * shared data — a pure read that never writes). The screen picker is the
+ * same glass `ScreenPicker` the Top 10 page uses.
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Flex, Text } from '@chakra-ui/react'
 import { ApiError, api } from '../api/client'
-import type { StockListResponse } from '../api/types'
+import type { ScreeningSet, StockListResponse } from '../api/types'
+import { ScreenPicker } from '../components/ScreenPicker'
 import { StocksTable } from '../components/StocksTable'
 import { BlurFade } from '../components/ui/BlurFade'
 import { Num } from '../components/ui/Num'
@@ -24,6 +27,8 @@ const VERDICT_FILTERS: { key: VerdictFilter; label: string }[] = [
 ]
 
 export default function Stocks() {
+  const [sets, setSets] = useState<ScreeningSet[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
   const [data, setData] = useState<StockListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -31,11 +36,14 @@ export default function Stocks() {
   const [sector, setSector] = useState('all')
   const [verdict, setVerdict] = useState<VerdictFilter>('all')
 
-  async function load() {
+  const selected = sets.find((set) => set.id === selectedId) ?? null
+
+  async function loadUniverse(setId: number | null) {
     setLoading(true)
     setError(null)
     try {
-      setData(await api.get<StockListResponse>('/stocks'))
+      const path = setId === null ? '/stocks' : `/stocks?set_id=${setId}`
+      setData(await api.get<StockListResponse>(path))
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return // global redirect
       setError(e instanceof Error ? e.message : 'Failed to load the stock list')
@@ -45,9 +53,35 @@ export default function Stocks() {
   }
 
   useEffect(() => {
-    load()
+    let cancelled = false
+    // Initial paint uses plain `/stocks` (active-screen verdicts, one fetch);
+    // explicit picks grade the same snapshot via `?set_id=`.
+    void loadUniverse(null)
+    api
+      .get<ScreeningSet[]>('/screen/sets')
+      .then((list) => {
+        if (cancelled || !Array.isArray(list)) return
+        setSets(list)
+        const active = list.find((set) => set.is_active) ?? list[0] ?? null
+        setSelectedId(active?.id ?? null)
+      })
+      .catch(() => {
+        // Picker is a bonus: the universe above already painted.
+      })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function pick(id: number) {
+    setSelectedId(id)
+    void loadUniverse(id)
+  }
+
+  async function retry() {
+    await loadUniverse(selectedId)
+  }
 
   const sectors = useMemo(
     () =>
@@ -86,8 +120,27 @@ export default function Stocks() {
         ) : null}
       </Flex>
 
-      <BlurFade>
+      {selected !== null ? (
+        <Text fontSize="sm" color="fg.muted">
+          Showing verdicts for {selected.name}
+        </Text>
+      ) : null}
+
+      <BlurFade key={selectedId ?? 'default'}>
         <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+          {sets.length > 0 ? (
+            <ScreenPicker
+              options={sets.map((set) => ({
+                id: set.id,
+                name: set.name,
+                isActive: set.is_active,
+                verdict: null,
+              }))}
+              selectedId={selectedId}
+              onSelect={pick}
+              hideVerdict
+            />
+          ) : null}
           <Flex gap={3} wrap="wrap" align="center">
             <input
               type="search"
@@ -131,7 +184,7 @@ export default function Stocks() {
               <Text role="alert" fontSize="sm" color="fg.error">
                 {error}
               </Text>
-              <Button mt={3} size="sm" colorPalette="sakura" variant="outline" onClick={load}>
+              <Button mt={3} size="sm" colorPalette="sakura" variant="outline" onClick={retry}>
                 Retry
               </Button>
             </div>

@@ -134,7 +134,8 @@ Audit trail of every screen execution, per user, attributed to the screen it ran
 | shortlisted_json | Text | JSON array of {symbol, ratios, rank} |
 
 Read pattern: `WHERE user_id = ? AND set_id = ? ORDER BY id DESC LIMIT 1` (the active
-screen's latest run). A Run Screen batch (Phase 1.8) writes one `manual` row for the active
+screen's latest run; `GET /screen/latest?set_id=` reads any saved screen's latest the
+same way). A Run Screen batch (Phase 1.8) writes one `manual` row for the active
 set plus up to three `auto` rows for the most-used other screens; `most_used_sets` reads only
 the last 10 `manual` rows, so auto-runs never feed the ranking.
 
@@ -149,9 +150,12 @@ Append-only background job behind a cached-first run — one row per `POST /scre
 | started_at | String NOT NULL | ISO date-time |
 | finished_at | String? | set on terminal status |
 | status | String NOT NULL | `running` \| `done` \| `failed` \| `interrupted` |
-| universe_total | Int NOT NULL default 0 | stale universe symbols planned for refresh |
-| universe_done | Int NOT NULL default 0 | successful refreshes |
+| universe_total | Int NOT NULL default 0 | full universe symbols (~500); done starts at the already-fresh count |
+| universe_done | Int NOT NULL default 0 | successful refreshes (plus the already-fresh head start) |
 | universe_failed | Int NOT NULL default 0 | failed fetch attempts |
+| verdict_passed | Int NOT NULL default 0 | active-screen criteria passers (pre-clamp survivors), refreshed per fetch flush |
+| verdict_failed | Int NOT NULL default 0 | active-screen criteria rejecters, refreshed per fetch flush |
+| verdict_no_data | Int NOT NULL default 0 | symbols with no stored ok row yet |
 | error | Text? | job-level failure message |
 
 Counters live here, not as per-symbol rows — symbol outcome already lives in
@@ -171,12 +175,15 @@ One row per saved screen inside a job (active included; API orders active first)
 | run_id | Int?, FK → screen_runs.id | persisted shortlist once done; NULL when the job failed before writing one |
 
 Rules: one running job per user; keep the latest 20 jobs **per user** — older `run_jobs` + their
-`run_job_items` are pruned when a new job is created. Job-history survival after a screen delete
+`run_job_items` are pruned when a new job is created. `screen_runs` are likewise bounded:
+the latest 20 runs **per (user, screen)** are kept (`KEEP_RUNS_PER_SET`; runs of deleted
+screens prune per user) — viewing a screen never writes, so history grows with Run clicks,
+never with views or user count. Job-history survival after a screen delete
 relies on SQLite not enforcing FKs by default (the plain no-cascade FKs would block that delete on
 Postgres). A `running` job whose worker died with the process is swept to `interrupted` on the next
 jobs read (live in-process jobs registered by the worker are skipped), and a rerun after
 interruption is cheap thanks to same-day stored rows. Both tables are append-only job history;
-`screen_runs` rows are never pruned.
+`screen_runs` rows prune to the latest 20 per (user, screen) on every write.
 
 ### documents
 Filing metadata; files on disk.

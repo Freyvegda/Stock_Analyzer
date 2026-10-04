@@ -50,6 +50,11 @@ logger = logging.getLogger(__name__)
 # Job history kept per user (older jobs + their items are pruned on create).
 KEEP_JOBS = 20
 
+#: Latest ``ScreenRun`` rows kept per (user, screen). Viewing a screen never
+#: writes; only ``POST /screen/run`` (and the background worker) insert rows,
+#: so the audit stays bounded at users x screens x this constant.
+KEEP_RUNS_PER_SET = 20
+
 # Screener + Stooq police per-host bursts; 2 workers with the 2s
 # polite delay stay near ~1 req/s and clear of 429 storms.
 WORKERS = 2
@@ -125,13 +130,17 @@ def evaluate_stored_screen(
     shortlist_size: int,
     provider_stale: bool,
     today: str,
-) -> tuple[list[dict], list[dict], bool]:
-    """Gate the stored snapshot for one universe â€” pure DB reads + engine.
+) -> tuple[list[dict], list[dict], bool, dict]:
+    """Gate the stored snapshot for one universe — pure DB reads + engine.
 
     Upserts ``stocks`` identity rows only (name/sector; ``market_cap`` belongs to
     the fetch path), reads the newest ok row per symbol, and evaluates the caller's
     criteria. ``stale`` is true when the provider flagged stale data or any
     shortlisted row is not from ``today``. No network, no commit.
+
+    ``verdict`` covers the whole universe for the evaluated screen:
+    ``passed`` = pre-clamp survivors, ``failed`` = rejected, ``no_data`` =
+    symbols with no stored ok row, ``total`` = universe size.
     """
     existing = {s.symbol: s for s in session.query(Stock).all()}
     for stock_data in stocks:
@@ -154,7 +163,13 @@ def evaluate_stored_screen(
     survivors, rejected = screen_rows(candidates, criteria)
     shortlist = rank_shortlist(survivors, shortlist_size)
     stale = provider_stale or any(row.get("data_date") != today for row in shortlist)
-    return shortlist, rejected, stale
+    verdict = {
+        "passed": len(survivors),
+        "failed": len(rejected),
+        "no_data": len(symbols) - len(candidates),
+        "total": len(symbols),
+    }
+    return shortlist, rejected, stale, verdict
 
 
 def persist_fetch_batch(
@@ -391,6 +406,8 @@ def _evaluate_and_store(
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
+        session.flush()  # id for the prune window below
+        _prune_screen_runs(session, user_id, set_id)
         session.commit()
         session.refresh(run)
         return {
@@ -402,6 +419,31 @@ def _evaluate_and_store(
             "stale": stale,
             "total": prepared["total"],
         }
+
+
+def _prune_screen_runs(session, user_id: int, set_id: int | None) -> None:
+    """Keep the latest ``KEEP_RUNS_PER_SET`` runs per (user, screen).
+
+    Runs whose screen was deleted (``set_id IS NULL``) are pruned per user.
+    Viewing a screen never writes — only run paths call this — so history
+    grows with Run clicks, never with views or user count alone.
+    """
+    query = session.query(ScreenRun.id).filter(ScreenRun.user_id == user_id)
+    query = (
+        query.filter(ScreenRun.set_id.is_(None))
+        if set_id is None
+        else query.filter(ScreenRun.set_id == set_id)
+    )
+    keep = [row.id for row in query.order_by(ScreenRun.id.desc()).limit(KEEP_RUNS_PER_SET).all()]
+    if not keep:
+        return
+    query_all = session.query(ScreenRun).filter(ScreenRun.user_id == user_id)
+    query_all = (
+        query_all.filter(ScreenRun.set_id.is_(None))
+        if set_id is None
+        else query_all.filter(ScreenRun.set_id == set_id)
+    )
+    query_all.filter(~ScreenRun.id.in_(keep)).delete(synchronize_session=False)
 
 
 def run_screen(
@@ -495,7 +537,7 @@ def run_snapshot_screen(
     stocks = provider.list_stocks()
 
     with session_factory() as session:
-        shortlist, rejected, stale = evaluate_stored_screen(
+        shortlist, rejected, stale, verdict = evaluate_stored_screen(
             session,
             stocks,
             criteria,
@@ -512,6 +554,8 @@ def run_snapshot_screen(
             shortlisted_json=json.dumps(shortlist),
         )
         session.add(run)
+        session.flush()
+        _prune_screen_runs(session, user["id"], set_id)
         session.commit()
         session.refresh(run)
         run_id = run.id
@@ -524,6 +568,7 @@ def run_snapshot_screen(
         "failed_details": rejected,
         "stale": stale,
         "total": len(stocks),
+        "verdict": verdict,
     }
 
 
@@ -548,7 +593,7 @@ def run_snapshot_batch(provider: DataProvider, session_factory, user: dict) -> d
         triggered_by: str,
     ) -> dict:
         with session_factory() as session:
-            shortlist, rejected, stale = evaluate_stored_screen(
+            shortlist, rejected, stale, verdict = evaluate_stored_screen(
                 session, stocks, criteria, shortlist_size, provider_stale, today
             )
             run = ScreenRun(
@@ -560,6 +605,8 @@ def run_snapshot_batch(provider: DataProvider, session_factory, user: dict) -> d
                 shortlisted_json=json.dumps(shortlist),
             )
             session.add(run)
+            session.flush()
+            _prune_screen_runs(session, user["id"], set_id)
             session.commit()
             session.refresh(run)
             return {
@@ -570,6 +617,7 @@ def run_snapshot_batch(provider: DataProvider, session_factory, user: dict) -> d
                 "failed_details": rejected,
                 "stale": stale,
                 "total": len(stocks),
+                "verdict": verdict,
             }
 
     result = _evaluate_and_persist(
@@ -831,14 +879,27 @@ def activate_set(session_factory, user_id: int, set_id: int) -> dict:
         return _projection(row)
 
 
-def latest_screen(session_factory, user_id: int) -> dict | None:
-    """The active screen's latest stored run joined with stock meta."""
+def latest_screen(session_factory, user_id: int, set_id: int | None = None) -> dict | None:
+    """One screen's latest stored run joined with stock meta.
+
+    ``set_id=None`` keeps the legacy behavior (the active screen). A concrete
+    id returns that screen's latest run so the Top 10 page can page across
+    saved screens without running anything. Raises ``SetNotFoundError`` for
+    a set the caller does not own (mapped to 404 at the API layer).
+    """
     with session_factory() as session:
-        active = _seed_active_set(session, user_id)
-        session.commit()
+        if set_id is None:
+            active = _seed_active_set(session, user_id)
+            session.commit()
+            target_id: int | None = active.id
+            shortlist_size = active.shortlist_size
+        else:
+            row = _require_set(session, user_id, set_id)
+            target_id = row.id
+            shortlist_size = row.shortlist_size
         run = (
             session.query(ScreenRun)
-            .filter(ScreenRun.user_id == user_id, ScreenRun.set_id == active.id)
+            .filter(ScreenRun.user_id == user_id, ScreenRun.set_id == target_id)
             .order_by(ScreenRun.id.desc())
             .first()
         )
@@ -851,7 +912,20 @@ def latest_screen(session_factory, user_id: int) -> dict | None:
         }
         for row in shortlist:
             row.update(meta.get(row["symbol"], {}))
-        return {"run_id": run.id, "run_date": run.run_date, "shortlisted": shortlist}
+        # Verdict for the run's own criteria over the current stored snapshot —
+        # matches the displayed shortlist even if the draft criteria moved on.
+        universe = [
+            {"symbol": s.symbol, "name": s.name, "sector": s.sector}
+            for s in session.query(Stock).order_by(Stock.symbol.asc()).all()
+        ]
+        try:
+            run_criteria = criteria_from_json(run.criteria_json)
+        except Exception:
+            run_criteria = []
+        _recomputed, _rejected, _stale, verdict = evaluate_stored_screen(
+            session, universe, run_criteria, shortlist_size, False, date.today().isoformat()
+        )
+        return {"run_id": run.id, "run_date": run.run_date, "shortlisted": shortlist, "verdict": verdict}
 
 
 # --- Run jobs (Phase 1.8) ----------------------------------------------------
@@ -910,6 +984,12 @@ def _project_job(session, job: RunJob) -> dict:
         "universe_total": job.universe_total,
         "universe_done": job.universe_done,
         "universe_failed": job.universe_failed,
+        "verdict": {
+            "passed": job.verdict_passed,
+            "failed": job.verdict_failed,
+            "no_data": job.verdict_no_data,
+            "total": job.universe_total,
+        },
         "items": [
             {
                 "set_id": item.set_id,

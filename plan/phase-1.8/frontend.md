@@ -1,5 +1,10 @@
 # Phase 1.8 — Frontend (extra-run line + stock Criteria pass accordion)
 
+> **Revision (2026-10-04, owner-requested):** the `Also ran` extras line from Task F3 is
+> retired — Top 10 shows one saved screen at a time through the glass `ScreenPicker`
+> (`GET /screen/latest?set_id=`), and the universe table grades per picked screen
+> (`GET /stocks?set_id=`). Code wins over the F3 text below; everything else stands.
+
 > Spec: `docs/superpowers/specs/2026-10-03-phase-1.8-multi-screen-runs-design.md` §7.
 > Backend contract: `plan/phase-1.8/backend.md`. Design contract: `frontend/DESIGN.md`.
 

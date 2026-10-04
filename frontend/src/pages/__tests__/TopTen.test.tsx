@@ -44,6 +44,15 @@ const setA: ScreeningSet = {
   updated_at: 'now',
 }
 
+const setB: ScreeningSet = {
+  id: 2,
+  name: 'Quality',
+  criteria: [{ key: 'roe', enabled: true, value: 20 }],
+  thesis: null,
+  shortlist_size: 10,
+  is_active: false,
+  updated_at: 'now',
+}
 const catalog: RatioSpec[] = [
   { key: 'pe', label: 'PE', unit: '×', category: 'Valuation', direction: 'max' },
 ]
@@ -56,6 +65,16 @@ const row = {
   name: 'Tata Consultancy Services',
   sector: 'IT',
   market_cap: 1200000,
+}
+
+const rowB = {
+  symbol: 'INFY',
+  rank: 1,
+  score: 41.5,
+  ratios: { pe: 24.3, pb: 5.2, roe: 32, roce: 38.1, debt_to_equity: 0.05 },
+  name: 'Infosys Limited',
+  sector: 'IT',
+  market_cap: 800000,
 }
 
 const runningJob = {
@@ -139,9 +158,8 @@ describe('TopTen', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /run screen/i }))
 
-    const line = await screen.findByTestId('extra-runs')
-    expect(line).toHaveTextContent('Quality (7)')
-    expect(line).toHaveTextContent('Value (failed)')
+    // The Also-ran line is retired: per-screen Top 10 lives in the picker now.
+    expect(screen.queryByTestId('extra-runs')).not.toBeInTheDocument()
   })
 
   it('shows skeleton rows while the latest run loads', async () => {
@@ -309,5 +327,75 @@ describe('TopTen', () => {
     )
     expect(screen.getByTestId('run-progress')).toBeInTheDocument()
     expect(screen.getByTestId('job-chip-1')).toBeInTheDocument()
+  })
+
+  it('switches the Top 10 across saved screens from the picker', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+      }
+      if (path === '/screen/latest?set_id=2') {
+        return Promise.resolve({ run_id: 2, run_date: '2026-09-26', shortlisted: [rowB] })
+      }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/top10']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="top10" element={<TopTen />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Choose a screen' }))
+    await userEvent.click(screen.getByRole('option', { name: /quality/i }))
+
+    expect(mockedApi.get).toHaveBeenCalledWith('/screen/latest?set_id=2')
+    expect(await screen.findByText('Infosys Limited')).toBeInTheDocument()
+    expect(screen.queryByText('Tata Consultancy Services')).not.toBeInTheDocument()
+  })
+
+  it('shows a per-screen empty state when the picked screen never ran', async () => {
+    mockedApi.get.mockImplementation((path: string) => {
+      if (path === '/screen/sets') return Promise.resolve([setA, setB])
+      if (path === '/screen/ratios') return Promise.resolve(catalog)
+      if (path === '/screen/latest') {
+        return Promise.resolve({ run_id: 1, run_date: '2026-09-26', shortlisted: [row] })
+      }
+      if (path === '/screen/latest?set_id=2') {
+        return Promise.reject(new ApiError(404, 'No screen run yet'))
+      }
+      if (path === '/screen/jobs/latest') return Promise.resolve({ job: null })
+      return Promise.reject(new Error(`unexpected GET ${path}`))
+    })
+    render(
+      <Provider>
+        <StatusProvider>
+          <MemoryRouter initialEntries={['/fundamentals/top10']}>
+            <Routes>
+              <Route path="/fundamentals" element={<FundamentalsLayout />}>
+                <Route path="top10" element={<TopTen />} />
+              </Route>
+            </Routes>
+          </MemoryRouter>
+        </StatusProvider>
+      </Provider>,
+    )
+    expect(await screen.findByText('Tata Consultancy Services')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('combobox', { name: 'Choose a screen' }))
+    await userEvent.click(screen.getByRole('option', { name: /quality/i }))
+
+    expect(await screen.findByText(/no screen run yet for this screen/i)).toBeInTheDocument()
   })
 })

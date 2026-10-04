@@ -1,6 +1,6 @@
 """Screen API: thin routers — validation plus service calls (BACKEND.md rule 6)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from app.auth.deps import current_user
@@ -132,9 +132,12 @@ def latest_job(user: dict = Depends(current_user)) -> dict:
 
 
 @router.get("/latest")
-def latest_screen(user: dict = Depends(current_user)) -> dict:
+def latest_screen(user: dict = Depends(current_user), set_id: int | None = Query(default=None)) -> dict:
     init_db()
-    latest = service.latest_screen(SessionLocal, user["id"])
+    try:
+        latest = service.latest_screen(SessionLocal, user["id"], set_id)
+    except service.SetNotFoundError:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     if latest is None:
         raise HTTPException(status_code=404, detail="No screen run yet")
     return latest

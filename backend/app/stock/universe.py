@@ -49,8 +49,14 @@ def _row_out(stock: Stock, stored: dict | None, enabled_count: int, criteria) ->
     }
 
 
-def list_universe(session_factory, provider: DataProvider, user_id: int) -> dict:
-    """`{as_of, total, rows}` — rows sorted by symbol, verdict per caller."""
+def list_universe(session_factory, provider: DataProvider, user_id: int, set_id: int | None = None) -> dict:
+    """`{as_of, total, rows}` — rows sorted by symbol, verdict per caller.
+
+    ``set_id=None`` grades against the active screen (legacy). A concrete id
+    grades the same shared snapshot against that saved screen — a pure read
+    that never writes. Unknown/foreign sets raise ``SetNotFoundError`` via
+    ``get_set`` (mapped to 404 at the API layer).
+    """
     with session_factory() as session:
         if session.query(Stock).count() == 0:
             for data in provider.list_stocks():
@@ -66,7 +72,10 @@ def list_universe(session_factory, provider: DataProvider, user_id: int) -> dict
 
         stocks = session.query(Stock).order_by(Stock.symbol.asc()).all()
         latest = screener_service.latest_ok_fundamentals(session, [s.symbol for s in stocks])
-        criteria = screener_service.get_criteria(session_factory, user_id)["criteria"]
+        if set_id is None:
+            criteria = screener_service.get_criteria(session_factory, user_id)["criteria"]
+        else:
+            criteria = screener_service.get_set(session_factory, user_id, set_id)["criteria"]
         enabled = engine.enabled_criteria(criteria)
 
         rows = []
