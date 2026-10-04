@@ -177,7 +177,12 @@ export function Financials({ symbol }: { symbol: string }) {
         <Text fontSize="xs" color="fg.muted" className="uppercase tracking-[0.08em]">
           Trend
         </Text>
-        <div data-testid="financials-chart" className="mt-2 h-64">
+        <div
+          data-testid="financials-chart"
+          className="mt-2 h-64"
+          role="img"
+          aria-label="Trend chart. Left axis in crore rupees: operating profit and PAT bars. Right axis in crore rupees: revenue line."
+        >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="30%">
               <defs>
@@ -205,6 +210,7 @@ export function Financials({ symbol }: { symbol: string }) {
                 axisLine={false}
                 width={52}
                 tickFormatter={compactTick}
+                label={{ value: 'Profits (₹ cr)', angle: -90, position: 'insideLeft', fill: palette.axisText, fontSize: 11 }}
               />
               <YAxis
                 yAxisId="right"
@@ -214,6 +220,7 @@ export function Financials({ symbol }: { symbol: string }) {
                 axisLine={false}
                 width={44}
                 tickFormatter={compactTick}
+                label={{ value: 'Revenue (₹ cr)', angle: 90, position: 'insideRight', fill: palette.axisText, fontSize: 11 }}
               />
               <Tooltip
                 contentStyle={{

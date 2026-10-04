@@ -54,8 +54,8 @@ New pure function in `backend/app/data/screener_statements.py`, beside `parse_st
 New `frontend/src/components/Financials.tsx`:
 
 - Props `{symbol}`; fetches `GET /stock/{symbol}/financials` once per symbol; local state for `Quarterly | Annual` toggle (default Quarterly).
-- Dense shadcn table: rows = P&L lines, columns = periods (oldest left, latest right), `Num` mono formatting, `—` on null, negative PAT red via `loss` token (never sakura for polarity).
-- Recharts `BarChart`: sales bars + PAT bars per period; negative PAT renders below axis; tooltip in cr.
+- Dense shadcn table in four parts (Revenue & operations / Other items / Bottom line / Per share), columns = periods (oldest left, latest right), `Num` mono formatting, `—` on null, negative PAT `text-loss` with minus sign (never color-alone).
+- Recharts `ComposedChart`: revenue `Line` on its own right axis (bars keep a left profit axis so small profits stay visible beside large revenue), glass-gradient sakura bars for operating profit (strong) + PAT (soft) — palette-only (`chartPalette` strategy/benchmark/axisText/grid per mode, same recipe as `StockChart`), entrance animation one-shot with `data-motion` static under reduced motion, legend with gradient swatches.
 - States: skeleton while loading, error + Retry, `stale` badge (`as of {date}`), empty ("No history yet — hit Refresh") when both series empty.
 - Mounted in `StockDetail.tsx` below `<FundamentalsPanel>`. Types in `api/types.ts`: `FinancialPeriod {period, sales, expenses, operating_profit, other_income, interest, depreciation, pbt, tax, pat, eps}`, `FinancialsResponse {symbol, quarterly, annual, as_of, stale}`.
 - Follows `DESIGN.md` (semantic tokens, lucide-only icons, `BlurFade` section wrapper).

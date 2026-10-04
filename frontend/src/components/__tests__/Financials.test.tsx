@@ -131,6 +131,16 @@ describe('Financials', () => {
     expect(screen.getByTestId('financials-summary')).toHaveTextContent('Q2FY26')
   })
 
+  it('labels both axes so bars and line read unambiguously', async () => {
+    mockedApi.get.mockResolvedValue(response())
+    render(<Provider><Financials symbol="AAA" /></Provider>)
+
+    await screen.findByTestId('financials')
+    const chart = screen.getByTestId('financials-chart')
+    expect(chart).toHaveAttribute('aria-label', expect.stringMatching(/operating profit/i))
+    expect(chart).toHaveAttribute('aria-label', expect.stringMatching(/revenue/i))
+  })
+
   it('marks motion animated by default and static under reduced motion', async () => {
     mockedApi.get.mockResolvedValue(response())
     const { unmount } = render(<Provider><Financials symbol="AAA" /></Provider>)
