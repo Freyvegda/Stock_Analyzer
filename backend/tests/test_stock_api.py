@@ -252,6 +252,17 @@ def test_ohlc_sets_cache_headers_and_supports_etag(client, sign_in, provider, te
     assert second.status_code == 304
 
 
+def test_ohlc_cache_max_age_matches_15m_poll(client, sign_in, provider, test_db):
+    seed_stock_row(test_db)
+    sign_in()
+    provider(FakeProvider(ohlc_rows=daily_rows(date(2026, 9, 25), 400)))
+
+    res = client.get("/stock/AAA/ohlc?range=5y&interval=1d")
+
+    assert res.status_code == 200
+    assert res.headers["cache-control"] == "public, max-age=900"
+
+
 DIGEST_RAW = {
     "longBusinessSummary": "Makes things",
     "industry": "Oil & Gas",

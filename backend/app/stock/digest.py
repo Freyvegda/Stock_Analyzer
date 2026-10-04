@@ -49,23 +49,16 @@ BALANCE_FACTS: list[FactSpec] = [
 ]
 
 #: Performance facts — "what the company has done". Fractions scale to %.
+#: Only ratios the math engine stores (screener scrape + ratios_math).
 PERFORMANCE_FACTS: list[FactSpec] = [
     FactSpec("revenueGrowth", "Revenue Growth", "%", "raw", "revenueGrowth", 100.0),
     FactSpec("earningsGrowth", "Earnings Growth", "%", "raw", "earningsGrowth", 100.0),
-    FactSpec(
-        "earningsQuarterlyGrowth", "Quarterly Earnings Growth", "%", "raw",
-        "earningsQuarterlyGrowth", 100.0,
-    ),
     FactSpec("grossMargins", "Gross Margin", "%", "raw", "grossMargins", 100.0),
     FactSpec("operatingMargins", "Operating Margin", "%", "raw", "operatingMargins", 100.0),
     FactSpec("ebitdaMargins", "EBITDA Margin", "%", "raw", "ebitdaMargins", 100.0),
     FactSpec("profitMargins", "Net Margin", "%", "raw", "profitMargins", 100.0),
     FactSpec("returnOnAssets", "ROA", "%", "raw", "returnOnAssets", 100.0),
     FactSpec("payoutRatio", "Payout Ratio", "%", "raw", "payoutRatio", 100.0),
-    FactSpec(
-        "fiveYearAvgDividendYield", "5y Avg Dividend Yield", "%", "raw",
-        "fiveYearAvgDividendYield",
-    ),
 ]
 
 #: Catalog keys already shown above — excluded from "other ratios".

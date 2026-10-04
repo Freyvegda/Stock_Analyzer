@@ -227,14 +227,25 @@ def persist_fetch_batch(
         row.raw_json = raw_json
 
         values = profile_values(f["raw"], today)
-        profile = profiles.get(symbol)
-        if profile is None:
-            profile = CompanyProfile(symbol=symbol, **values)
-            session.add(profile)
-            profiles[symbol] = profile
-        else:
-            for key, value in values.items():
-                setattr(profile, key, value)
+        raw_info = f.get("raw") or {}
+        # Math-only payloads carry no identity keys: never null a good profile
+        # row (mirrors store.upsert_profile's skip guard for the single-row path).
+        has_identity = any(
+            key in raw_info
+            for key in (
+                "industry", "sector", "longBusinessSummary", "website",
+                "fullTimeEmployees", "city", "state", "country",
+            )
+        )
+        if has_identity:
+            profile = profiles.get(symbol)
+            if profile is None:
+                profile = CompanyProfile(symbol=symbol, **values)
+                session.add(profile)
+                profiles[symbol] = profile
+            else:
+                for key, value in values.items():
+                    setattr(profile, key, value)
 
         fresh_rows[symbol] = {**f, "market_cap": f.get("market_cap"), "data_date": today}
 

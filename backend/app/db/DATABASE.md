@@ -101,7 +101,9 @@ same-day rerun costs zero network calls. The synchronous `POST /screen/run` itse
 `fundamentals()` calls (Phase 1.8) and returns the stored snapshot immediately. `GET /stocks`
 seeds `stocks` from the provider only when the table is empty (identity only — no fundamentals
 fetch). Every successful fundamentals write also upserts `company_profiles` (below) in the
-same transaction.
+same transaction — identity comes from the screener page About/website/sector block (zero
+extra network, merged over the stale cache); math-only payloads skip the profile write so a
+refresh never nulls a good description.
 
 ### company_profiles (Phase 1.6b)
 Slow-moving company identity, one row per symbol — the fields the detail page

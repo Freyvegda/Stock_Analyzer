@@ -113,7 +113,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
   -> newest ok fundamentals row per symbol + stocks.market_cap = stored snapshot
   -> POST /screen/run: engine.py gates the snapshot for the active screen (manual) + up to 3 most-used others (auto) — zero fundamentals calls -> screen_runs rows + run_jobs row (one queued item per saved screen, triggering items done) -> 200 {run, extra_runs, job}
   -> background runner: fundamentals(symbol, cached=stored row) for EVERY symbol whose snapshot is
-     not from today (composite: screener statements merged over stale cache + Stooq quote + ratios_math, per-field yfinance fill for nulls with debug reasons logged, statements-base + algebraic calculator fallback when throttled) -> fundamentals (ok|failed) + company_profiles upsert; gate survivors ordered
+     not from today (composite: screener statements + About/website/sector identity merged over stale cache + Stooq quote + ratios_math, per-field yfinance fill for nulls with debug reasons logged, statements-base + algebraic calculator fallback when throttled) -> fundamentals (ok|failed) + company_profiles upsert (batch skips math-only payloads, never nulls good profiles); gate survivors ordered
      first, counters flushed every 25 fetches; a failed fetch keeps the stored row
   -> every saved screen re-evaluated on the fresh snapshot (active last) -> one screen_runs row each
   -> GET /screen/jobs/latest: status + universe counters + per-screen items; stale running jobs swept
@@ -125,7 +125,7 @@ Nifty 500 list -> stocks table (also lazily seeded by GET /stocks)
      GET /stock/{symbol}/report?set_id= lazily computes any other saved screen's verdict
      from the same stored snapshot (zero network when a snapshot exists)
   -> /stock/{symbol}/ohlc: 5y daily bars via provider -> file cache data/prices/{SYM}.csv -> memory TTL cache (900 s) -> slice + aggregate
-     (1d/15d/1mo) + Cache-Control public max-age=3600 + ETag/304. Daily bars are NEVER written to the DB.
+     (1d/15d/1mo) + Cache-Control public max-age=900 + ETag/304 (15m poll contract). Daily bars are NEVER written to the DB.
   -> filings(symbol) + fetcher -> documents table + PDFs on disk
   -> parser + analyzer -> doc_analysis (sentiment, guidance, red_flags, summary)
   -> ohlc(symbol, 5y) -> prices table
