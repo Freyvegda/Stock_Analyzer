@@ -78,6 +78,13 @@ _LABEL_MAP = {
     "payables": "payables",
     "pledged": "_pledged",
     "pledged %": "_pledged",
+    "total expenses": "expenses",
+    "total expenditure": "expenses",
+    "expenses": "expenses",
+    "expenditure": "expenses",
+    "eps": "_eps",
+    "eps in rs": "_eps",
+    "adjusted eps": "_eps",
 }
 
 
@@ -493,6 +500,194 @@ def parse_statements(html: str) -> dict:
         "receivables": money("receivables"),
         "payables": money("payables"),
         "pledged_pct": holding("_pledged"),
+    }
+
+
+#: History row labels (P&L series) -> history field.
+_HISTORY_LABELS = {
+    "revenue": "sales",
+    "expenses": "expenses",
+    "ebitda": "operating_profit",
+    "ebit": "operating_profit_fallback",
+    "_other_income": "other_income",
+    "interest": "interest",
+    "_depreciation": "depreciation",
+    "net_income": "pat",
+    "_eps": "eps",
+}
+
+_Q_NUM = {"jun": 1, "sep": 2, "dec": 3, "mar": 4}
+
+
+def _quarter_label(cell: str | None) -> tuple[int, int, str] | None:
+    """(fy_year, quarter, label) for a dated quarter column, else None."""
+    if cell is None:
+        return None
+    year_match = _YEAR_RE.search(cell)
+    month = _month_of(cell)
+    if not year_match or month not in _Q_NUM:
+        return None
+    year = int(year_match.group(0))
+    fy = year if month == "mar" else year + 1
+    quarter = _Q_NUM[month]
+    return fy, quarter, f"Q{quarter}FY{fy % 100:02d}"
+
+
+def _is_quarterly_table(header: list[str]) -> bool:
+    """True when the table holds a quarterly series (not annuals).
+
+    Mirrors the annual parser's stub/overlap reasoning: multi-quarter tables
+    (3+ distinct quarter months, or overlapping years across months) are
+    quarterly, as are small mixed tables with no dominant month (Dec + Mar).
+    Fiscal year-end tables (one dominant month, e.g. 3 Sep + 1 Mar stub) and
+    single-month tables stay annual.
+    """
+    dated = [
+        cell for cell in header[1:]
+        if _YEAR_RE.search(cell or "") and not _PARTIAL_RE.search(cell or "")
+    ]
+    months = [_month_of(cell) for cell in dated]
+    months = [m for m in months if m in _Q_NUM]
+    if len(months) < 2:
+        return False
+    if len(set(months)) >= 3:
+        return True
+    years: dict[str, set[str]] = {}
+    for cell in dated:
+        month = _month_of(cell)
+        year = _YEAR_RE.search(cell or "")
+        if month in _Q_NUM and year:
+            years.setdefault(year.group(0), set()).add(month)
+    if any(len(m) > 1 for m in years.values()):
+        return True
+    counts: dict[str, int] = {}
+    for month in months:
+        counts[month] = counts.get(month, 0) + 1
+    return len(counts) > 1 and max(counts.values()) <= 1 and len(dated) <= 2
+
+
+def _history_row(fields: dict[str, float | None]) -> dict:
+    """Fill derived P&L rows (expenses/pbt/tax) from present parts."""
+    out = dict(fields)
+    if out.get("expenses") is None and out.get("sales") is not None and out.get("operating_profit") is not None:
+        try:
+            out["expenses"] = out["sales"] - out["operating_profit"]  # type: ignore[operator]
+        except TypeError:
+            pass
+    parts = [out.get(key) for key in ("operating_profit", "other_income", "interest", "depreciation")]
+    if out.get("pbt") is None and all(part is not None for part in parts):
+        try:
+            out["pbt"] = parts[0] + parts[1] - parts[2] - parts[3]  # type: ignore[operator]
+        except TypeError:
+            pass
+    if out.get("tax") is None and out.get("pbt") is not None and out.get("pat") is not None:
+        try:
+            out["tax"] = out["pbt"] - out["pat"]  # type: ignore[operator]
+        except TypeError:
+            pass
+    return out
+
+
+def parse_history(html: str) -> dict:
+    """Parse full P&L series: last 8 quarters + last 5 annuals.
+
+    Quarterly tables (mixed Jun/Sep/Dec/Mar with overlapping years) yield the
+    quarterly series; Mar/FY-dominant tables yield the annual series via
+    ``_annual_indexes``. TTM/partial columns are skipped. Money in Rs cr
+    (lakh pages scaled); EPS in Rs, never scaled. Missing tables/cells yield
+    ``[]``/None, never raise.
+    """
+    soup = BeautifulSoup(html or "", "lxml")
+    scale = _lakh_scale(soup)
+    quarterly: dict[str, dict] = {}
+    q_order: dict[str, tuple[int, int]] = {}
+    annual: dict[str, dict] = {}
+    try:
+        tables = soup.find_all("table")
+    except Exception:  # noqa: BLE001 — unparsable HTML yields empty history
+        return {"quarterly": [], "annual": []}
+    for table in tables:
+        try:
+            table_rows = table.find_all("tr")
+        except Exception:  # noqa: BLE001 — one bad table never kills history
+            continue
+        if not table_rows:
+            continue
+        header = [c.get_text(" ", strip=True) for c in table_rows[0].find_all(["td", "th"])]
+        if len(header) < 2:
+            continue
+        try:
+            if _is_quarterly_table(header):
+                columns: list[tuple[int, str, tuple[int, int]]] = []
+                for idx, cell in enumerate(header[1:], start=1):
+                    if _PARTIAL_RE.search(cell or "") or not _YEAR_RE.search(cell or ""):
+                        continue
+                    label = _quarter_label(cell)
+                    if label is None:
+                        continue
+                    fy, quarter, name = label
+                    columns.append((idx, name, (fy, quarter)))
+                series, order = quarterly, q_order
+                period_of = {idx: (name, key) for idx, name, key in columns}
+                annual_idx: list[int] = []
+            else:
+                annual_idx = _annual_indexes(header) if len(header) > 1 else [1]
+                series, order = annual, {}
+                period_of = {}
+                for idx in annual_idx:
+                    if idx >= len(header):
+                        continue
+                    year_match = _YEAR_RE.search(header[idx] or "")
+                    if not year_match:
+                        continue
+                    year = int(year_match.group(0))
+                    period_of[idx] = (f"FY{year % 100:02d}", (year,))
+            if not period_of:
+                continue
+            for row in table_rows[1:]:
+                cells = [c.get_text(" ", strip=True) for c in row.find_all(["td", "th"])]
+                if len(cells) < 2:
+                    continue
+                target = _HISTORY_LABELS.get(_LABEL_MAP.get(_normalize_label(cells[0]), ""))
+                if target is None or target == "operating_profit_fallback":
+                    if _LABEL_MAP.get(_normalize_label(cells[0])) == "ebit":
+                        # Quarterly EBIT fills operating profit only when no
+                        # EBITDA row supplied the period; annual EBIT is skipped
+                        # (EBITDA-derived operating profit already covers it).
+                        target = "operating_profit" if series is quarterly else None
+                    else:
+                        continue
+                    if target is None:
+                        continue
+                for idx, (name, key) in period_of.items():
+                    if idx >= len(cells):
+                        continue
+                    raw = _to_float(cells[idx])
+                    value = None if raw is None else (raw if target == "eps" else raw * scale)
+                    if value is None:
+                        continue
+                    slot = series.setdefault(name, {})
+                    if slot.get(target) is None:
+                        slot[target] = value
+                    if name not in order:
+                        order[name] = key
+        except Exception:  # noqa: BLE001 — one bad table never kills history
+            continue
+    q_names = sorted(q_order, key=lambda name: q_order[name])[-8:]
+    a_names = sorted(
+        annual, key=lambda name: int(name[2:]) if name[2:].isdigit() else -1
+    )[-5:]
+    keys = ("sales", "expenses", "operating_profit", "other_income", "interest",
+            "depreciation", "pbt", "tax", "pat", "eps")
+    return {
+        "quarterly": [
+            {"period": name, **_history_row({key: quarterly[name].get(key) for key in keys})}
+            for name in q_names
+        ],
+        "annual": [
+            {"period": name, **_history_row({key: annual[name].get(key) for key in keys})}
+            for name in a_names
+        ],
     }
 
 
